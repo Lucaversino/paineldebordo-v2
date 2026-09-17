@@ -149,3 +149,15 @@ Nova aba **Ventos e Mar** no menu lateral. O operador digita latitude e longitud
 - botão para usar automaticamente a posição da última largada.
 
 A maré exibida é nível do mar modelado e não substitui fonte oficial de navegação costeira.
+
+## v55 — previsão horária completa
+- Vento, rajadas, direção, ondas, direção das ondas, período, swell, maré modelada e temperatura organizados por horário.
+- Desktop sem carrossel cortado: os horários ocupam a largura da página em uma grade completa.
+- Mobile reorganiza os horários em cartões responsivos.
+- Exportação da consulta para PDF.
+- Compartilhamento via menu nativo do celular (incluindo WhatsApp quando disponível); no desktop, baixa o PDF e abre o WhatsApp Web com o resumo.
+
+
+## v55 — Carta náutica por posição
+
+A aba **Ventos e Mar** agora inclui uma carta oceânica interativa centralizada na coordenada consultada, com controles de zoom +/−, marcador da posição, batimetria/curvas de profundidade quando disponíveis e sinais náuticos OpenSeaMap. A carta é apenas apoio visual e não substitui cartas oficiais ou equipamentos de navegação.

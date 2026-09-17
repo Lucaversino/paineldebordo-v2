@@ -216,7 +216,13 @@ export async function GET(request: Request) {
         windDirection: directionName(weather?.hourly?.wind_direction_10m?.[i]),
         gustKmh: weather?.hourly?.wind_gusts_10m?.[i] ?? null,
         waveHeightM: marine?.hourly?.wave_height?.[mi] ?? null,
+        waveDirectionDeg: marine?.hourly?.wave_direction?.[mi] ?? null,
+        waveDirection: directionName(marine?.hourly?.wave_direction?.[mi]),
         wavePeriodS: marine?.hourly?.wave_period?.[mi] ?? null,
+        swellHeightM: marine?.hourly?.swell_wave_height?.[mi] ?? null,
+        swellDirectionDeg: marine?.hourly?.swell_wave_direction?.[mi] ?? null,
+        swellDirection: directionName(marine?.hourly?.swell_wave_direction?.[mi]),
+        swellPeriodS: marine?.hourly?.swell_wave_period?.[mi] ?? null,
         seaTemperatureC: marine?.hourly?.sea_surface_temperature?.[mi] ?? null,
         seaLevelMslM: marine?.hourly?.sea_level_height_msl?.[mi] ?? null,
       });

@@ -1,12 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Compass, Droplets, Gauge, LocateFixed, Navigation, RefreshCw, Thermometer, Waves, Wind } from "lucide-react";
+import {
+  Compass,
+  Download,
+  Droplets,
+  Gauge,
+  LocateFixed,
+  Navigation,
+  RefreshCw,
+  Share2,
+  Thermometer,
+  Waves,
+  Wind,
+} from "lucide-react";
+import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
+import NauticalMap from "./NauticalMap";
 
 function digitsToDecimal(raw: string, direction: "S" | "W") {
   const digits = raw.replace(/\D/g, "");
   if (digits.length < 4) return null;
-  const degreeLength = direction === "W" ? 2 : 2;
+  const degreeLength = 2;
   const degrees = Number(digits.slice(0, degreeLength));
   const minuteDigits = digits.slice(degreeLength);
   const minutes = Number(`${minuteDigits.slice(0, 2)}.${minuteDigits.slice(2) || "0"}`);
@@ -77,6 +91,7 @@ export default function PositionForecast() {
   const [lonDigits, setLonDigits] = useState("");
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
   const [error, setError] = useState("");
   const [mapMode, setMapMode] = useState<"wind" | "chlorophyll">("wind");
 
@@ -112,9 +127,7 @@ export default function PositionForecast() {
       if (!position) throw new Error("Ainda não há posição registrada nas largadas.");
       setLatDigits(decimalToDigits(Number(position.lat)));
       setLonDigits(decimalToDigits(Number(position.lon)));
-      const latValue = Number(position.lat);
-      const lonValue = Number(position.lon);
-      const forecastResponse = await fetch(`/api/position-forecast?lat=${latValue}&lon=${lonValue}`, { cache: "no-store" });
+      const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store" });
       const forecastJson = await forecastResponse.json().catch(() => ({}));
       if (!forecastResponse.ok) throw new Error(forecastJson.error || "Falha na consulta.");
       setData(forecastJson);
@@ -122,6 +135,44 @@ export default function PositionForecast() {
       setError(e instanceof Error ? e.message : "Não foi possível carregar a última posição.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  function exportPdf() {
+    if (!data) return;
+    downloadPositionForecastPdf(data);
+  }
+
+  async function shareWhatsApp() {
+    if (!data || shareBusy) return;
+    setShareBusy(true);
+    try {
+      const doc = createPositionForecastPdf(data);
+      const blob = doc.output("blob");
+      const file = new File([blob], `previsao-oceanica-${new Date().toISOString().slice(0, 10)}.pdf`, { type: "application/pdf" });
+      const summary = [
+        "PAINEL DE BORDO — PREVISÃO OCEÂNICA",
+        `Posição: ${Math.abs(Number(data.position.lat)).toFixed(4)}° S / ${Math.abs(Number(data.position.lon)).toFixed(4)}° W`,
+        `Vento: ${fmt(data.current.windSpeedKmh)} km/h ${data.current.windDirection} | rajadas ${fmt(data.current.gustKmh)} km/h`,
+        `Ondas: ${fmt(data.current.waveHeightM)} m ${data.current.waveDirection} | período ${fmt(data.current.wavePeriodS)} s`,
+        `Maré modelada: ${fmt(data.current.seaLevelMslM, 2)} m`,
+        `Temperatura do mar: ${fmt(data.current.seaTemperatureC)} °C`,
+        `Clorofila-a: ${fmt(data.current.chlorophyllMgM3, 2)} mg/m³`,
+      ].join("\n");
+
+      const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
+      if (navigator.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+        await navigator.share({ title: "Previsão oceânica", text: summary, files: [file] });
+      } else {
+        downloadPositionForecastPdf(data);
+        window.open(`https://wa.me/?text=${encodeURIComponent(`${summary}\n\nO PDF da previsão foi baixado para anexar na conversa.`)}`, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        setError("Não foi possível compartilhar agora. Tente exportar o PDF.");
+      }
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -137,7 +188,7 @@ export default function PositionForecast() {
         <div>
           <small>MÓDULO OCEÂNICO</small>
           <h2>Ventos e Mar</h2>
-          <p>Consulte uma posição por latitude e longitude. Simples, rápido e visual.</p>
+          <p>Consulte uma posição por latitude e longitude. Previsão profissional sem complicação.</p>
         </div>
         <div className="position-title-badge"><Compass /> PREVISÃO POR POSIÇÃO</div>
       </div>
@@ -161,13 +212,17 @@ export default function PositionForecast() {
         <div className="position-empty">
           <Wind />
           <h3>Digite uma posição para começar</h3>
-          <p>O painel mostrará vento, rajadas, ondas, maré modelada, temperatura do mar, corrente e clorofila.</p>
+          <p>O painel mostrará vento, rajadas, ondas por horário, maré modelada, temperatura do mar, corrente e clorofila.</p>
         </div>
       ) : (
         <>
           <div className="position-current-head">
             <div><small>CONDIÇÕES AGORA</small><h3>{Math.abs(data.position.lat).toFixed(4)}° S · {Math.abs(data.position.lon).toFixed(4)}° W</h3></div>
-            <span className={`condition-pill ${String(data.current.condition || "").toLowerCase().replace(" ", "-")}`}>{data.current.condition}</span>
+            <div className="position-current-actions">
+              <button onClick={exportPdf}><Download /> Exportar PDF</button>
+              <button onClick={shareWhatsApp} disabled={shareBusy}><Share2 /> {shareBusy ? "Compartilhando..." : "WhatsApp"}</button>
+              <span className={`condition-pill ${String(data.current.condition || "").toLowerCase().replace(" ", "-")}`}>{data.current.condition}</span>
+            </div>
           </div>
 
           <div className="position-kpis">
@@ -178,33 +233,50 @@ export default function PositionForecast() {
             <article><Droplets /><small>CLOROFILA-A</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>Satélite VIIRS</b><span>{data.current.chlorophyllTime ? String(data.current.chlorophyllTime).slice(0, 10) : "Sem leitura"}</span></article>
           </div>
 
-          <div className="position-two-columns">
-            <article className="position-panel forecast-panel">
-              <div className="position-panel-title"><div><small>PRÓXIMAS HORAS</small><h3>Previsão resumida</h3></div><span>até 72 h</span></div>
-              <div className="forecast-strip">
-                {(data.forecast || []).map((item: any, index: number) => (
-                  <div className="forecast-mini" key={`${item.time}-${index}`}>
-                    <time>{shortTime(item.time)}</time>
-                    <div className="forecast-wind"><span className="wind-arrow" style={{ transform: `rotate(${Number(item.windDirectionDeg || 0)}deg)` }}>↑</span><b>{fmt(item.windSpeedKmh, 0)}</b><small>km/h</small></div>
-                    <span>{item.windDirection}</span>
-                    <em>Raj. {fmt(item.gustKmh, 0)}</em>
-                    <em>Onda {fmt(item.waveHeightM)} m</em>
+          <article className="position-panel hourly-panel">
+            <div className="position-panel-title hourly-title">
+              <div><small>PRÓXIMAS HORAS</small><h3>Vento, ondas e maré por horário</h3><p>Até 72 horas · intervalos de 3 horas · tudo visível no desktop</p></div>
+              <span>{(data.forecast || []).length} horários</span>
+            </div>
+            <div className="hourly-forecast-grid">
+              {(data.forecast || []).map((item: any, index: number) => (
+                <div className="hourly-card" key={`${item.time}-${index}`}>
+                  <time>{shortTime(item.time)}</time>
+                  <div className="hourly-block wind-block">
+                    <div className="hourly-icon"><Wind /></div>
+                    <span>VENTO</span>
+                    <strong><i className="wind-arrow" style={{ transform: `rotate(${Number(item.windDirectionDeg || 0)}deg)` }}>↑</i>{fmt(item.windSpeedKmh, 0)} <small>km/h</small></strong>
+                    <b>{item.windDirection}</b>
+                    <em>Rajadas {fmt(item.gustKmh, 0)} km/h</em>
                   </div>
-                ))}
-              </div>
-            </article>
+                  <div className="hourly-block wave-block">
+                    <div className="hourly-icon"><Waves /></div>
+                    <span>ONDA</span>
+                    <strong>{fmt(item.waveHeightM)} <small>m</small></strong>
+                    <b>{item.waveDirection || "—"}</b>
+                    <em>Período {fmt(item.wavePeriodS)} s · swell {fmt(item.swellHeightM)} m</em>
+                  </div>
+                  <div className="hourly-block tide-block-mini">
+                    <div className="hourly-icon"><Gauge /></div>
+                    <span>MARÉ MODELADA</span>
+                    <strong>{fmt(item.seaLevelMslM, 2)} <small>m</small></strong>
+                    <em>Temp. {fmt(item.seaTemperatureC)} °C</em>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
 
-            <article className="position-panel tide-panel">
-              <div className="position-panel-title"><div><small>NÍVEL DO MAR</small><h3>Próximos picos modelados</h3></div></div>
-              <div className="tide-list">
-                {(data.tide.extrema || []).map((item: any, index: number) => (
-                  <div key={`${item.time}-${index}`}><span className={item.type === "HIGH" ? "tide-high" : "tide-low"}>{item.type === "HIGH" ? "ALTA" : "BAIXA"}</span><b>{shortTime(item.time)}</b><strong>{fmt(item.height, 2)} m</strong></div>
-                ))}
-                {!data.tide.extrema?.length && <p>Sem picos detectados na janela atual.</p>}
-              </div>
-              <small className="model-note">Nível do mar modelado. Não usar como referência de navegação costeira.</small>
-            </article>
-          </div>
+          <article className="position-panel tide-panel tide-panel-wide">
+            <div className="position-panel-title"><div><small>NÍVEL DO MAR</small><h3>Próximos picos modelados</h3></div><span>alta e baixa</span></div>
+            <div className="tide-peaks-grid">
+              {(data.tide.extrema || []).map((item: any, index: number) => (
+                <div key={`${item.time}-${index}`}><span className={item.type === "HIGH" ? "tide-high" : "tide-low"}>{item.type === "HIGH" ? "ALTA" : "BAIXA"}</span><b>{shortTime(item.time)}</b><strong>{fmt(item.height, 2)} m</strong></div>
+              ))}
+              {!data.tide.extrema?.length && <p>Sem picos detectados na janela atual.</p>}
+            </div>
+            <small className="model-note">Nível do mar modelado. Não usar como referência de navegação costeira.</small>
+          </article>
 
           <article className="position-panel environmental-map-panel">
             <div className="position-panel-title map-title">
@@ -243,8 +315,10 @@ export default function PositionForecast() {
             </div>
           </article>
 
+          <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
+
           <div className="position-source-note">
-            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll}
+            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · Carta oceânica Esri/GEBCO · OpenSeaMap
             <span>{data.disclaimer}</span>
           </div>
         </>
