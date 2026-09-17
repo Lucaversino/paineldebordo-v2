@@ -161,3 +161,18 @@ A maré exibida é nível do mar modelado e não substitui fonte oficial de nave
 ## v55 — Carta náutica por posição
 
 A aba **Ventos e Mar** agora inclui uma carta oceânica interativa centralizada na coordenada consultada, com controles de zoom +/−, marcador da posição, batimetria/curvas de profundidade quando disponíveis e sinais náuticos OpenSeaMap. A carta é apenas apoio visual e não substitui cartas oficiais ou equipamentos de navegação.
+
+## v56 — AIS integrado
+
+A nova aba **AIS** mostra embarcações em tempo real em uma carta náutica dentro do próprio painel. A integração usa **AISStream.io** via WebSocket no backend da Vercel, mantendo a chave fora do navegador.
+
+### Configuração AIS
+
+1. Crie uma conta gratuita em `aisstream.io` e gere uma API key.
+2. Na Vercel, abra **Settings → Environment Variables**.
+3. Crie `AISSTREAM_API_KEY` como **Secret** e aplique em Production (e Preview/Development se desejar).
+4. Faça um novo deploy.
+
+Recursos: carta oceânica + OpenSeaMap, barcos em tempo real, nome/MMSI, velocidade, rumo, proa, status de navegação, busca, filtros, seleção de embarcação, zoom, atualização da área e geolocalização do celular quando autorizada.
+
+> AIS pode ter atraso, lacunas de cobertura ou embarcações sem transmissão. É uma ferramenta de consciência situacional e não substitui radar, vigia, carta oficial ou procedimentos de navegação/anticolisão.

@@ -43,3 +43,13 @@ Depois de salvar, faça um novo **Redeploy**. No dashboard, o selo do assistente
 A aba **Ventos e Mar** não exige nova variável de ambiente. Ela usa as fontes públicas já integradas no servidor (Open-Meteo e NOAA CoastWatch).
 
 O operador pode digitar latitude/longitude no formato rápido das largadas ou usar a posição da última largada registrada.
+
+## AIS em tempo real (v56)
+
+Adicione na Vercel:
+
+```text
+AISSTREAM_API_KEY=sua_chave_do_aisstream
+```
+
+A chave é criada gratuitamente no painel de conta do AISStream.io. Deixe como **Secret**. O navegador nunca recebe a chave: o Painel usa um WebSocket da Vercel como proxy seguro para o stream AIS.

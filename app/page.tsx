@@ -14,6 +14,7 @@ import {
   Radio,
   Settings,
   ShipWheel,
+  Ship,
   Waves,
   Wind,
   X,
@@ -33,6 +34,7 @@ import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
 import OceanIntelligence from "../components/OceanIntelligence";
 import PositionForecast from "../components/PositionForecast";
+import AISPage from "../components/AISPage";
 const fmt = (n: number, d = 0) =>
   new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: d,
@@ -202,6 +204,7 @@ export default function Home() {
   const nav = [
       [Gauge, "Dashboard"],
       [Wind, "Ventos e Mar"],
+      [Ship, "AIS"],
       [Radio, "Viagem atual"],
       [Waves, "Largadas"],
       [Fish, "Capturas"],
@@ -504,6 +507,11 @@ export default function Home() {
           </section>
         ) : view === "Ventos e Mar" ? (
           <PositionForecast />
+        ) : view === "AIS" ? (
+          <AISPage
+            defaultLat={Number(data.sets?.at(-1)?.endLatitude ?? data.sets?.at(-1)?.startLatitude ?? -27.15)}
+            defaultLon={Number(data.sets?.at(-1)?.endLongitude ?? data.sets?.at(-1)?.startLongitude ?? -48.55)}
+          />
         ) : (
           <Operations view={view} onDashboard={() => setView("Dashboard")} />
         )}
