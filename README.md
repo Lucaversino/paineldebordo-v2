@@ -105,3 +105,32 @@ O endpoint é `POST /api/import-backup` com `mode: "preview"` ou `mode: "import"
 ## v51 — Direção do vento por extenso
 - O cartão de vento agora mostra Norte, Nordeste, Leste, Sudeste, Sul, Sudoeste, Oeste ou Noroeste.
 - Exibe também o rumo em graus (0–359°) e mantém velocidade, rajadas e horário de atualização.
+
+## v52 — PAINEL IA / OpenAI
+
+Esta versão adiciona um assistente de análise profunda dentro do bloco **Inteligência Oceânica** do dashboard.
+
+O assistente cruza, no servidor:
+
+- viagens em andamento e finalizadas;
+- largadas, horários, profundidades e posições;
+- captura principal, mistura e descarte;
+- produtividade por largada e progresso da meta;
+- dados ambientais que já aparecem no dashboard (lua, vento e direção, rajadas, ondas/swell, corrente, maré modelada, temperatura do mar e clorofila);
+- padrões estatísticos locais calculados pelo próprio painel.
+
+Ele não envia a chave da OpenAI ao navegador. A variável `OPENAI_API_KEY` é usada somente na rota de servidor `/api/ai-assistant`.
+
+### Variáveis na Vercel
+
+Crie em **Settings → Environment Variables**:
+
+```text
+OPENAI_API_KEY = sua chave secreta sk-...
+OPENAI_MODEL = gpt-5.6-sol
+OPENAI_REASONING_EFFORT = high
+```
+
+Recomendação de qualidade: `gpt-5.6-sol` + `high`. Para reduzir custo, troque o modelo por `gpt-5.6-terra`.
+
+A cobrança da API OpenAI é separada da assinatura do ChatGPT.

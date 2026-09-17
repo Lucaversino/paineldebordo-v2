@@ -15,3 +15,24 @@
 8. Faça deploy com preset **Next.js**. Não configure Output Directory manualmente.
 
 O build agora é `next build` e gera `.next`, exatamente o formato esperado pela Vercel.
+
+## 8. Ativar o PAINEL IA (OpenAI) — v52
+
+No projeto da Vercel, abra **Settings → Environment Variables** e crie:
+
+```text
+OPENAI_API_KEY
+OPENAI_MODEL
+OPENAI_REASONING_EFFORT
+```
+
+Valores sugeridos:
+
+```text
+OPENAI_MODEL=gpt-5.6-sol
+OPENAI_REASONING_EFFORT=high
+```
+
+`OPENAI_API_KEY` deve ser do tipo **Secret** e nunca deve receber o prefixo `NEXT_PUBLIC_`.
+
+Depois de salvar, faça um novo **Redeploy**. No dashboard, o selo do assistente deve mudar de **Aguardando API OpenAI** para **GPT-5.6 Sol • high**.
