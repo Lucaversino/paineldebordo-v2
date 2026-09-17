@@ -13,25 +13,38 @@ export default function PwaControls({ login = false }: { login?: boolean }) {
   const [installed, setInstalled] = useState(false);
   const [ios, setIos] = useState(false);
   const [showIos, setShowIos] = useState(false);
+  const [showInstallInvite, setShowInstallInvite] = useState(false);
 
   useEffect(() => {
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
     setInstalled(standalone);
-    setIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
-    navigator.serviceWorker?.register("/sw.js").catch(() => undefined);
+
+    const isiOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    setIos(isiOS);
+
+    navigator.serviceWorker?.register("/sw.js", { scope: "/" }).catch(() => undefined);
 
     const capture = (event: Event) => {
       event.preventDefault();
       setPrompt(event as InstallPromptEvent);
+      const dismissed = sessionStorage.getItem("pwa-install-dismissed") === "1";
+      if (!dismissed) window.setTimeout(() => setShowInstallInvite(true), 1200);
     };
+
     const done = () => {
       setInstalled(true);
       setPrompt(null);
+      setShowInstallInvite(false);
     };
+
     window.addEventListener("beforeinstallprompt", capture);
     window.addEventListener("appinstalled", done);
+
+    if (isiOS && !standalone && sessionStorage.getItem("pwa-install-dismissed") !== "1") {
+      window.setTimeout(() => setShowInstallInvite(true), 1800);
+    }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", capture);
@@ -41,13 +54,20 @@ export default function PwaControls({ login = false }: { login?: boolean }) {
 
   async function install() {
     if (ios && !installed) {
+      setShowInstallInvite(false);
       setShowIos(true);
       return;
     }
     if (!prompt) return;
+    setShowInstallInvite(false);
     await prompt.prompt();
     const choice = await prompt.userChoice;
     if (choice.outcome === "accepted") setPrompt(null);
+  }
+
+  function dismissInvite() {
+    sessionStorage.setItem("pwa-install-dismissed", "1");
+    setShowInstallInvite(false);
   }
 
   const canInstall = !installed && (Boolean(prompt) || ios);
@@ -60,6 +80,19 @@ export default function PwaControls({ login = false }: { login?: boolean }) {
           </button>
         )}
       </div>
+
+      {showInstallInvite && canInstall && (
+        <div className="pwa-install-toast" role="dialog" aria-label="Instalar Painel de Bordo">
+          <button className="pwa-toast-close" type="button" onClick={dismissInvite} aria-label="Fechar"><X /></button>
+          <div className="pwa-toast-icon"><Download /></div>
+          <div>
+            <b>Instalar Painel de Bordo</b>
+            <span>Use como aplicativo e abra direto pela tela inicial.</span>
+          </div>
+          <button type="button" className="pwa-toast-action" onClick={install}>INSTALAR</button>
+        </div>
+      )}
+
       {showIos && (
         <div className="pwa-overlay" onClick={() => setShowIos(false)}>
           <section className="pwa-guide" onClick={(event) => event.stopPropagation()}>

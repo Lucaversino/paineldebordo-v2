@@ -79,3 +79,10 @@ As tabelas têm RLS habilitado e nenhuma policy pública. O frontend não acessa
 ## Observação sobre dados antigos
 
 Esta versão cria um banco Supabase novo. Dados antigos do D1 não são migrados automaticamente. É possível fazer uma importação separada depois, preservando viagens, largadas e capturas.
+
+## v49 — Login e PWA
+- Corrigido deslocamento/área branca à esquerda da tela de login.
+- Tela de login redesenhada com campos elegantes, ícones e botão mostrar/ocultar senha.
+- Botão Google no padrão visual branco com logotipo multicolorido.
+- Favicon atualizado com o arquivo fornecido.
+- PWA com service worker atualizado e convite automático de instalação quando o navegador liberar o evento de instalação. Por segurança do navegador, a confirmação final de instalação sempre depende de um clique do usuário.

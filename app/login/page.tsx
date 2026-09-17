@@ -1,15 +1,27 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { LockKeyhole, LogIn, ShipWheel, UserPlus } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, Mail, ShipWheel, User, UserPlus } from "lucide-react";
 import { createSupabaseBrowserClient } from "../../lib/supabase/client";
 import PwaControls from "../../components/PwaControls";
+
+function GoogleLogo() {
+  return (
+    <svg className="google-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M21.6 12.23c0-.72-.06-1.41-.18-2.08H12v3.94h5.38a4.6 4.6 0 0 1-2 3.02v2.52h3.24c1.9-1.75 2.98-4.34 2.98-7.4Z" />
+      <path fill="#34A853" d="M12 22c2.7 0 4.98-.9 6.64-2.43l-3.24-2.52c-.9.6-2.04.95-3.4.95-2.6 0-4.8-1.76-5.6-4.13H3.05v2.6A10 10 0 0 0 12 22Z" />
+      <path fill="#FBBC05" d="M6.4 13.87A6 6 0 0 1 6.08 12c0-.65.11-1.28.32-1.87v-2.6H3.05A10 10 0 0 0 2 12c0 1.61.38 3.14 1.05 4.47l3.35-2.6Z" />
+      <path fill="#EA4335" d="M12 6c1.47 0 2.78.5 3.82 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.95 5.53l3.35 2.6C7.2 7.76 9.4 6 12 6Z" />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -61,71 +73,107 @@ export default function LoginPage() {
 
   return (
     <main className="loginpage">
-      <section className="logincard">
-        <div className="loginbrand"><ShipWheel /></div>
-        <small>PAINEL DE BORDO</small>
-        <h1>Pesca Industrial</h1>
-        <p>Conta própria no Supabase para acessar embarcações, viagens, largadas, capturas e análises.</p>
+      <div className="login-shell">
+        <section className="logincard">
+          <div className="loginbrand"><ShipWheel /></div>
+          <small>PAINEL DE BORDO</small>
+          <h1>{mode === "login" ? "Bem-vindo a bordo" : "Criar sua conta"}</h1>
+          <p>{mode === "login" ? "Entre para acessar suas viagens, largadas, capturas e análises." : "Crie seu acesso para manter seus dados de pesca organizados e separados por usuário."}</p>
 
-        <div className="loginaccount">
-          <LockKeyhole />
-          <div>
-            <span>{mode === "login" ? "Acesso seguro" : "Criar conta"}</span>
-            <b>Supabase Auth</b>
-            <small>Seus registros ficam separados por usuário.</small>
+          <div className="loginaccount">
+            <LockKeyhole />
+            <div>
+              <span>{mode === "login" ? "Acesso protegido" : "Cadastro protegido"}</span>
+              <b>Supabase Auth</b>
+              <small>Seus registros ficam separados por usuário.</small>
+            </div>
           </div>
-        </div>
 
-        <form onSubmit={submit} style={{ display: "grid", gap: 10 }}>
-          {mode === "signup" && (
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Seu nome"
-              autoComplete="name"
-            />
-          )}
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="E-mail"
-            required
-            autoComplete="email"
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Senha"
-            minLength={6}
-            required
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-          />
-          {error && <p style={{ color: "#ff8d8d", margin: 0 }}>{error}</p>}
-          {message && <p style={{ color: "#7fe2a9", margin: 0 }}>{message}</p>}
-          <button type="submit" disabled={busy}>
-            {mode === "login" ? <LogIn /> : <UserPlus />}
-            {busy ? "AGUARDE..." : mode === "login" ? "ENTRAR" : "CRIAR CONTA"}
+          <form onSubmit={submit} className="loginform">
+            {mode === "signup" && (
+              <label className="loginfield">
+                <span>Nome</span>
+                <div className="login-input-wrap">
+                  <User />
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Seu nome"
+                    autoComplete="name"
+                  />
+                </div>
+              </label>
+            )}
+
+            <label className="loginfield">
+              <span>E-mail</span>
+              <div className="login-input-wrap">
+                <Mail />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="voce@exemplo.com"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+            </label>
+
+            <label className="loginfield">
+              <span>Senha</span>
+              <div className="login-input-wrap">
+                <LockKeyhole />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Digite sua senha"
+                  minLength={6}
+                  required
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </button>
+              </div>
+            </label>
+
+            {error && <p className="login-message error">{error}</p>}
+            {message && <p className="login-message success">{message}</p>}
+
+            <button type="submit" className="primary-login" disabled={busy}>
+              {mode === "signup" && <UserPlus />}
+              {busy ? "AGUARDE..." : mode === "login" ? "ENTRAR" : "CRIAR CONTA"}
+            </button>
+          </form>
+
+          <div className="login-divider"><span>ou</span></div>
+
+          <button type="button" className="google-button" onClick={loginGoogle} disabled={busy}>
+            <GoogleLogo />
+            <span>Continuar com o Google</span>
           </button>
-        </form>
 
-        <button type="button" className="loginbutton" onClick={loginGoogle} disabled={busy} style={{ marginTop: 10 }}>
-          <LogIn /> ENTRAR COM GOOGLE
-        </button>
+          <button
+            type="button"
+            className="switchaccount"
+            onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setMessage(""); }}
+          >
+            {mode === "login" ? <>Ainda não tem conta? <b>Criar conta</b></> : <>Já possui cadastro? <b>Entrar</b></>}
+          </button>
 
-        <button
-          type="button"
-          className="switchaccount"
-          onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setMessage(""); }}
-          style={{ border: 0, background: "transparent", cursor: "pointer" }}
-        >
-          {mode === "login" ? "Ainda não tem conta? Criar conta" : "Já tenho conta"}
-        </button>
-
-        <footer>Autenticação pelo Supabase. Banco PostgreSQL hospedado no Supabase.</footer>
-        <PwaControls login />
-      </section>
+          <footer>
+            <span>Autenticação segura com Supabase</span>
+            <PwaControls login />
+          </footer>
+        </section>
+      </div>
     </main>
   );
 }
