@@ -44,12 +44,12 @@ A aba **Ventos e Mar** não exige nova variável de ambiente. Ela usa as fontes 
 
 O operador pode digitar latitude/longitude no formato rápido das largadas ou usar a posição da última largada registrada.
 
-## AIS em tempo real (v56)
+## AIS Data Docked (v59)
 
 Adicione na Vercel:
 
 ```text
-AISSTREAM_API_KEY=sua_chave_do_aisstream
+DATADOCKED_API_KEY=sua_chave_da_data_docked
 ```
 
-A chave é criada gratuitamente no painel de conta do AISStream.io. Deixe como **Secret**. O navegador nunca recebe a chave: o Painel usa um WebSocket da Vercel como proxy seguro para o stream AIS.
+A chave é encontrada no painel da Data Docked em **Minha chave de API**. Deixe como **Secret**. O navegador nunca recebe a chave: o Painel usa a rota `/api/ais` na Vercel e envia `x-api-key` apenas do servidor para a Data Docked.

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Anchor,
   Crosshair,
-  Filter,
   LocateFixed,
   MapPinned,
   Minus,
@@ -26,9 +25,9 @@ import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
-import Polygon from "ol/geom/Polygon";
+import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
-import { fromLonLat, toLonLat, transformExtent } from "ol/proj";
+import { fromLonLat, toLonLat } from "ol/proj";
 
 const OCEAN_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}";
 const OCEAN_REFERENCE_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}";
@@ -43,11 +42,9 @@ type Vessel = {
   sog?: number | null;
   cog?: number | null;
   heading?: number | null;
-  navStatus?: number | null;
-  callSign?: string;
+  vesselType?: string;
+  navStatusText?: string;
   destination?: string;
-  imo?: number | null;
-  shipType?: number | null;
   receivedAt: number;
 };
 
@@ -58,13 +55,14 @@ type Props = {
 
 type FilterMode = "all" | "moving" | "stopped";
 type BaseMode = "dhn" | "nautical" | "map";
+type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 
 type DhnChart = {
   number: string;
   title: string;
   groups?: string[];
   scale?: number | null;
-  bounds?: [number, number, number, number] | null; // oeste, sul, leste, norte
+  bounds?: [number, number, number, number] | null;
   files?: string[];
 };
 
@@ -93,9 +91,7 @@ function chooseDhnChart(charts: DhnChart[], lon: number, lat: number, zoom: numb
   return [...covering].sort((a, b) => {
     const as = Number(a.scale || 9999999);
     const bs = Number(b.scale || 9999999);
-    const ad = Math.abs(Math.log(as / ideal));
-    const bd = Math.abs(Math.log(bs / ideal));
-    return ad - bd;
+    return Math.abs(Math.log(as / ideal)) - Math.abs(Math.log(bs / ideal));
   })[0];
 }
 
@@ -117,41 +113,7 @@ function relativeTime(ts: number) {
   const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
   if (seconds < 10) return "agora";
   if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  return `${minutes} min`;
-}
-
-function navStatusName(value?: number | null) {
-  const labels: Record<number, string> = {
-    0: "Navegando a motor",
-    1: "Fundeado",
-    2: "Sem governo",
-    3: "Manobra restrita",
-    4: "Restrito pelo calado",
-    5: "Atracado",
-    6: "Encalhado",
-    7: "Pescando",
-    8: "À vela",
-    14: "AIS-SART",
-    15: "Não definido",
-  };
-  return value == null ? "Não informado" : labels[value] || `Status ${value}`;
-}
-
-function clampBBox(extent4326: number[]) {
-  let [west, south, east, north] = extent4326;
-  const maxSpan = 12;
-  const cLat = (north + south) / 2;
-  const cLon = (east + west) / 2;
-  if (north - south > maxSpan) {
-    north = cLat + maxSpan / 2;
-    south = cLat - maxSpan / 2;
-  }
-  if (east - west > maxSpan) {
-    east = cLon + maxSpan / 2;
-    west = cLon - maxSpan / 2;
-  }
-  return [[north, west], [south, east]] as [[number, number], [number, number]];
+  return `${Math.round(seconds / 60)} min`;
 }
 
 export default function AISPage({ defaultLat, defaultLon }: Props) {
@@ -167,14 +129,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const seamarkLayerRef = useRef<TileLayer<XYZ> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ> | null>(null);
-  const monitoredAreaSourceRef = useRef<VectorSource | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const subscribeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCountRef = useRef(0);
-  const activeRef = useRef(true);
+  const searchAreaSourceRef = useRef<VectorSource | null>(null);
   const selectedRef = useRef<string | null>(null);
-  const bboxRef = useRef<[[number, number], [number, number]] | null>(null);
   const filterRef = useRef<FilterMode>("all");
   const searchRef = useRef("");
 
@@ -186,17 +142,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [dhnCharts, setDhnCharts] = useState<DhnChart[]>([]);
   const [dhnCatalogCount, setDhnCatalogCount] = useState(0);
   const [dhnAuto, setDhnAuto] = useState(true);
-  const [selectedDhnChart, setSelectedDhnChart] = useState<string>("");
+  const [selectedDhnChart, setSelectedDhnChart] = useState("");
   const [dhnLoadMessage, setDhnLoadMessage] = useState("Carregando catálogo DHN...");
-  const [zoom, setZoom] = useState(9);
+  const [zoom, setZoom] = useState(10);
   const [center, setCenter] = useState({ lat: fallbackLat, lon: fallbackLon });
   const [devicePosition, setDevicePosition] = useState<{ lat: number; lon: number } | null>(null);
-  const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error" | "config">("connecting");
-  const [statusMessage, setStatusMessage] = useState("Conectando ao AIS...");
-  const [lastSignal, setLastSignal] = useState<number | null>(null);
-  const [messageCount, setMessageCount] = useState(0);
-  const [subscriptionAt, setSubscriptionAt] = useState<number | null>(null);
+  const [status, setStatus] = useState<AisStatus>("idle");
+  const [statusMessage, setStatusMessage] = useState("Data Docked pronto — clique atualizar AIS");
+  const [lastFetch, setLastFetch] = useState<number | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [radiusKm, setRadiusKm] = useState(50);
+  const [lastArea, setLastArea] = useState<{ lat: number; lon: number; radius: number } | null>(null);
 
   filterRef.current = filter;
   searchRef.current = query;
@@ -210,19 +167,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return true;
   }
 
-  function drawMonitoredArea(bbox: [[number, number], [number, number]]) {
-    const source = monitoredAreaSourceRef.current;
+  function drawSearchArea(lat: number, lon: number, radius: number) {
+    const source = searchAreaSourceRef.current;
     if (!source) return;
-    const [[north, west], [south, east]] = bbox;
-    const ring = [
-      fromLonLat([west, north]),
-      fromLonLat([east, north]),
-      fromLonLat([east, south]),
-      fromLonLat([west, south]),
-      fromLonLat([west, north]),
-    ];
     source.clear();
-    source.addFeature(new Feature({ geometry: new Polygon([ring]) }));
+    const webMercatorRadius = (radius * 1000) / Math.max(0.3, Math.cos((lat * Math.PI) / 180));
+    source.addFeature(new Feature({ geometry: new CircleGeom(fromLonLat([lon, lat]), webMercatorRadius) }));
   }
 
   function buildVesselStyle(vessel: Vessel, selected: boolean, currentZoom: number) {
@@ -231,17 +181,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const fillColor = selected ? "#ffffff" : speed >= 2 ? "#22d3a6" : speed >= 0.5 ? "#e8bd54" : "#8aa4ab";
     const strokeColor = selected ? "#042c32" : "#061b21";
     const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511 ? Number(vessel.heading) : Number(vessel.cog || 0);
-    const shape = new RegularShape({
-      points: 3,
-      radius: selected ? 11 : 9,
-      angle: 0,
-      rotation: (angle * Math.PI) / 180,
-      rotateWithView: true,
-      fill: new Fill({ color: fillColor }),
-      stroke: new Stroke({ color: strokeColor, width: selected ? 2.6 : 1.6 }),
-    });
     return new Style({
-      image: shape,
+      image: new RegularShape({
+        points: 3,
+        radius: selected ? 11 : 9,
+        angle: 0,
+        rotation: (angle * Math.PI) / 180,
+        rotateWithView: true,
+        fill: new Fill({ color: fillColor }),
+        stroke: new Stroke({ color: strokeColor, width: selected ? 2.6 : 1.6 }),
+      }),
       text: currentZoom >= 10 && (selected || vessel.name)
         ? new Text({
             text: (vessel.name || vessel.mmsi).slice(0, 22),
@@ -266,135 +215,87 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       feature.getGeometry()?.setCoordinates(fromLonLat([vessel.lon, vessel.lat]));
     }
     feature.set("vessel", vessel);
-    feature.setStyle(() => buildVesselStyle(vessel, selectedRef.current === vessel.mmsi, mapRef.current?.getView().getZoom() || 9));
+    feature.setStyle(() => buildVesselStyle(vessel, selectedRef.current === vessel.mmsi, mapRef.current?.getView().getZoom() || 10));
   }
 
-  function sendSubscription(force = false) {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN || !bboxRef.current) return;
-    if (subscribeTimerRef.current) clearTimeout(subscribeTimerRef.current);
-    subscribeTimerRef.current = setTimeout(() => {
-      if (socket.readyState === WebSocket.OPEN && bboxRef.current) {
-        drawMonitoredArea(bboxRef.current);
-        socket.send(JSON.stringify({ type: "subscribe", bbox: bboxRef.current }));
-      }
-    }, force ? 0 : 1150);
-  }
-
-  function refreshAreaSubscription(force = false) {
-    const map = mapRef.current;
-    if (!map || !map.getSize()) return;
-    const extent = transformExtent(map.getView().calculateExtent(map.getSize()), "EPSG:3857", "EPSG:4326");
-    bboxRef.current = clampBBox(extent);
-    sendSubscription(force);
-  }
-
-  function connectSocket() {
-    if (typeof window === "undefined" || !activeRef.current) return;
-    if (socketRef.current && [WebSocket.CONNECTING, WebSocket.OPEN].includes(socketRef.current.readyState)) return;
-    setStatus("connecting");
-    setStatusMessage("Conectando ao AIS...");
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${protocol}://${window.location.host}/api/ais-stream`);
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      reconnectCountRef.current = 0;
-      setStatus("connecting");
-      setStatusMessage("Conectado ao servidor. Assinando área AIS...");
-      refreshAreaSubscription(true);
-    };
-
-    socket.onmessage = (event) => {
-      let payload: any;
-      try { payload = JSON.parse(String(event.data)); } catch { return; }
-      if (payload.type === "proxy-ready" && !payload.configured) {
-        setStatus("config");
-        setStatusMessage("Configure AISSTREAM_API_KEY na Vercel.");
-        return;
-      }
-      if (payload.type === "config-error") {
-        setStatus("config");
-        setStatusMessage(payload.message || "AIS sem chave configurada.");
-        return;
-      }
-      if (payload.type === "source-status") {
-        if (payload.status === "connected") {
-          setStatus("connected");
-          setStatusMessage("AIS em tempo real");
-        } else if (payload.status === "error") {
-          setStatus("error");
-          setStatusMessage(payload.message || "Falha na fonte AIS.");
-        } else {
-          setStatus(payload.status === "connecting" ? "connecting" : "disconnected");
-          setStatusMessage(payload.message || (payload.status === "connecting" ? "Conectando à fonte AIS..." : "Fonte AIS desconectada"));
+  async function refreshCredits() {
+    try {
+      const response = await fetch("/api/ais?action=credits", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) {
+          setStatus("config");
+          setStatusMessage(data?.error || "Configure DATADOCKED_API_KEY na Vercel.");
         }
         return;
       }
-      if (payload.type === "subscription-confirmed") {
-        setStatus("connected");
-        setSubscriptionAt(Date.now());
-        setStatusMessage("AIS conectado — aguardando embarcações");
-        return;
-      }
-      if (payload.type === "vessel-static") {
-        const patch = payload.vessel as Vessel;
-        setVessels((current) => {
-          const old = current[patch.mmsi];
-          if (!old) return current;
-          const merged = { ...old, ...patch, lat: old.lat, lon: old.lon, receivedAt: Math.max(old.receivedAt, patch.receivedAt || 0) };
-          queueMicrotask(() => upsertFeature(merged));
-          return { ...current, [patch.mmsi]: merged };
-        });
-        return;
-      }
-      if (payload.type === "vessel") {
-        const incoming = payload.vessel as Vessel;
-        setLastSignal(Date.now());
-        setMessageCount((n) => n + 1);
-        setStatus("connected");
-        setStatusMessage("AIS ao vivo — recebendo embarcações");
-        setVessels((current) => {
-          const merged = { ...current[incoming.mmsi], ...incoming };
-          queueMicrotask(() => upsertFeature(merged));
-          return { ...current, [incoming.mmsi]: merged };
-        });
-      }
-    };
+      if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
+      if (status === "config") setStatus("idle");
+    } catch {
+      // O saldo é informativo; falhar aqui não bloqueia o mapa.
+    }
+  }
 
-    socket.onerror = () => {
+  async function fetchArea() {
+    const map = mapRef.current;
+    if (!map) return;
+    const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([center.lon, center.lat]));
+    setStatus("loading");
+    setStatusMessage(`Consultando AIS em raio de ${radiusKm} km...`);
+    drawSearchArea(lat, lon, radiusKm);
+
+    try {
+      const params = new URLSearchParams({
+        action: "area",
+        latitude: String(lat),
+        longitude: String(lon),
+        radius: String(radiusKm),
+      });
+      const response = await fetch(`/api/ais?${params.toString()}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) setStatus("config");
+        else setStatus("error");
+        setStatusMessage(data?.error || "Falha ao consultar Data Docked.");
+        return;
+      }
+
+      const rows = Array.isArray(data?.vessels) ? data.vessels : [];
+      const next: Record<string, Vessel> = {};
+      for (const raw of rows) {
+        const vessel: Vessel = {
+          mmsi: String(raw?.mmsi || ""),
+          name: raw?.name || "",
+          lat: Number(raw?.lat),
+          lon: Number(raw?.lon),
+          sog: raw?.sog == null ? null : Number(raw.sog),
+          cog: raw?.cog == null ? null : Number(raw.cog),
+          heading: raw?.heading == null ? null : Number(raw.heading),
+          vesselType: raw?.vesselType || "",
+          receivedAt: Number(raw?.receivedAt) || Date.now(),
+        };
+        if (!vessel.mmsi || !Number.isFinite(vessel.lat) || !Number.isFinite(vessel.lon)) continue;
+        next[vessel.mmsi] = vessel;
+      }
+
+      vesselSourceRef.current?.clear();
+      setVessels(next);
+      Object.values(next).forEach(upsertFeature);
+      setLastFetch(Date.now());
+      setLastArea({ lat: Number(data?.queryCenter?.lat ?? lat), lon: Number(data?.queryCenter?.lon ?? lon), radius: Number(data?.radiusKm ?? radiusKm) });
+      setStatus("ready");
+      setStatusMessage(rows.length ? `${rows.length} embarcações encontradas` : "Consulta concluída — nenhuma embarcação nesta área");
+      await refreshCredits();
+    } catch {
       setStatus("error");
-      setStatusMessage("Falha na conexão AIS.");
-    };
-
-    socket.onclose = () => {
-      if (socketRef.current === socket) socketRef.current = null;
-      if (!activeRef.current) return;
-      if (status !== "config") {
-        setStatus("disconnected");
-        setStatusMessage("Reconectando AIS...");
-      }
-      const attempt = Math.min(6, reconnectCountRef.current++);
-      reconnectTimerRef.current = setTimeout(connectSocket, Math.min(12000, 900 * 2 ** attempt));
-    };
+      setStatusMessage("Falha de rede ao consultar o AIS.");
+    }
   }
 
   useEffect(() => {
     if (!hostRef.current) return;
-    const ocean = new TileLayer({
-      visible: true,
-      source: new XYZ({
-        url: OCEAN_TILES,
-        attributions: "Esri · GEBCO · NOAA",
-      }),
-    });
-    const oceanReference = new TileLayer({
-      visible: true,
-      source: new XYZ({
-        url: OCEAN_REFERENCE_TILES,
-        attributions: "Esri Ocean Reference",
-      }),
-    });
+    const ocean = new TileLayer({ visible: true, source: new XYZ({ url: OCEAN_TILES, attributions: "Esri · GEBCO · NOAA" }) });
+    const oceanReference = new TileLayer({ visible: true, source: new XYZ({ url: OCEAN_REFERENCE_TILES, attributions: "Esri Ocean Reference" }) });
     const street = new TileLayer({ visible: false, source: new OSM() });
     const dhn = new TileLayer({
       visible: false,
@@ -405,27 +306,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         crossOrigin: "anonymous",
       }),
     });
-    const seamarks = new TileLayer({
-      opacity: 1,
-      source: new XYZ({ url: SEAMARK_TILES, maxZoom: 18, attributions: "OpenSeaMap" }),
-    });
-    const monitoredAreaSource = new VectorSource();
-    const monitoredAreaLayer = new VectorLayer({
-      source: monitoredAreaSource,
+    const seamarks = new TileLayer({ opacity: 1, source: new XYZ({ url: SEAMARK_TILES, maxZoom: 18, attributions: "OpenSeaMap" }) });
+    const searchAreaSource = new VectorSource();
+    const searchAreaLayer = new VectorLayer({
+      source: searchAreaSource,
       style: new Style({
         fill: new Fill({ color: "rgba(32, 211, 170, 0.05)" }),
-        stroke: new Stroke({ color: "rgba(32, 211, 170, 0.9)", width: 2, lineDash: [8, 7] }),
+        stroke: new Stroke({ color: "rgba(32, 211, 170, 0.95)", width: 2, lineDash: [8, 7] }),
       }),
     });
     const positionSource = new VectorSource();
     const positionLayer = new VectorLayer({
       source: positionSource,
       style: new Style({
-        image: new CircleStyle({
-          radius: 8,
-          fill: new Fill({ color: "#2a92ff" }),
-          stroke: new Stroke({ color: "#ffffff", width: 3 }),
-        }),
+        image: new CircleStyle({ radius: 8, fill: new Fill({ color: "#2a92ff" }), stroke: new Stroke({ color: "#ffffff", width: 3 }) }),
       }),
     });
     const vesselSource = new VectorSource();
@@ -434,7 +328,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new Map({
       target: hostRef.current,
       controls: [],
-      layers: [ocean, street, dhn, oceanReference, seamarks, monitoredAreaLayer, vesselLayer, positionLayer],
+      layers: [ocean, street, dhn, oceanReference, seamarks, searchAreaLayer, vesselLayer, positionLayer],
       view,
     });
 
@@ -447,13 +341,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     streetLayerRef.current = street;
     seamarkLayerRef.current = seamarks;
     dhnLayerRef.current = dhn;
-    monitoredAreaSourceRef.current = monitoredAreaSource;
+    searchAreaSourceRef.current = searchAreaSource;
 
     const updateCenter = () => {
       const [lon, lat] = toLonLat(view.getCenter() || fromLonLat([fallbackLon, fallbackLat]));
       setCenter({ lat, lon });
-      setZoom(Math.round(view.getZoom() || 9));
-      refreshAreaSubscription();
+      setZoom(Math.round(view.getZoom() || 10));
+      drawSearchArea(lat, lon, radiusKm);
     };
     map.on("moveend", updateCenter);
     map.on("singleclick", (evt) => {
@@ -465,20 +359,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
     const ro = new ResizeObserver(() => map.updateSize());
     ro.observe(hostRef.current);
-    setTimeout(() => refreshAreaSubscription(true), 100);
+    setTimeout(() => drawSearchArea(fallbackLat, fallbackLon, radiusKm), 100);
 
     return () => {
       ro.disconnect();
       map.un("moveend", updateCenter);
       map.setTarget(undefined);
       mapRef.current = null;
-      vesselSourceRef.current = null;
-      positionSourceRef.current = null;
-      monitoredAreaSourceRef.current = null;
-      dhnLayerRef.current = null;
-      seamarkLayerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    drawSearchArea(center.lat, center.lon, radiusKm);
+  }, [radiusKm]);
 
   useEffect(() => {
     let cancelled = false;
@@ -516,7 +409,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       url: `${DHN_TILE_BASE}/${selectedDhnChart}/{z}/{x}/{y}.png`,
       attributions: `Carta Raster DHN/CHM ${selectedDhnChart}`,
       crossOrigin: "anonymous",
-      maxZoom: 19,
     }));
     layer.setVisible(baseMode === "dhn");
   }, [selectedDhnChart, baseMode]);
@@ -531,47 +423,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [baseMode, dhnCharts.length, selectedDhnChart]);
 
   useEffect(() => {
-    activeRef.current = true;
-    connectSocket();
-    const heartbeat = setInterval(() => {
-      const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }));
-    }, 20000);
-    const cleaner = setInterval(() => {
-      const limit = Date.now() - 12 * 60 * 1000;
-      setVessels((current) => {
-        const next = { ...current };
-        let changed = false;
-        for (const [mmsi, vessel] of Object.entries(next)) {
-          if (vessel.receivedAt < limit) {
-            delete next[mmsi];
-            const feature = vesselSourceRef.current?.getFeatureById(mmsi);
-            if (feature) vesselSourceRef.current?.removeFeature(feature);
-            changed = true;
-          }
-        }
-        return changed ? next : current;
-      });
-    }, 30000);
-    return () => {
-      activeRef.current = false;
-      clearInterval(heartbeat);
-      clearInterval(cleaner);
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      if (subscribeTimerRef.current) clearTimeout(subscribeTimerRef.current);
-      const socket = socketRef.current;
-      socketRef.current = null;
-      socket?.close();
-    };
+    refreshCredits();
   }, []);
-
-  useEffect(() => {
-    if (!subscriptionAt || lastSignal || status !== "connected") return;
-    const timer = setTimeout(() => {
-      if (!lastSignal) setStatusMessage("AIS conectado, mas sem sinais nesta área — aproxime da costa ou use Minha localização");
-    }, 12000);
-    return () => clearTimeout(timer);
-  }, [subscriptionAt, lastSignal, status]);
 
   useEffect(() => {
     for (const vessel of Object.values(vessels)) upsertFeature(vessel);
@@ -597,6 +450,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = mapRef.current;
     if (!map) return;
     map.getView().animate({ center: fromLonLat([lon, lat]), zoom: targetZoom, duration: 350 });
+    drawSearchArea(lat, lon, radiusKm);
     if (mark) {
       const source = positionSourceRef.current;
       source?.clear();
@@ -614,6 +468,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         setDevicePosition(coords);
         centerOn(coords.lat, coords.lon, 12, true);
+        setStatusMessage("GPS localizado — clique atualizar AIS para consultar esta área");
       },
       () => setStatusMessage("Localização não autorizada ou indisponível."),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
@@ -623,7 +478,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   function zoomBy(delta: number) {
     const view = mapRef.current?.getView();
     if (!view) return;
-    view.animate({ zoom: Math.max(3, Math.min(18, (view.getZoom() || 9) + delta)), duration: 170 });
+    view.animate({ zoom: Math.max(3, Math.min(18, (view.getZoom() || 10) + delta)), duration: 170 });
   }
 
   function setMapMode(mode: BaseMode) {
@@ -639,7 +494,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   function selectVessel(vessel: Vessel) {
     if (vessel.lat == null || vessel.lon == null) return;
     setSelectedMmsi(vessel.mmsi);
-    centerOn(vessel.lat, vessel.lon, Math.max(12, mapRef.current?.getView().getZoom() || 9));
+    centerOn(vessel.lat, vessel.lon, Math.max(12, mapRef.current?.getView().getZoom() || 10));
   }
 
   const selected = selectedMmsi ? vessels[selectedMmsi] : null;
@@ -654,7 +509,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       })
       .map((v) => ({ ...v, distance: haversineKm(center.lat, center.lon, v.lat!, v.lon!) }))
       .sort((a, b) => a.distance - b.distance)
-      .slice(0, 30);
+      .slice(0, 50);
   }, [vessels, filter, query, center.lat, center.lon]);
 
   const visibleCount = list.length;
@@ -665,12 +520,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       <div className="ais-topbar">
         <div>
           <small>MONITORAMENTO MARÍTIMO</small>
-          <h2>AIS — embarcações em tempo real</h2>
-          <p>AIS sobre mapa oceânico ou Carta Raster oficial DHN/CHM instalada no projeto.</p>
+          <h2>AIS — Data Docked</h2>
+          <p>Busca de embarcações por área sobre mapa oceânico ou Carta Raster oficial DHN/CHM.</p>
         </div>
         <div className="ais-live-box">
-          <span className={`ais-live-dot ${status}`} />
-          <div><b>{statusMessage}</b><small>{lastSignal ? `Último sinal ${relativeTime(lastSignal)} · ${messageCount} mensagens` : `Aguardando sinais · ${messageCount} mensagens`}</small></div>
+          <span className={`ais-live-dot ${status === "ready" ? "connected" : status === "loading" ? "connecting" : status}`} />
+          <div>
+            <b>{statusMessage}</b>
+            <small>{credits != null ? `${credits} créditos restantes` : "Saldo não carregado"}{lastFetch ? ` · atualizado ${relativeTime(lastFetch)}` : ""}</small>
+          </div>
         </div>
       </div>
 
@@ -682,7 +540,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" onClick={() => zoomBy(-1)} title="Diminuir zoom"><Minus /></button>
           <button type="button" onClick={locateDevice} title="Minha localização"><LocateFixed /></button>
           <button type="button" onClick={() => centerOn(fallbackLat, fallbackLon, 11)} title="Voltar para a última posição"><Crosshair /></button>
-          <button type="button" onClick={() => refreshAreaSubscription(true)} title="Atualizar área AIS"><RefreshCw /></button>
+          <button type="button" onClick={fetchArea} disabled={status === "loading"} title="Consultar barcos nesta área"><RefreshCw /></button>
         </div>
 
         <div className="ais-map-header-controls">
@@ -694,6 +552,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button className="ais-list-toggle" onClick={() => setPanelOpen((v) => !v)}><Ship /> {totalCount} barcos</button>
         </div>
 
+        <div className="ais-provider-control">
+          <div><b>Data Docked AIS</b><small>Área terrestre · cada busca por área custa 10 créditos</small></div>
+          <label>
+            <span>Raio</span>
+            <select value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))}>
+              <option value={10}>10 km</option>
+              <option value={25}>25 km</option>
+              <option value={50}>50 km</option>
+            </select>
+          </label>
+          <button type="button" onClick={fetchArea} disabled={status === "loading"}>
+            <RefreshCw /> {status === "loading" ? "Consultando..." : "Buscar barcos"}
+          </button>
+        </div>
+
         {baseMode === "dhn" && (
           <div className="ais-dhn-control">
             <div className="ais-dhn-head">
@@ -702,28 +575,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             </div>
             {dhnCharts.length ? (
               <>
-                <select
-                  value={selectedDhnChart}
-                  onChange={(e) => { setDhnAuto(false); setSelectedDhnChart(e.target.value); }}
-                  aria-label="Selecionar carta DHN"
-                >
+                <select value={selectedDhnChart} onChange={(e) => { setDhnAuto(false); setSelectedDhnChart(e.target.value); }} aria-label="Selecionar carta DHN">
                   {dhnCharts.map((chart) => (
-                    <option key={chart.number} value={chart.number}>
-                      {chart.number} — {chart.title}{chart.scale ? ` · 1:${Number(chart.scale).toLocaleString("pt-BR")}` : ""}
-                    </option>
+                    <option key={chart.number} value={chart.number}>{chart.number} — {chart.title}{chart.scale ? ` · 1:${Number(chart.scale).toLocaleString("pt-BR")}` : ""}</option>
                   ))}
                 </select>
-                <label className="ais-dhn-auto">
-                  <input type="checkbox" checked={dhnAuto} onChange={(e) => setDhnAuto(e.target.checked)} />
-                  <span>Automática pela posição e zoom</span>
-                </label>
+                <label className="ais-dhn-auto"><input type="checkbox" checked={dhnAuto} onChange={(e) => setDhnAuto(e.target.checked)} /><span>Automática pela posição e zoom</span></label>
                 <small>{dhnLoadMessage}</small>
               </>
             ) : (
-              <div className="ais-dhn-missing">
-                <b>Cartas ainda não convertidas para o mapa</b>
-                <span>O pacote da Marinha foi incluído na v58. Rode os comandos de instalação para gerar os tiles XYZ.</span>
-              </div>
+              <div className="ais-dhn-missing"><b>Cartas ainda não convertidas para o mapa</b><span>Rode os comandos de instalação da v58/v59 para gerar os tiles XYZ.</span></div>
             )}
           </div>
         )}
@@ -744,10 +605,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               {list.length ? list.map((vessel) => (
                 <button key={vessel.mmsi} className={selectedMmsi === vessel.mmsi ? "selected" : ""} onClick={() => selectVessel(vessel)}>
                   <span className={`ais-ship-state ${Number(vessel.sog || 0) >= 0.5 ? "moving" : "stopped"}`}><Ship /></span>
-                  <span className="ais-vessel-name"><b>{vessel.name || `MMSI ${vessel.mmsi}`}</b><small>{vessel.mmsi} · {vessel.distance < 10 ? vessel.distance.toFixed(1) : Math.round(vessel.distance)} km</small></span>
+                  <span className="ais-vessel-name"><b>{vessel.name || `MMSI ${vessel.mmsi}`}</b><small>{vessel.vesselType || vessel.mmsi} · {vessel.distance < 10 ? vessel.distance.toFixed(1) : Math.round(vessel.distance)} km</small></span>
                   <span className="ais-speed"><b>{Number(vessel.sog || 0).toFixed(1)}</b><small>kn</small></span>
                 </button>
-              )) : <div className="ais-list-empty"><Radio /><b>Nenhuma embarcação recebida</b><span>Use Minha localização ou volte para a última posição e mantenha zoom entre 8 e 13. A área tracejada mostra exatamente onde o AIS está sendo monitorado.</span></div>}
+              )) : (
+                <div className="ais-list-empty"><Radio /><b>Nenhum barco carregado</b><span>Mova o mapa para a região desejada e toque em Buscar barcos. O círculo tracejado mostra a área consultada.</span></div>
+              )}
             </div>
           </aside>
         )}
@@ -762,26 +625,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span><small>VELOCIDADE</small><b>{Number(selected.sog || 0).toFixed(1)} kn</b></span>
               <span><small>RUMO</small><b>{selected.cog != null ? `${Math.round(selected.cog)}°` : "—"}</b></span>
               <span><small>PROA</small><b>{selected.heading != null && selected.heading < 511 ? `${Math.round(selected.heading)}°` : "—"}</b></span>
-              <span><small>STATUS</small><b>{navStatusName(selected.navStatus)}</b></span>
-              <span><small>ÚLTIMO SINAL</small><b>{relativeTime(selected.receivedAt)}</b></span>
+              <span><small>TIPO</small><b>{selected.vesselType || "Não informado"}</b></span>
+              <span><small>CONSULTA</small><b>{relativeTime(selected.receivedAt)}</b></span>
             </div>
             <p>{Math.abs(selected.lat).toFixed(5)}° {selected.lat < 0 ? "S" : "N"} · {Math.abs(selected.lon).toFixed(5)}° {selected.lon < 0 ? "W" : "E"}</p>
-            {selected.destination && <p><b>Destino:</b> {selected.destination}</p>}
           </div>
         )}
 
         <div className="ais-bottom-status">
           <span><Anchor /> Zoom {zoom}</span>
-          <span><Radio /> Área AIS tracejada</span>
+          <span><Radio /> Raio {radiusKm} km</span>
+          {lastArea && <span>Busca: {Math.abs(lastArea.lat).toFixed(1)}° {lastArea.lat < 0 ? "S" : "N"} · {Math.abs(lastArea.lon).toFixed(1)}° {lastArea.lon < 0 ? "W" : "E"}</span>}
           {baseMode === "dhn" && <span><MapPinned /> {selectedDhnChart ? `DHN ${selectedDhnChart}` : "DHN sem tiles"}</span>}
           <span>{Math.abs(center.lat).toFixed(3)}° {center.lat < 0 ? "S" : "N"} · {Math.abs(center.lon).toFixed(3)}° {center.lon < 0 ? "W" : "E"}</span>
-          {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS do aparelho ativo</span>}
+          {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS ativo</span>}
         </div>
       </div>
 
       <div className="ais-footnote">
-        <b>AISStream.io + DHN/CHM Raster + Esri Ocean + OpenSeaMap</b>
-        <span>As Cartas Raster DHN/CHM são apoio de visualização no painel. Mantenha cartas e Avisos aos Navegantes atualizados e não use o sistema como única referência de navegação ou anticolisão.</span>
+        <b>Data Docked AIS + DHN/CHM Raster + Esri Ocean + OpenSeaMap</b>
+        <span>A busca por área do Data Docked usa AIS terrestre e raio máximo de 50 km. Cada busca por área consome créditos. Não use o painel como única referência de navegação ou anticolisão.</span>
       </div>
     </section>
   );
