@@ -1,6 +1,6 @@
-# PAINEL DE BORDO — PESCA INDUSTRIAL v53
+# PAINEL DE BORDO — PESCA INDUSTRIAL v61
 
-Versão 53 preparada para **Vercel + Supabase**, com Inteligência Oceânica, Assistente IA e consulta profissional de **Ventos e Mar por posição**.
+Versão 60 preparada para **Vercel + Supabase**, com Inteligência Oceânica, Assistente IA, Ventos e Mar, Cartas Raster DHN/CHM e AIS Data Docked com pesquisa direta por latitude e longitude.
 ## Correção v48 — PDF + proteção de build na Vercel
 
 Nesta versão foi corrigida a tipagem do `jspdf-autotable` em `lib/tripPdf.ts`, que interrompia o build na linha do resumo por espécie. Também foi adicionada uma proteção no `next.config.ts` para que erros de tipagem residuais da base legada não interrompam o deploy depois que o código já compilou. A checagem completa continua disponível com `npm run typecheck`.
@@ -182,3 +182,17 @@ A busca é feita pelo endpoint **Vessels by Area**, com raio selecionável de 10
 Como cada busca por área consome créditos, a v59 não atualiza automaticamente sem ação do usuário. Isso evita gastar os créditos gratuitos apenas por abrir ou mover o mapa.
 
 Veja `SETUP-AIS.md`.
+
+
+## v60 — AIS por latitude e longitude
+
+A aba AIS agora possui pesquisa direta de posição no mesmo formato simples da aba Ventos e Mar. Digite apenas números para latitude Sul e longitude Oeste, escolha o raio de 10/25/50 km e use **PESQUISAR AIS NESTA POSIÇÃO**. O mapa centraliza e marca exatamente a coordenada digitada; a consulta de área respeita a limitação do provedor Data Docked de até 0,1° no centro da busca. Também há atalhos para **Usar última largada** e **GPS do celular**.
+
+## v61 — AIS econômico Data Docked
+
+A página AIS foi simplificada para usar somente os dois endpoints de menor custo necessários para localizar um barco:
+
+1. **Vessel by Name** — 1 crédito para pesquisar o nome e obter IMO/MMSI.
+2. **Vessel Location** — 1 crédito para obter a posição atual do barco escolhido.
+
+A busca por área (10 créditos) foi desativada nesta versão. O mapa mantém Carta Raster DHN/CHM, Esri Ocean, OpenSeaMap e GPS do celular. Pesquisas repetidas do mesmo nome durante a mesma sessão usam cache no navegador sempre que possível.

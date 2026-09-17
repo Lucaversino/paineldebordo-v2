@@ -13,7 +13,7 @@ function numberOrNull(value: unknown) {
 }
 
 function textOrEmpty(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
+  return value == null ? "" : String(value).trim();
 }
 
 async function callDataDocked(path: string, apiKey: string) {
@@ -44,43 +44,43 @@ async function callDataDocked(path: string, apiKey: string) {
   return body;
 }
 
-function normalizeAreaVessel(raw: any) {
-  const lat = numberOrNull(raw?.latitude);
-  const lon = numberOrNull(raw?.longitude);
-  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-  const rawSpeed = numberOrNull(raw?.speed);
+function normalizeNameResult(raw: any) {
+  const mmsi = textOrEmpty(raw?.mmsi).replace(/\D/g, "");
+  const imo = textOrEmpty(raw?.imo).replace(/\D/g, "");
   return {
-    mmsi: String(raw?.mmsi ?? "").replace(/\D/g, ""),
     name: textOrEmpty(raw?.name),
-    lat,
-    lon,
-    // A API de área documenta speed em décimos de nó (110 = 11,0 kn).
-    sog: rawSpeed == null ? null : rawSpeed / 10,
-    cog: numberOrNull(raw?.course),
-    heading: numberOrNull(raw?.heading),
-    vesselType: textOrEmpty(raw?.typeSpecific),
-    receivedAt: Date.now(),
-    provider: "Data Docked",
+    mmsi,
+    imo,
+    country: textOrEmpty(raw?.country),
+    countryIso: textOrEmpty(raw?.countryIso),
+    shipType: textOrEmpty(raw?.shipType),
+    typeSpecific: textOrEmpty(raw?.typeSpecific),
+    callsign: textOrEmpty(raw?.callsign),
   };
 }
 
 function normalizeSingleVessel(raw: any) {
   const lat = numberOrNull(raw?.latitude);
   const lon = numberOrNull(raw?.longitude);
-  if (lat == null || lon == null) return null;
+  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return {
-    mmsi: String(raw?.mmsi ?? "").replace(/\D/g, ""),
-    imo: textOrEmpty(String(raw?.imo ?? "")),
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
     name: textOrEmpty(raw?.name),
     lat,
     lon,
     sog: numberOrNull(raw?.speed),
     cog: numberOrNull(raw?.course),
     heading: numberOrNull(raw?.heading),
+    draught: textOrEmpty(raw?.draught),
     destination: textOrEmpty(raw?.destination),
+    lastPort: textOrEmpty(raw?.lastPort),
+    callsign: textOrEmpty(raw?.callsign),
+    vesselType: textOrEmpty(raw?.typeSpecific),
     navStatusText: textOrEmpty(raw?.navigationalStatus),
     dataSource: textOrEmpty(raw?.dataSource),
     positionReceived: textOrEmpty(raw?.positionReceived),
+    updateTime: textOrEmpty(raw?.updateTime),
     receivedAt: Date.now(),
     provider: "Data Docked",
   };
@@ -108,38 +108,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ configured: true, provider: "Data Docked", credits });
     }
 
-    if (action === "area") {
-      const lat = numberOrNull(searchParams.get("latitude"));
-      const lon = numberOrNull(searchParams.get("longitude"));
-      const requestedRadius = numberOrNull(searchParams.get("radius")) ?? 50;
-      if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-        return NextResponse.json({ error: "Latitude ou longitude inválida." }, { status: 400 });
+    if (action === "name") {
+      const rawName = (searchParams.get("name") || "").trim();
+      if (rawName.length < 2) {
+        return NextResponse.json({ error: "Digite pelo menos 2 caracteres do nome do barco." }, { status: 400 });
       }
 
-      const radius = Math.max(1, Math.min(50, Math.round(requestedRadius)));
-      // O endpoint Vessels by Area aceita latitude/longitude com até 1 casa decimal.
-      const queryLat = Number(lat.toFixed(1));
-      const queryLon = Number(lon.toFixed(1));
-      const params = new URLSearchParams({
-        latitude: String(queryLat),
-        longitude: String(queryLon),
-        circle_radius: String(radius),
-      });
-      const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, apiKey);
-      const vessels = (Array.isArray(data?.vessels) ? data.vessels : [])
-        .map(normalizeAreaVessel)
-        .filter(Boolean);
+      const pageNumber = Math.max(1, Math.min(10, Math.round(numberOrNull(searchParams.get("page")) ?? 1)));
+      const providerName = rawName.replace(/\s+/g, "_");
+      const params = new URLSearchParams({ name: providerName, page_number: String(pageNumber) });
+      const data = await callDataDocked(`/vessels-by-vessel-name?${params.toString()}`, apiKey);
+      const items = Array.isArray(data?.items) ? data.items.map(normalizeNameResult) : [];
 
       return NextResponse.json({
         configured: true,
         provider: "Data Docked",
-        source: "Terrestrial AIS",
-        requestedCenter: { lat, lon },
-        queryCenter: { lat: queryLat, lon: queryLon },
-        radiusKm: radius,
-        count: vessels.length,
-        vessels,
-        fetchedAt: Date.now(),
+        query: rawName,
+        total: Number(data?.total) || items.length,
+        page: pageNumber,
+        items,
+        creditCost: 1,
       });
     }
 
@@ -147,7 +135,16 @@ export async function GET(request: NextRequest) {
       const id = (searchParams.get("id") || "").replace(/[^0-9]/g, "");
       if (!id) return NextResponse.json({ error: "Informe IMO ou MMSI." }, { status: 400 });
       const data = await callDataDocked(`/get-vessel-location?imo_or_mmsi=${encodeURIComponent(id)}`, apiKey);
-      return NextResponse.json({ configured: true, provider: "Data Docked", vessel: normalizeSingleVessel(data) });
+      const vessel = normalizeSingleVessel(data);
+      if (!vessel) return NextResponse.json({ error: "O provedor não retornou uma posição válida para esta embarcação." }, { status: 404 });
+      return NextResponse.json({ configured: true, provider: "Data Docked", vessel, creditCost: 1 });
+    }
+
+    if (action === "area") {
+      return NextResponse.json(
+        { error: "A busca por área foi desativada na v61 para economizar créditos. Use busca pelo nome + posição." },
+        { status: 410 },
+      );
     }
 
     return NextResponse.json({ error: "Ação AIS inválida." }, { status: 400 });
