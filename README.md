@@ -162,7 +162,7 @@ A maré exibida é nível do mar modelado e não substitui fonte oficial de nave
 
 A aba **Ventos e Mar** agora inclui uma carta oceânica interativa centralizada na coordenada consultada, com controles de zoom +/−, marcador da posição, batimetria/curvas de profundidade quando disponíveis e sinais náuticos OpenSeaMap. A carta é apenas apoio visual e não substitui cartas oficiais ou equipamentos de navegação.
 
-## v56 — AIS integrado
+## v57 — AIS corrigido e carta náutica aprimorada
 
 A nova aba **AIS** mostra embarcações em tempo real em uma carta náutica dentro do próprio painel. A integração usa **AISStream.io** via WebSocket no backend da Vercel, mantendo a chave fora do navegador.
 
@@ -176,3 +176,20 @@ A nova aba **AIS** mostra embarcações em tempo real em uma carta náutica dent
 Recursos: carta oceânica + OpenSeaMap, barcos em tempo real, nome/MMSI, velocidade, rumo, proa, status de navegação, busca, filtros, seleção de embarcação, zoom, atualização da área e geolocalização do celular quando autorizada.
 
 > AIS pode ter atraso, lacunas de cobertura ou embarcações sem transmissão. É uma ferramenta de consciência situacional e não substitui radar, vigia, carta oficial ou procedimentos de navegação/anticolisão.
+
+
+### Correções AIS v57
+
+- mapa inicia focado na última posição/largada com zoom costeiro;
+- carta usa Esri Ocean Base + Ocean Reference + OpenSeaMap;
+- removido CORS desnecessário dos tiles OpenSeaMap;
+- área efetivamente monitorada pelo AIS aparece com contorno tracejado;
+- caixa geográfica máxima ampliada para 12° para evitar mapa amplo sem receber barcos;
+- função WebSocket usa até 300 s no plano Hobby/Fluid Compute e reconecta automaticamente à fonte;
+- diagnóstico visual informa quantidade de mensagens AIS recebidas e avisa quando há conexão sem cobertura na área.
+
+## v58 — Cartas Raster da Marinha no AIS
+
+A página AIS agora possui o modo **Marinha**, preparado para Cartas Raster oficiais DHN/CHM. O catálogo RS/SC/SP/RJ e os scripts fornecidos foram incorporados em `tools/cartas-marinha/`.
+
+Depois de converter os KAP para XYZ, o mapa seleciona automaticamente a carta que cobre a posição e tenta escolher uma escala adequada ao zoom. Veja `SETUP-CARTAS-DHN.md`.

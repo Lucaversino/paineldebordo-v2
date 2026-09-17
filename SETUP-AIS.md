@@ -1,4 +1,4 @@
-# Configuração do AIS — v56
+# Configuração do AIS — v57
 
 A aba **AIS** usa a API gratuita de streaming do **AISStream.io**.
 
@@ -43,3 +43,8 @@ A Vercel pode encerrar conexões WebSocket ao atingir o limite da Function; a p�
 - painel de detalhes ao selecionar uma embarcação.
 
 > AIS pode ter atraso, falhas de cobertura e embarcações sem transmissão. Não use como única referência de navegação ou anticolisão.
+
+
+## Dica de uso
+
+Abra o AIS com zoom entre 8 e 13 próximo da costa. A borda tracejada no mapa é a área realmente assinada no AISStream. Em zoom muito distante, o painel limita a assinatura para evitar um fluxo global excessivo. Se aparecer "AIS conectado, mas sem sinais nesta área", use **Minha localização** ou volte para a **última posição**.

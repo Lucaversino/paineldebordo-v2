@@ -1,0 +1,268 @@
+{
+  "source": "https://www.marinha.mil.br/chm/dados-do-segnav/cartas-raster",
+  "generated_for": "Pacote de cartas raster costeiras - RS, SC, SP, RJ",
+  "notes": [
+    "O downloader resolve o link atual da Carta Raster KAP/BSB diretamente da tabela oficial do CHM.",
+    "Links de GeoTIFF são ignorados.",
+    "Cartas de transição do Paraná foram incluídas para evitar descontinuidade entre SC e SP.",
+    "Os grupos amplos 21070 e 21080 ajudam na cobertura costeira de menor detalhe."
+  ],
+  "groups": {
+    "RJ": [
+      {
+        "number": "1405",
+        "title": "PORTO DE AÇU"
+      },
+      {
+        "number": "1406",
+        "title": "PROXIMIDADES DO PORTO DE AÇU"
+      },
+      {
+        "number": "1501",
+        "title": "BAÍA DE GUANABARA"
+      },
+      {
+        "number": "1503",
+        "title": "ENSEADA DO CABO FRIO"
+      },
+      {
+        "number": "1504",
+        "title": "ENSEADA DE BÚZIOS"
+      },
+      {
+        "number": "1505",
+        "title": "DO CABO BÚZIOS AO CABO FRIO"
+      },
+      {
+        "number": "1506",
+        "title": "PROXIMIDADE DA BAÍA DE GUANABARA"
+      },
+      {
+        "number": "1507",
+        "title": "ENSEADA DE MACAÉ E PORTO DE IMBETIBA"
+      },
+      {
+        "number": "1508",
+        "title": "DO CABO FRIO À PONTA NEGRA"
+      },
+      {
+        "number": "1511",
+        "title": "BARRA DO RIO DE JANEIRO"
+      },
+      {
+        "number": "1512",
+        "title": "PORTO DO RIO DE JANEIRO"
+      },
+      {
+        "number": "1513",
+        "title": "TERMINAIS DA BAÍA DE GUANABARA"
+      },
+      {
+        "number": "1515",
+        "title": "BAÍA DE GUANABARA - ILHA DO MOCANGUÊ E PROXIMIDADES"
+      },
+      {
+        "number": "1550",
+        "title": "BACIA DE CAMPOS"
+      },
+      {
+        "number": "1620",
+        "title": "DO PONTAL DE SERNAMBETIBA À ILHA GRANDE"
+      },
+      {
+        "number": "1623",
+        "title": "PORTO DE ITAGUAÍ"
+      },
+      {
+        "number": "1624",
+        "title": "TERMINAL MARÍTIMO DA ILHA GUAÍBA"
+      },
+      {
+        "number": "1625",
+        "title": "ENSEADAS DA ILHA GRANDE"
+      },
+      {
+        "number": "1631",
+        "title": "BAÍA DA ILHA GRANDE - PARTE CENTRAL"
+      },
+      {
+        "number": "1632",
+        "title": "BAÍA DA ILHA GRANDE - PARTE CENTRO NORTE"
+      },
+      {
+        "number": "1633",
+        "title": "BAÍA DA ILHA GRANDE - PARTE OESTE"
+      },
+      {
+        "number": "1634",
+        "title": "DA PONTA DE JUATINGA À ILHA DAS COUVES"
+      },
+      {
+        "number": "1636",
+        "title": "PORTO DE ANGRA DOS REIS E PROXIMIDADES"
+      },
+      {
+        "number": "1637",
+        "title": "BAÍA DA RIBEIRA"
+      },
+      {
+        "number": "23000",
+        "title": "DO CABO DE SÃO TOMÉ AO RIO DE JANEIRO"
+      },
+      {
+        "number": "23100",
+        "title": "DO RIO DE JANEIRO À SANTOS"
+      }
+    ],
+    "SP": [
+      {
+        "number": "1634",
+        "title": "DA PONTA DE JUATINGA À ILHA DAS COUVES"
+      },
+      {
+        "number": "1635",
+        "title": "DA ILHA DAS COUVES A ILHA DO MAR VIRADO"
+      },
+      {
+        "number": "1640",
+        "title": "PROXIMIDADES DO PORTO DE SÃO SEBASTIÃO"
+      },
+      {
+        "number": "1643",
+        "title": "CANAL DE SÃO SEBASTIÃO (PARTE NORTE)"
+      },
+      {
+        "number": "1644",
+        "title": "CANAL DE SÃO SEBASTIÃO (PARTE SUL)"
+      },
+      {
+        "number": "1703",
+        "title": "PORTO DE CANANÉIA"
+      },
+      {
+        "number": "1711",
+        "title": "PROXIMIDADES DO PORTO DE SANTOS"
+      },
+      {
+        "number": "1712",
+        "title": "PORTO DE SANTOS (PARTE NORTE)"
+      },
+      {
+        "number": "1713",
+        "title": "PORTO DE SANTOS (PARTE SUL)"
+      },
+      {
+        "number": "23100",
+        "title": "DO RIO DE JANEIRO À SANTOS"
+      },
+      {
+        "number": "23200",
+        "title": "DE SANTOS A PARANAGUÁ"
+      }
+    ],
+    "TRANSICAO_PR": [
+      {
+        "number": "1803",
+        "title": "BAÍA DE GUARATUBA"
+      },
+      {
+        "number": "1820",
+        "title": "PROXIMIDADES DA BARRA DE PARANAGUÁ"
+      },
+      {
+        "number": "1821",
+        "title": "BARRA DE PARANAGUÁ"
+      },
+      {
+        "number": "1822",
+        "title": "PORTOS DE PARANAGUÁ E ANTONINA"
+      },
+      {
+        "number": "23200",
+        "title": "DE SANTOS A PARANAGUÁ"
+      },
+      {
+        "number": "23300",
+        "title": "DE PARANAGUÁ A IMBITUBA"
+      }
+    ],
+    "SC": [
+      {
+        "number": "1830",
+        "title": "PROXIMIDADES DO PORTO DE SÃO FRANCISCO DO SUL"
+      },
+      {
+        "number": "1831",
+        "title": "PORTO DE SÃO FRANCISCO DO SUL"
+      },
+      {
+        "number": "1841",
+        "title": "PORTO DE ITAJAÍ"
+      },
+      {
+        "number": "1901",
+        "title": "PORTO DE LAGUNA"
+      },
+      {
+        "number": "1902",
+        "title": "PROXIMIDADES DA ILHA DE SANTA CATARINA"
+      },
+      {
+        "number": "1910",
+        "title": "DA ILHA DE CORAL AO CABO DE SANTA MARTA GRANDE"
+      },
+      {
+        "number": "1921",
+        "title": "PORTO DE IMBITUBA"
+      },
+      {
+        "number": "23300",
+        "title": "DE PARANAGUÁ A IMBITUBA"
+      },
+      {
+        "number": "23400",
+        "title": "DE IMBITUBA A PINHAL"
+      }
+    ],
+    "RS": [
+      {
+        "number": "2010",
+        "title": "PROXIMIDADES DE TRAMANDAÍ"
+      },
+      {
+        "number": "2011",
+        "title": "TRAMANDAÍ"
+      },
+      {
+        "number": "2101",
+        "title": "PORTO DO RIO GRANDE"
+      },
+      {
+        "number": "2110",
+        "title": "PROXIMIDADES DO PORTO DE RIO GRANDE"
+      },
+      {
+        "number": "23400",
+        "title": "DE IMBITUBA A PINHAL"
+      },
+      {
+        "number": "23500",
+        "title": "DE PINHAL AO RIO GRANDE"
+      },
+      {
+        "number": "23600",
+        "title": "DO RIO GRANDE AO ARROIO CHUÍ"
+      }
+    ],
+    "GERAIS": [
+      {
+        "number": "21070",
+        "title": "DO CABO FRIO AO CABO DE SANTA MARTA GRANDE"
+      },
+      {
+        "number": "21080",
+        "title": "DO CABO DE SANTA MARTA GRANDE AO ARROIO CHUÍ"
+      }
+    ]
+  }
+}

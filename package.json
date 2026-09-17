@@ -1,6 +1,6 @@
 {
   "name": "painel-de-bordo-supabase-vercel",
-  "version": "56.0.0",
+  "version": "58.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0 <23"
@@ -12,7 +12,10 @@
     "start": "next start",
     "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "charts:download": "node tools/cartas-marinha/01_baixar_cartas.mjs",
+    "charts:extract": "python tools/cartas-marinha/02_extrair_kap.py",
+    "charts:convert": "python tools/cartas-marinha/03_converter_kap_para_xyz.py"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

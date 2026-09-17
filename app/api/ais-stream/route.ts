@@ -4,7 +4,7 @@ import { getPanelUser } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const AIS_URL = "wss://stream.aisstream.io/v0/stream";
 const MESSAGE_TYPES = [
@@ -41,7 +41,7 @@ function normalizeBBox(value: unknown): BoundingBox | null {
   east = Math.max(-180, Math.min(180, east));
   if (north < south) [north, south] = [south, north];
   if (east < west) [east, west] = [west, east];
-  const maxSpan = 6;
+  const maxSpan = 12;
   const centerLat = (north + south) / 2;
   const centerLon = (east + west) / 2;
   if (north - south > maxSpan) {
@@ -121,6 +121,9 @@ export async function GET() {
     let currentBBox: BoundingBox | null = null;
     let lastSubscriptionAt = 0;
     let closed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
+    let forwardedPositions = 0;
 
     send(client, { type: "proxy-ready", configured: Boolean(apiKey), provider: "AISStream.io" });
 
@@ -146,6 +149,17 @@ export async function GET() {
       }, delay);
     };
 
+    const scheduleReconnect = () => {
+      if (closed || !apiKey || !currentBBox || reconnectTimer) return;
+      const attempt = Math.min(6, reconnectAttempts++);
+      const delay = Math.min(15000, 900 * 2 ** attempt);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectUpstream();
+      }, delay);
+      send(client, { type: "source-status", status: "connecting", message: `Reconectando fonte AIS em ${Math.ceil(delay / 1000)}s...` });
+    };
+
     const connectUpstream = () => {
       if (!apiKey) {
         send(client, { type: "config-error", message: "AISSTREAM_API_KEY não configurada na Vercel." });
@@ -158,6 +172,7 @@ export async function GET() {
       send(client, { type: "source-status", status: "connecting" });
       upstream = new WebSocket(AIS_URL, { perMessageDeflate: true });
       upstream.on("open", () => {
+        reconnectAttempts = 0;
         send(client, { type: "source-status", status: "connected" });
         pushSubscription();
       });
@@ -169,14 +184,23 @@ export async function GET() {
           return;
         }
         const clean = sanitizeAisEvent(event);
-        if (clean) send(client, clean);
+        if (clean) {
+          if (clean.type === "vessel") forwardedPositions += 1;
+          send(client, clean);
+          if (forwardedPositions > 0 && forwardedPositions % 25 === 0) {
+            send(client, { type: "proxy-stats", forwardedPositions, at: Date.now() });
+          }
+        }
       });
       upstream.on("error", (error) => {
         send(client, { type: "source-status", status: "error", message: error instanceof Error ? error.message : "Falha no AISStream." });
       });
       upstream.on("close", () => {
         upstream = null;
-        if (!closed) send(client, { type: "source-status", status: "disconnected" });
+        if (!closed) {
+          send(client, { type: "source-status", status: "disconnected" });
+          scheduleReconnect();
+        }
       });
     };
 
@@ -201,6 +225,8 @@ export async function GET() {
 
     const close = () => {
       closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
       closeUpstream();
     };
     client.on("close", close);
