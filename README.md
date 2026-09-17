@@ -86,3 +86,17 @@ Esta versão cria um banco Supabase novo. Dados antigos do D1 não são migrados
 - Botão Google no padrão visual branco com logotipo multicolorido.
 - Favicon atualizado com o arquivo fornecido.
 - PWA com service worker atualizado e convite automático de instalação quando o navegador liberar o evento de instalação. Por segurança do navegador, a confirmação final de instalação sempre depende de um clique do usuário.
+
+## v50 — Importador JSON
+
+A tela **Configurações** agora inclui um importador de backup JSON para migrar dados do painel antigo para a conta autenticada no Supabase. O importador:
+
+- analisa o arquivo antes de gravar;
+- remapeia IDs antigos de embarcações, espécies, viagens e largadas;
+- importa embarcações, espécies, viagens, largadas e capturas;
+- aceita aliases em português (`embarcacoes`, `especies`, `viagens`, `largadas`, `capturas`);
+- cria automaticamente uma captura principal quando uma largada possui `total`/`capturaKg` mas não existe uma captura detalhada no JSON;
+- reutiliza registros reconhecidos para reduzir duplicações;
+- sempre associa os dados à conta Supabase atualmente logada.
+
+O endpoint é `POST /api/import-backup` com `mode: "preview"` ou `mode: "import"`.

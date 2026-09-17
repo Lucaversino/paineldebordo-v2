@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
+import BackupImporter from "./BackupImporter";
 const localDateTime = (value?: string | null) => {
   if (!value) return "";
   const date = new Date(value);
@@ -717,6 +718,7 @@ export default function Operations({ view, onDashboard }: Props) {
           >
             Salvar configurações
           </button>
+          <BackupImporter onImported={load} />
         </div>
       )}
       {!Object.keys(titles).includes(view) && (

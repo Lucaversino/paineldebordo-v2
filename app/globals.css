@@ -1303,3 +1303,137 @@ main.loginpage{
 .pwa-toast-close svg{width:16px;height:16px}
 @keyframes pwaToastIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 @media(max-width:560px){.pwa-install-toast{left:14px;right:14px;bottom:14px;width:auto}}
+
+/* v50 — importador de backup JSON */
+.backup-importer {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.backup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.backup-head h3 {
+  margin: 3px 0 7px;
+  font-size: 20px;
+}
+.backup-head p,
+.backup-note {
+  color: var(--sub);
+  line-height: 1.55;
+}
+.backup-head small {
+  color: #29d2a5;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.backup-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #09252b;
+  background: #27d1a4;
+}
+.backup-icon svg { width: 24px; height: 24px; }
+.backup-security {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 18px 0;
+  padding: 13px 14px;
+  border: 1px solid #24534e;
+  border-radius: 10px;
+  background: rgba(30, 133, 110, .09);
+  color: var(--sub);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.backup-security svg { width: 20px; flex: 0 0 20px; color: #29d2a5; }
+.backup-file { display: none; }
+.backup-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.settings .backup-actions button,
+.settings .backup-import {
+  min-height: 46px;
+  margin-top: 0;
+  justify-content: center;
+  gap: 8px;
+}
+.backup-actions button,
+.backup-import {
+  display: inline-flex;
+  align-items: center;
+}
+.backup-actions svg,
+.backup-import svg,
+.backup-file-name svg { width: 18px; height: 18px; }
+.settings .backup-secondary {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.backup-file-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--sub);
+  overflow-wrap: anywhere;
+}
+.backup-preview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.backup-preview div {
+  padding: 11px 8px;
+  text-align: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line);
+}
+.backup-preview small { display: block; color: var(--sub); font-size: 10px; }
+.backup-preview b { display: block; margin-top: 4px; font-size: 18px; color: #29d2a5; }
+.backup-issues,
+.backup-result {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border-radius: 9px;
+  border: 1px solid #74464b;
+  background: rgba(180, 58, 65, .09);
+  font-size: 13px;
+}
+.backup-result { border-color: #24534e; background: rgba(30, 133, 110, .09); }
+.backup-issues p,
+.backup-result p { margin: 6px 0 0; color: var(--sub); }
+.backup-message { margin: 14px 0 0; color: #ff9b9b; }
+.backup-message.ok { color: #59ddb9; }
+.settings .backup-import {
+  width: 100%;
+  margin-top: 16px;
+  background: #27d1a4;
+  color: #062128;
+  font-weight: 800;
+}
+.settings .backup-import:disabled { opacity: .45; cursor: not-allowed; }
+.backup-note { display: block; margin-top: 10px; font-size: 11px; }
+.spin { animation: backup-spin 1s linear infinite; }
+@keyframes backup-spin { to { transform: rotate(360deg); } }
+@media (max-width: 620px) {
+  .backup-actions { grid-template-columns: 1fr; }
+  .backup-preview { grid-template-columns: repeat(2, 1fr); }
+  .backup-preview div:last-child { grid-column: 1 / -1; }
+}
