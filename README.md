@@ -100,3 +100,8 @@ A tela **Configurações** agora inclui um importador de backup JSON para migrar
 - sempre associa os dados à conta Supabase atualmente logada.
 
 O endpoint é `POST /api/import-backup` com `mode: "preview"` ou `mode: "import"`.
+
+
+## v51 — Direção do vento por extenso
+- O cartão de vento agora mostra Norte, Nordeste, Leste, Sudeste, Sul, Sudoeste, Oeste ou Noroeste.
+- Exibe também o rumo em graus (0–359°) e mantém velocidade, rajadas e horário de atualização.

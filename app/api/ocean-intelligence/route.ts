@@ -79,8 +79,18 @@ function nearestIndex(times: string[], target = Date.now()) {
 }
 function direction(deg: number | null | undefined) {
   if (deg == null || !Number.isFinite(deg)) return null;
-  const pts = ["N","NE","L","SE","S","SO","O","NO"];
-  return pts[Math.round(deg / 45) % 8];
+  const normalized = ((deg % 360) + 360) % 360;
+  const pts = [
+    "Norte",
+    "Nordeste",
+    "Leste",
+    "Sudeste",
+    "Sul",
+    "Sudoeste",
+    "Oeste",
+    "Noroeste",
+  ];
+  return pts[Math.round(normalized / 45) % 8];
 }
 
 async function fetchOpenMeteo(lat: number, lon: number) {

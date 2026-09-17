@@ -16,7 +16,7 @@ export default function OceanIntelligence(){
   {!e?<div className="ocean-empty">Registre uma largada com coordenadas para liberar os dados do ponto de pesca.</div>:<>
    <div className="ocean-grid">
     <article><MoonStar/><small>LUA AGORA</small><b>{e.lunar.name}</b><span>{n(e.lunar.illumination*100,0)}% iluminada</span><i>Nasce {tm(e.lunar.moonrise)} • põe {tm(e.lunar.moonset)}</i></article>
-    <article><Wind/><small>VENTO</small><b>{n(e.wind?.speedKmh)} km/h {e.wind?.direction||""}</b><span>Rajadas {n(e.wind?.gustKmh)} km/h</span><i>Atualização {tm(e.wind?.time)}</i></article>
+    <article><Wind/><small>VENTO</small><b>{n(e.wind?.speedKmh)} km/h</b><span>Direção: {e.wind?.direction||"—"}{e.wind?.directionDeg!=null?` (${n(e.wind.directionDeg,0)}°)`:""}</span><i>Rajadas {n(e.wind?.gustKmh)} km/h • Atualização {tm(e.wind?.time)}</i></article>
     <article><Waves/><small>MAR / ONDA</small><b>{n(e.sea?.waveHeightM)} m</b><span>Período {n(e.sea?.wavePeriodS)} s • swell {n(e.sea?.swellHeightM)} m</span><i>Corrente {n(e.sea?.currentKmh)} km/h</i></article>
     <article><Droplets/><small>MARÉ MODELADA</small><b>{n(e.sea?.seaLevelMslM,2)} m MSL</b><span>{e.sea?.extrema?.[0]?`${e.sea.extrema[0].type==="HIGH"?"Próx. alta":"Próx. baixa"} ${tm(e.sea.extrema[0].time)}`:"Sem extremo próximo"}</span><i>Não usar para navegação</i></article>
     <article><Thermometer/><small>TEMPERATURA DO MAR</small><b>{n(e.sea?.sstC)} °C</b><span>Posição da largada #{e.position.setNumber}</span><i>{n(e.position.lat,4)}, {n(e.position.lon,4)}</i></article>
