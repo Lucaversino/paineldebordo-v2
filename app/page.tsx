@@ -15,6 +15,7 @@ import {
   Settings,
   ShipWheel,
   Waves,
+  Wind,
   X,
   LogOut,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import Operations from "../components/Operations";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
 import OceanIntelligence from "../components/OceanIntelligence";
+import PositionForecast from "../components/PositionForecast";
 const fmt = (n: number, d = 0) =>
   new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: d,
@@ -199,6 +201,7 @@ export default function Home() {
   }
   const nav = [
       [Gauge, "Dashboard"],
+      [Wind, "Ventos e Mar"],
       [Radio, "Viagem atual"],
       [Waves, "Largadas"],
       [Fish, "Capturas"],
@@ -499,6 +502,8 @@ export default function Home() {
               </>
             )}
           </section>
+        ) : view === "Ventos e Mar" ? (
+          <PositionForecast />
         ) : (
           <Operations view={view} onDashboard={() => setView("Dashboard")} />
         )}

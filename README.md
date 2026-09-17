@@ -1,6 +1,6 @@
-# PAINEL DE BORDO — PESCA INDUSTRIAL v43
+# PAINEL DE BORDO — PESCA INDUSTRIAL v53
 
-Versão 47 preparada especificamente para **Vercel + Supabase**, sem Cloudflare D1, Wrangler ou Vinext.
+Versão 53 preparada para **Vercel + Supabase**, com Inteligência Oceânica, Assistente IA e consulta profissional de **Ventos e Mar por posição**.
 ## Correção v48 — PDF + proteção de build na Vercel
 
 Nesta versão foi corrigida a tipagem do `jspdf-autotable` em `lib/tripPdf.ts`, que interrompia o build na linha do resumo por espécie. Também foi adicionada uma proteção no `next.config.ts` para que erros de tipagem residuais da base legada não interrompam o deploy depois que o código já compilou. A checagem completa continua disponível com `npm run typecheck`.
@@ -134,3 +134,18 @@ OPENAI_REASONING_EFFORT = high
 Recomendação de qualidade: `gpt-5.6-sol` + `high`. Para reduzir custo, troque o modelo por `gpt-5.6-terra`.
 
 A cobrança da API OpenAI é separada da assinatura do ChatGPT.
+
+## v53 — Ventos e Mar por posição
+
+Nova aba **Ventos e Mar** no menu lateral. O operador digita latitude e longitude no mesmo formato rápido das largadas e recebe uma leitura simples da posição com:
+
+- vento atual, direção por extenso e rajadas;
+- previsão resumida de até 72 horas;
+- onda, direção, período e swell;
+- temperatura superficial do mar e corrente;
+- nível do mar / maré modelada com próximos picos;
+- clorofila-a via NOAA/VIIRS;
+- mapa ambiental 3×3 ao redor da posição, alternando entre vento e clorofila;
+- botão para usar automaticamente a posição da última largada.
+
+A maré exibida é nível do mar modelado e não substitui fonte oficial de navegação costeira.

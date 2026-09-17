@@ -36,3 +36,10 @@ OPENAI_REASONING_EFFORT=high
 `OPENAI_API_KEY` deve ser do tipo **Secret** e nunca deve receber o prefixo `NEXT_PUBLIC_`.
 
 Depois de salvar, faça um novo **Redeploy**. No dashboard, o selo do assistente deve mudar de **Aguardando API OpenAI** para **GPT-5.6 Sol • high**.
+
+
+## 9. Ventos e Mar por posição — v53
+
+A aba **Ventos e Mar** não exige nova variável de ambiente. Ela usa as fontes públicas já integradas no servidor (Open-Meteo e NOAA CoastWatch).
+
+O operador pode digitar latitude/longitude no formato rápido das largadas ou usar a posição da última largada registrada.
