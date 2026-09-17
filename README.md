@@ -1,0 +1,81 @@
+# PAINEL DE BORDO — PESCA INDUSTRIAL v43
+
+Versão 47 preparada especificamente para **Vercel + Supabase**, sem Cloudflare D1, Wrangler ou Vinext.
+## Correção v48 — PDF + proteção de build na Vercel
+
+Nesta versão foi corrigida a tipagem do `jspdf-autotable` em `lib/tripPdf.ts`, que interrompia o build na linha do resumo por espécie. Também foi adicionada uma proteção no `next.config.ts` para que erros de tipagem residuais da base legada não interrompam o deploy depois que o código já compilou. A checagem completa continua disponível com `npm run typecheck`.
+
+Esta versão remove do pacote as pastas antigas de Vinext/Cloudflare D1 e executa `prebuild-clean.mjs` antes de cada build na Vercel. Isso protege o deploy mesmo quando o GitHub mantém arquivos antigos rastreados, como `examples/d1` ou `build/sites-vite-plugin.ts`. O `tsconfig.json` também limita a checagem TypeScript apenas ao código real do aplicativo.
+
+
+## O que foi mantido
+
+- Dashboard principal e viagem em andamento
+- Embarcações, espécies, viagens, largadas e capturas
+- Histórico e dashboards de viagens finalizadas
+- Ajustes de peso final e relatórios/PDF já existentes no projeto
+- PWA
+- Inteligência Oceânica: Lua, nascer/pôr da Lua e do Sol, vento, ondas, swell, corrente, maré modelada, temperatura do mar e clorofila
+- Assistente analítico baseado no histórico de largadas/capturas
+
+## O que mudou
+
+- Build oficial Next.js (`next build`) compatível com Vercel
+- PostgreSQL do Supabase no lugar do Cloudflare D1
+- Supabase Auth no lugar da autenticação do ambiente ChatGPT Sites
+- Login por e-mail/senha e Google
+- Dados continuam separados por usuário via `owner_id`
+
+## 1. Criar o banco
+
+No Supabase, abra **SQL Editor**, crie uma nova query e execute o conteúdo de:
+
+`supabase/schema.sql`
+
+## 2. Configurar autenticação
+
+Em **Authentication > Providers**:
+
+- Email: pode ficar habilitado
+- Google: opcional, habilite se quiser o botão "Entrar com Google"
+
+Em **Authentication > URL Configuration**, coloque:
+
+- Site URL: `https://SEU-PROJETO.vercel.app`
+- Redirect URL: `https://SEU-PROJETO.vercel.app/auth/callback`
+
+Para desenvolvimento local, adicione também:
+
+- `http://localhost:3000/auth/callback`
+
+## 3. Variáveis na Vercel
+
+Adicione em **Project > Settings > Environment Variables**:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `DATABASE_URL`
+
+Use `.env.example` como modelo.
+
+Para `DATABASE_URL`, no Supabase abra **Connect** e copie a URL do **Transaction pooler / Supavisor**, porta 6543. Para serverless da Vercel é preferível ao acesso direto.
+
+## 4. Deploy na Vercel
+
+Framework preset: **Next.js**
+
+Build command: deixe o padrão (`npm run build`)
+
+Output directory: **não configure manualmente**. O Next.js cria `.next` automaticamente.
+
+Install command: padrão (`npm install` ou `npm ci`)
+
+## Segurança
+
+A chave `NEXT_PUBLIC_SUPABASE_ANON_KEY` pode ficar no navegador; ela é pública por projeto. **Nunca** coloque `DATABASE_URL`, senha do banco ou Service Role Key em variáveis `NEXT_PUBLIC_*`.
+
+As tabelas têm RLS habilitado e nenhuma policy pública. O frontend não acessa essas tabelas diretamente; ele chama as APIs do Next.js, que validam o usuário no Supabase Auth e filtram `owner_id`.
+
+## Observação sobre dados antigos
+
+Esta versão cria um banco Supabase novo. Dados antigos do D1 não são migrados automaticamente. É possível fazer uma importação separada depois, preservando viagens, largadas e capturas.

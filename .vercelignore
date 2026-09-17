@@ -1,0 +1,7 @@
+build/
+examples/
+scripts/
+.sites-runtime/
+tests/
+vendor/
+*.zip
