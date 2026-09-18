@@ -150,13 +150,13 @@ export default function CreditsPage() {
   const equivalent = data.wallet.balance * data.settings.creditUnitPrice;
 
   return <section className="credits-page">
-    <div className="credits-head"><div><small>CARTEIRA AIS</small><h2>Meus créditos</h2><p>Os créditos são usados no AIS. O Painel IA V85 está livre e não desconta créditos.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>
+    <div className="credits-head"><div><small>CARTEIRA AIS</small><h2>Meus créditos</h2><p>Os créditos são usados no AIS. O Painel IA V86 está livre e não desconta créditos.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>
     {paymentStatus === "success" && <div className="credits-payment-status success">Pagamento PIX confirmado. Seus créditos foram atualizados.</div>}
-    <article className="credits-balance"><WalletCards /><div><span>Saldo AIS</span><b>{`${data.wallet.balance} créditos`}</b><em>{data.wallet.isSuperAdmin ? "ADMIN · saldo inicial 80 créditos" : `Equivalente: ${brl(equivalent)}`}</em></div><div className="credits-ai-bonus"><small>PAINEL IA V85</small><b>GRÁTIS</b><span>Uso livre, sem consumir créditos da carteira.</span></div></article>
+    <article className="credits-balance"><WalletCards /><div><span>Saldo AIS</span><b>{`${data.wallet.balance} créditos`}</b><em>{data.wallet.isSuperAdmin ? "ADMIN · saldo inicial 80 créditos" : `Equivalente: ${brl(equivalent)}`}</em></div><div className="credits-ai-bonus"><small>PAINEL IA V86</small><b>GRÁTIS</b><span>Uso livre, sem consumir créditos da carteira.</span></div></article>
     <div className="credits-services">
       <article><b>Consulta AIS</b><span>{`${data.settings.aisSingleCredits} créditos`}</span><small>Localizar um barco</small></article>
       <article><b>Atualizar AIS</b><span>{`${data.settings.aisUpdateCredits} créditos`}</span><small>Nova posição</small></article>
-      <article><b>Painel IA V85</b><span>GRÁTIS</span><small>Perguntas e análises sem desconto de créditos</small></article>
+      <article><b>Painel IA V86</b><span>GRÁTIS</span><small>Perguntas e análises sem desconto de créditos</small></article>
     </div>
 
     {!data.wallet.isSuperAdmin && <><div className="credits-section-heading"><div><h3 className="credits-section-title">Comprar créditos</h3><p>Pagamento somente por PIX. O QR Code e o Pix Copia e Cola aparecem aqui mesmo.</p></div><span><QrCode /> PIX</span></div><div className="credits-packages">{data.packages.map((pack) => <button key={pack.credits} type="button" onClick={() => openPix(pack)}><QrCode /><b>{pack.credits} CRÉDITOS</b><span>{brl(pack.amountBrl)}</span><small>PAGAR COM PIX</small></button>)}</div></>}

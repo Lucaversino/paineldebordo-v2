@@ -327,3 +327,9 @@ O assistente OpenAI agora é global e abre por um botão flutuante no canto infe
 - Configuração de modelos OpenAI e custos estimados por token.
 
 Consulte `SETUP-V76-CREDITOS-MERCADOPAGO.md` antes de publicar.
+
+## V86 — correção do Admin e chat da IA simplificado
+
+A V86 corrige o carregamento infinito da área **Admin — AIS, IA e Créditos** com timeouts, retry e carregamento separado de resumo/usuários. Também remove os quatro atalhos de perguntas do Painel IA, deixando a conversa centralizada na caixa de mensagem.
+
+Veja `FIX-V86-ADMIN-LOADING-IA-CHAT-LIMPO.md`.

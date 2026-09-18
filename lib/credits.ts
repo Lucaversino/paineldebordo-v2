@@ -613,43 +613,23 @@ export async function listAdminCreditUsers(user: PanelUser, search = "", limit =
   const term = search.trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(500, Math.round(limit || 300)));
 
-  try {
-    const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-      select
-        u.id::text as user_id,
-        coalesce(u.email, w.email, '') as email,
-        coalesce(w.balance, 0)::int as balance,
-        coalesce(w.role, 'user') as role,
-        u.created_at::text as created_at
-      from auth.users u
-      left join public.credit_wallets w on w.user_id = u.id::text
-      where ${term === ""} or lower(coalesce(u.email, '')) like ${`%${term}%`}
-      order by u.created_at desc
-      limit ${safeLimit}
-    `), 1));
-    return rows.map((row) => ({
-      userId: String(row.user_id || ""),
-      email: String(row.email || ""),
-      balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
-      role: String(row.role || "user"),
-      createdAt: row.created_at || null,
-    })).filter((row) => row.userId);
-  } catch {
-    const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-      select user_id, coalesce(email, '') as email, balance, role, created_at
-      from public.credit_wallets
-      where ${term === ""} or lower(coalesce(email, '')) like ${`%${term}%`}
-      order by created_at desc
-      limit ${safeLimit}
-    `), 1));
-    return rows.map((row) => ({
-      userId: String(row.user_id || ""),
-      email: String(row.email || ""),
-      balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
-      role: String(row.role || "user"),
-      createdAt: row.created_at || null,
-    })).filter((row) => row.userId);
-  }
+  // V86: usa somente credit_wallets. Todo usuário autenticado ganha carteira em /api/session.
+  // Isso evita consultar auth.users no carregamento do Admin, que podia prender a rota no pooler.
+  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    select user_id, coalesce(email, '') as email, balance, role, created_at
+    from public.credit_wallets
+    where ${term === ""} or lower(coalesce(email, '')) like ${`%${term}%`} or lower(user_id) like ${`%${term}%`}
+    order by created_at desc
+    limit ${safeLimit}
+  `), 1));
+
+  return rows.map((row) => ({
+    userId: String(row.user_id || ""),
+    email: String(row.email || ""),
+    balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
+    role: String(row.role || "user"),
+    createdAt: row.created_at || null,
+  })).filter((row) => row.userId);
 }
 
 export async function grantManualCredits(args: {
@@ -669,31 +649,18 @@ export async function grantManualCredits(args: {
   }
 
   const db = getDb();
-  let email = "";
-  try {
-    const authRows = rowsOf<any>(await retryDb(() => db.execute(sql`
-      select coalesce(email, '') as email from auth.users where id::text = ${targetUserId} limit 1
-    `), 1));
-    email = String(authRows[0]?.email || "");
-  } catch {}
-
   const existing = rowsOf<any>(await retryDb(() => db.execute(sql`
     select user_id, coalesce(email, '') as email, balance, role
     from public.credit_wallets where user_id = ${targetUserId} limit 1
   `), 1));
-  if (!existing.length && !email) throw Object.assign(new Error("Usuário não encontrado."), { status: 404 });
-  if (!email) email = String(existing[0]?.email || "");
+  if (!existing.length) throw Object.assign(new Error("Usuário não encontrado. Peça para o usuário entrar no painel uma vez para criar a carteira."), { status: 404 });
+  const email = String(existing[0]?.email || "");
 
+  // A liberação manual afeta somente o saldo AIS. O Painel IA permanece livre.
   await retryDb(() => db.execute(sql`
-    insert into public.credit_wallets
-      (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
-    values
-      (${targetUserId}, ${email || null}, ${email.trim().toLowerCase() === SUPER_ADMIN_EMAIL ? "super_admin" : "user"}, 0, 0, true, false, false)
-    on conflict (user_id) do update set
-      email = coalesce(excluded.email, public.credit_wallets.email),
-      free_ais_access = false,
-      free_ai_access = false,
-      updated_at = CURRENT_TIMESTAMP::text
+    update public.credit_wallets
+    set free_ais_access = false, free_ai_access = true, updated_at = CURRENT_TIMESTAMP::text
+    where user_id = ${targetUserId}
   `), 1);
 
   const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
@@ -728,39 +695,64 @@ export async function getAdminBillingStats(user: PanelUser) {
   if (!isSuperAdmin(user)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
   await ensureBillingSchema();
   const db = getDb();
-  const pick = async (query: any) => rowsOf<any>(await retryDb(() => db.execute(query), 1))[0] || {};
-  const [wallet, transactions, payments, ais, ai] = await Promise.all([
-    pick(sql`select coalesce(sum(balance),0)::int as balance, coalesce(sum(ai_bonus_brl),0)::float8 as ai_bonus, count(*)::int as users from public.credit_wallets`),
-    pick(sql`select
-      coalesce(sum(case when kind = 'purchase' and delta > 0 then delta else 0 end),0)::int as sold,
-      coalesce(sum(case when kind = 'admin_credit' and delta > 0 then delta else 0 end),0)::int as manual,
-      coalesce(sum(case when delta < 0 then -delta else 0 end),0)::int as used
-      from public.credit_transactions`),
-    pick(sql`select coalesce(sum(amount_brl),0)::float8 as revenue, count(*) filter (where status = 'approved')::int as approved from public.payment_orders where status = 'approved'`),
-    pick(sql`select count(*)::int as queries, count(distinct vessel_name)::int as vessels, coalesce(sum(credits_charged),0)::int as credits, coalesce(sum(provider_calls),0)::int as calls, count(*) filter (where cache_hit)::int as cache, coalesce(sum(estimated_api_cost_brl),0)::float8 as cost from public.ais_usage where status = 'success'`),
-    pick(sql`select count(*)::int as queries,
-      count(*) filter (where request_type = 'basic')::int as basic,
-      count(*) filter (where request_type = 'full')::int as full,
-      count(*) filter (where request_type = 'advanced')::int as advanced,
-      coalesce(sum(credits_charged),0)::int as credits,
-      coalesce(sum(total_tokens),0)::bigint as tokens,
-      coalesce(sum(estimated_api_cost_brl),0)::float8 as cost
-      from public.ai_usage where status = 'success'`),
-  ]);
-  const revenue = asNumber(payments.revenue, 0);
-  const aisCost = asNumber(ais.cost, 0);
-  const aiCost = asNumber(ai.cost, 0);
+
+  // V86: um único round-trip ao Postgres. A V85 fazia cinco consultas simultâneas,
+  // o que aumentava a chance de travar no Supabase Transaction Pooler.
+  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    select
+      (select coalesce(sum(balance),0)::int from public.credit_wallets) as wallet_balance,
+      (select coalesce(sum(ai_bonus_brl),0)::float8 from public.credit_wallets) as ai_bonus,
+      (select count(*)::int from public.credit_wallets) as wallet_users,
+      (select coalesce(sum(case when kind = 'purchase' and delta > 0 then delta else 0 end),0)::int from public.credit_transactions) as sold,
+      (select coalesce(sum(case when kind = 'admin_credit' and delta > 0 then delta else 0 end),0)::int from public.credit_transactions) as manual,
+      (select coalesce(sum(case when delta < 0 then -delta else 0 end),0)::int from public.credit_transactions) as used,
+      (select coalesce(sum(amount_brl),0)::float8 from public.payment_orders where status = 'approved') as revenue,
+      (select count(*)::int from public.ais_usage where status = 'success') as ais_queries,
+      (select count(distinct vessel_name)::int from public.ais_usage where status = 'success') as ais_vessels,
+      (select coalesce(sum(credits_charged),0)::int from public.ais_usage where status = 'success') as ais_credits,
+      (select coalesce(sum(provider_calls),0)::int from public.ais_usage where status = 'success') as ais_calls,
+      (select count(*) filter (where cache_hit)::int from public.ais_usage where status = 'success') as ais_cache,
+      (select coalesce(sum(estimated_api_cost_brl),0)::float8 from public.ais_usage where status = 'success') as ais_cost,
+      (select count(*)::int from public.ai_usage where status = 'success') as ai_queries,
+      (select count(*) filter (where request_type = 'basic')::int from public.ai_usage where status = 'success') as ai_basic,
+      (select count(*) filter (where request_type = 'full')::int from public.ai_usage where status = 'success') as ai_full,
+      (select count(*) filter (where request_type = 'advanced')::int from public.ai_usage where status = 'success') as ai_advanced,
+      (select coalesce(sum(credits_charged),0)::int from public.ai_usage where status = 'success') as ai_credits,
+      (select coalesce(sum(total_tokens),0)::bigint from public.ai_usage where status = 'success') as ai_tokens,
+      (select coalesce(sum(estimated_api_cost_brl),0)::float8 from public.ai_usage where status = 'success') as ai_cost
+  `), 1));
+
+  const row = rows[0] || {};
+  const revenue = asNumber(row.revenue, 0);
+  const aisCost = asNumber(row.ais_cost, 0);
+  const aiCost = asNumber(row.ai_cost, 0);
   const totalCost = aisCost + aiCost;
+
   return {
-    creditsSold: asNumber(transactions.sold, 0),
-    creditsUsed: asNumber(transactions.used, 0),
-    manualCreditsGranted: asNumber(transactions.manual, 0),
-    creditsInWallets: asNumber(wallet.balance, 0),
-    aiBonusOutstandingBrl: asNumber(wallet.ai_bonus, 0),
-    users: asNumber(wallet.users, 0),
+    creditsSold: asNumber(row.sold, 0),
+    creditsUsed: asNumber(row.used, 0),
+    manualCreditsGranted: asNumber(row.manual, 0),
+    creditsInWallets: asNumber(row.wallet_balance, 0),
+    aiBonusOutstandingBrl: asNumber(row.ai_bonus, 0),
+    users: asNumber(row.wallet_users, 0),
     revenue,
-    ais: { queries: asNumber(ais.queries, 0), vessels: asNumber(ais.vessels, 0), credits: asNumber(ais.credits, 0), providerCalls: asNumber(ais.calls, 0), cacheHits: asNumber(ais.cache, 0), cost: aisCost },
-    ai: { queries: asNumber(ai.queries, 0), basic: asNumber(ai.basic, 0), full: asNumber(ai.full, 0), advanced: asNumber(ai.advanced, 0), credits: asNumber(ai.credits, 0), tokens: asNumber(ai.tokens, 0), cost: aiCost },
+    ais: {
+      queries: asNumber(row.ais_queries, 0),
+      vessels: asNumber(row.ais_vessels, 0),
+      credits: asNumber(row.ais_credits, 0),
+      providerCalls: asNumber(row.ais_calls, 0),
+      cacheHits: asNumber(row.ais_cache, 0),
+      cost: aisCost,
+    },
+    ai: {
+      queries: asNumber(row.ai_queries, 0),
+      basic: asNumber(row.ai_basic, 0),
+      full: asNumber(row.ai_full, 0),
+      advanced: asNumber(row.ai_advanced, 0),
+      credits: asNumber(row.ai_credits, 0),
+      tokens: asNumber(row.ai_tokens, 0),
+      cost: aiCost,
+    },
     totalCost,
     grossResult: revenue - totalCost,
     estimatedMarginPct: revenue > 0 ? ((revenue - totalCost) / revenue) * 100 : null,

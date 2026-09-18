@@ -17,7 +17,7 @@ export async function GET() {
       billing: {
         isSuperAdmin: admin,
         freeAisAccess: false,
-        freeAiAccess: false,
+        freeAiAccess: true,
         balance: wallet.balance,
       },
     });
@@ -30,7 +30,7 @@ export async function GET() {
       billing: {
         isSuperAdmin: admin,
         freeAisAccess: false,
-        freeAiAccess: false,
+        freeAiAccess: true,
         balance: null,
       },
     });

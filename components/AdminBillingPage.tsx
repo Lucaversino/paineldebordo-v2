@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, LoaderCircle, PlusCircle, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
+import { Activity, CheckCircle2, LoaderCircle, PlusCircle, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 function brl(value: number) {
@@ -11,6 +11,9 @@ function brl(value: number) {
 export default function AdminBillingPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState("");
   const [health, setHealth] = useState<any>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [error, setError] = useState("");
@@ -22,21 +25,66 @@ export default function AdminBillingPage() {
   const [creditNotes, setCreditNotes] = useState<Record<string, string>>({});
 
   const adminFetch = async (url: string, init: RequestInit = {}) => {
+    const makeRequest = async (token?: string | null) => {
+      const headers = new Headers(init.headers || {});
+      if (token) headers.set("authorization", `Bearer ${token}`);
+      const isWrite = String(init.method || "GET").toUpperCase() !== "GET";
+      return fetch(url, {
+        ...init,
+        headers,
+        credentials: "include",
+        cache: "no-store",
+        signal: init.signal || AbortSignal.timeout(isWrite ? 25_000 : 15_000),
+      });
+    };
+
     const { data: sessionData } = await supabase.auth.getSession();
-    const headers = new Headers(init.headers || {});
-    const token = sessionData.session?.access_token;
-    if (token) headers.set("authorization", `Bearer ${token}`);
-    return fetch(url, { ...init, headers, credentials: "include", cache: "no-store" });
+    let response = await makeRequest(sessionData.session?.access_token || null);
+    if (response.status !== 401) return response;
+
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    const token = refreshed.session?.access_token;
+    if (!token) return response;
+    return makeRequest(token);
+  };
+
+  const loadUsers = async () => {
+    setUsersLoading(true);
+    setUsersError("");
+    try {
+      const response = await adminFetch("/api/billing/admin?section=users");
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Não foi possível carregar os usuários.");
+      setData((current: any) => ({ ...(current || {}), users: Array.isArray(result.users) ? result.users : [] }));
+    } catch (cause) {
+      const message = cause instanceof DOMException && cause.name === "TimeoutError"
+        ? "A lista de usuários demorou demais para responder. Use Atualizar usuários para tentar novamente."
+        : cause instanceof Error ? cause.message : "Falha ao carregar os usuários.";
+      setUsersError(message);
+    } finally {
+      setUsersLoading(false);
+    }
   };
 
   const load = async () => {
-    const response = await adminFetch("/api/billing/admin");
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(result?.error || "Acesso administrativo indisponível.");
-      return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await adminFetch("/api/billing/admin?section=overview");
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Acesso administrativo indisponível.");
+      setData({ settings: result.settings, stats: result.stats, users: [] });
+      void loadUsers();
+    } catch (cause) {
+      const message = cause instanceof DOMException && cause.name === "TimeoutError"
+        ? "O painel administrativo demorou mais de 15 segundos para responder. A conexão com o banco/API foi interrompida para não ficar carregando infinito."
+        : cause instanceof Error ? cause.message : "Falha ao carregar o painel administrativo.";
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-    setData(result);
   };
 
   useEffect(() => { void load(); }, []);
@@ -67,19 +115,22 @@ export default function AdminBillingPage() {
     const fd = new FormData(event.currentTarget);
     const settings: Record<string, string> = {};
     fd.forEach((value, key) => settings[key] = String(value));
-    const response = await adminFetch("/api/billing/admin", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ settings }),
-    });
-    const result = await response.json().catch(() => ({}));
-    setSaving(false);
-    if (!response.ok) {
-      setError(result?.error || "Não foi possível salvar.");
-      return;
+    try {
+      const response = await adminFetch("/api/billing/admin", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ settings }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Não foi possível salvar.");
+      setData((current: any) => ({ ...(current || {}), settings: result.settings, stats: result.stats || current?.stats }));
+      setSuccess("Configurações salvas.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Falha ao salvar as configurações.");
+    } finally {
+      setSaving(false);
     }
-    setData(result);
-    setSuccess("Configurações salvas.");
   }
 
   async function grantCredits(user: any, quickAmount?: number) {
@@ -102,7 +153,11 @@ export default function AdminBillingPage() {
         setError(result?.error || "Não foi possível adicionar os créditos.");
         return;
       }
-      setData((current: any) => ({ ...current, stats: result.stats, users: result.users }));
+      setData((current: any) => ({
+        ...current,
+        stats: result.stats || current?.stats,
+        users: (current?.users || []).map((item: any) => item.userId === user.userId ? { ...item, balance: result.balance } : item),
+      }));
       setCreditAmounts((current) => ({ ...current, [user.userId]: "" }));
       setCreditNotes((current) => ({ ...current, [user.userId]: "" }));
       setSuccess(`+${amount} créditos adicionados para ${user.email || "o usuário"}. Saldo atual: ${result.balance}.`);
@@ -113,8 +168,15 @@ export default function AdminBillingPage() {
     }
   }
 
+  if (!data && loading) {
+    return <section className="admin-billing-page"><div className="credits-loading"><LoaderCircle className="spin" /> Carregando administração...</div></section>;
+  }
+
   if (!data) {
-    return <section className="admin-billing-page"><div className="credits-loading"><LoaderCircle className="spin" /> Carregando administração...</div>{error && <div className="credits-error">{error}</div>}</section>;
+    return <section className="admin-billing-page">
+      <div className="credits-error">{error || "Não foi possível carregar a administração."}</div>
+      <button type="button" className="primary" onClick={() => void load()}><RefreshCw /> Tentar novamente</button>
+    </section>;
   }
 
   const s = data.settings;
@@ -132,7 +194,7 @@ export default function AdminBillingPage() {
     {error && <div className="credits-error">{error}</div>}
 
     <div className="admin-service-stats">
-      <article><h3>Diagnóstico das APIs</h3><p>Teste a conexão real da Data Docked, OpenAI e banco. O Painel IA V85 é gratuito para os usuários.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin" /> : <Activity />} Testar APIs agora</button></article>
+      <article><h3>Diagnóstico das APIs</h3><p>Teste a conexão real da Data Docked, OpenAI e banco. O Painel IA V86 é gratuito para os usuários.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin" /> : <Activity />} Testar APIs agora</button></article>
       {health && <><article><h3>Data Docked</h3><p>Status: <b>{health.datadocked?.ok ? "ONLINE" : "ERRO"}</b></p><p>Créditos do provedor: <b>{health.datadocked?.ok ? health.datadocked.credits : "—"}</b></p>{!health.datadocked?.ok && <p>{health.datadocked?.error}</p>}</article><article><h3>OpenAI</h3><p>Status: <b>{health.openai?.ok ? "CHAVE/MODELO OK" : "ERRO"}</b></p><p>Modelo: <b>{health.openai?.model || "—"}</b></p>{!health.openai?.ok && <p>{health.openai?.error}</p>}</article><article><h3>Banco</h3><p>Status: <b>{health.database?.ok ? "ONLINE" : "ERRO"}</b></p>{!health.database?.ok && <p>{health.database?.error}</p>}</article></>}
     </div>
 
@@ -141,7 +203,7 @@ export default function AdminBillingPage() {
       <article><small>Créditos manuais</small><b>{x.manualCreditsGranted || 0}</b></article>
       <article><small>Créditos utilizados</small><b>{x.creditsUsed}</b></article>
       <article><small>Nas carteiras</small><b>{x.creditsInWallets}</b></article>
-      <article><small>Painel IA V85</small><b>GRÁTIS</b></article>
+      <article><small>Painel IA V86</small><b>GRÁTIS</b></article>
       <article><small>Receita confirmada</small><b>{brl(x.revenue)}</b></article>
       <article><small>Custo AIS estimado</small><b>{brl(x.ais.cost)}</b></article>
       <article><small>Custo OpenAI estimado</small><b>{brl(x.ai.cost)}</b></article>
@@ -154,10 +216,11 @@ export default function AdminBillingPage() {
     <div className="admin-service-stats"><article><h3>AIS</h3><p>Consultas: <b>{x.ais.queries}</b></p><p>Barcos pesquisados: <b>{x.ais.vessels}</b></p><p>Créditos: <b>{x.ais.credits}</b></p><p>Chamadas API: <b>{x.ais.providerCalls}</b></p><p>Cache: <b>{x.ais.cacheHits}</b></p></article><article><h3>IA — GRÁTIS</h3><p>Solicitações: <b>{x.ai.queries}</b></p><p>Perguntas simples: <b>{x.ai.basic}</b></p><p>Análises completas: <b>{x.ai.full}</b></p><p>Análises avançadas: <b>{x.ai.advanced}</b></p><p>Créditos cobrados: <b>0</b></p><p>Tokens: <b>{x.ai.tokens}</b></p><p>Custo estimado da API: <b>{brl(x.ai.cost)}</b></p></article></div>
 
     <section className="admin-credit-manager">
-      <div className="admin-credit-manager-head"><div><small>GESTÃO MANUAL</small><h3>Créditos dos usuários</h3><p>Escolha um usuário e adicione créditos diretamente na carteira.</p></div><WalletCards /></div>
+      <div className="admin-credit-manager-head"><div><small>GESTÃO MANUAL</small><h3>Créditos dos usuários</h3><p>Escolha um usuário e adicione créditos diretamente na carteira.</p></div><div className="admin-credit-manager-actions"><button type="button" onClick={() => void loadUsers()} disabled={usersLoading}>{usersLoading ? <LoaderCircle className="spin" /> : <RefreshCw />} Atualizar usuários</button><WalletCards /></div></div>
+      {usersError && <div className="credits-error">{usersError}</div>}
       <label className="admin-user-search"><Search /><input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Buscar por e-mail ou ID do usuário" /></label>
       <div className="admin-user-credit-list">
-        {users.length ? users.map((user: any) => <article key={user.userId} className="admin-user-credit-card">
+        {usersLoading && !users.length ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando usuários...</div> : users.length ? users.map((user: any) => <article key={user.userId} className="admin-user-credit-card">
           <div className="admin-user-identity"><div className="admin-user-avatar"><UserRound /></div><div><b>{user.email || "Sem e-mail"}</b><small>{user.role === "super_admin" ? "ADMINISTRADOR" : "USUÁRIO"} · {user.userId}</small></div><strong>{user.balance} créditos</strong></div>
           <div className="admin-credit-quick"><span>Rápido:</span>{[10, 20, 50, 100].map((value) => <button key={value} type="button" disabled={creditBusy === user.userId} onClick={() => void grantCredits(user, value)}>+{value}</button>)}</div>
           <div className="admin-credit-form-row"><input type="number" min="1" max="100000" step="1" value={creditAmounts[user.userId] || ""} onChange={(e) => setCreditAmounts((current) => ({ ...current, [user.userId]: e.target.value }))} placeholder="Quantidade de créditos" /><input value={creditNotes[user.userId] || ""} onChange={(e) => setCreditNotes((current) => ({ ...current, [user.userId]: e.target.value }))} maxLength={160} placeholder="Observação (opcional)" /><button type="button" className="primary" disabled={creditBusy === user.userId} onClick={() => void grantCredits(user)}>{creditBusy === user.userId ? <LoaderCircle className="spin" /> : <PlusCircle />} Adicionar</button></div>
@@ -166,7 +229,7 @@ export default function AdminBillingPage() {
     </section>
 
     <form className="admin-settings-form" onSubmit={submit}>
-      <h3>Configurações administrativas <small>• Painel IA V85 = GRÁTIS</small></h3>
+      <h3>Configurações administrativas <small>• Painel IA V86 = GRÁTIS</small></h3>
       <div className="admin-settings-grid">
         <label>Valor de 1 crédito (R$)<input name="CREDIT_UNIT_PRICE" type="number" min="0.01" step="0.01" defaultValue={s.CREDIT_UNIT_PRICE}/></label>
         <label>Consulta AIS (créditos)<input name="AIS_SINGLE_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_SINGLE_QUERY_CREDITS}/></label>

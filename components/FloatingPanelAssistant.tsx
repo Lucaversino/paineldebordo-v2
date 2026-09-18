@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BrainCircuit, LoaderCircle, MessageSquareText, Minimize2, RefreshCw, Send, Sparkles, X } from "lucide-react";
+import { BrainCircuit, LoaderCircle, Minimize2, RefreshCw, Send, Sparkles, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 type AssistantStatus = {
@@ -14,13 +14,6 @@ type AssistantStatus = {
 type ChatMessage = { role: "user" | "assistant"; content: string; model?: string };
 type AiMode = "basic" | "full" | "advanced";
 
-const quickPrompts: Array<{ label: string; prompt: string; mode: AiMode }> = [
-  { label: "Analisar viagem", mode: "full", prompt: "Faça uma análise profunda da viagem atual e diga o que mais chama atenção." },
-  { label: "Comparar viagens", mode: "full", prompt: "Compare a viagem atual com as viagens finalizadas e encontre diferenças de rendimento." },
-  { label: "Melhores condições", mode: "advanced", prompt: "Quais horários e profundidades tiveram melhor rendimento nas minhas largadas? Cruze também as condições ambientais disponíveis." },
-  { label: "Próxima largada", mode: "advanced", prompt: "Cruze lua, vento, mar, temperatura e clorofila com meu histórico e diga o que observar na próxima largada." },
-];
-
 function modelLabel(model?: string) {
   if (!model) return "OpenAI";
   if (model === "gpt-5.6-sol" || model === "gpt-5.6") return "GPT-5.6 Sol";
@@ -32,7 +25,7 @@ function modelLabel(model?: string) {
 function restoreMessages(): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
-    const saved = window.sessionStorage.getItem("painel-ia-chat-v85") || window.sessionStorage.getItem("painel-ia-chat-v76") || window.sessionStorage.getItem("painel-ia-chat-v73") || window.sessionStorage.getItem("painel-ia-chat-v72");
+    const saved = window.sessionStorage.getItem("painel-ia-chat-v86") || window.sessionStorage.getItem("painel-ia-chat-v85") || window.sessionStorage.getItem("painel-ia-chat-v76") || window.sessionStorage.getItem("painel-ia-chat-v73") || window.sessionStorage.getItem("painel-ia-chat-v72");
     const parsed = saved ? JSON.parse(saved) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed.slice(-18).filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").map((item) => ({ role: item.role, content: item.content, model: item.model }));
@@ -91,7 +84,7 @@ export default function FloatingPanelAssistant() {
   };
 
   useEffect(() => { if (open && !assistant) void loadStatus(); }, [open, assistant]);
-  useEffect(() => { try { window.sessionStorage.setItem("painel-ia-chat-v85", JSON.stringify(messages.slice(-18))); } catch {} }, [messages]);
+  useEffect(() => { try { window.sessionStorage.setItem("painel-ia-chat-v86", JSON.stringify(messages.slice(-18))); } catch {} }, [messages]);
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ block: "end" });
@@ -136,7 +129,7 @@ export default function FloatingPanelAssistant() {
     } finally { setAsking(false); }
   };
 
-  const clearConversation = () => { setMessages([]); setQuestion(""); setError(""); try { ["painel-ia-chat-v85","painel-ia-chat-v76","painel-ia-chat-v73","painel-ia-chat-v72"].forEach((k) => sessionStorage.removeItem(k)); } catch {} };
+  const clearConversation = () => { setMessages([]); setQuestion(""); setError(""); try { ["painel-ia-chat-v86","painel-ia-chat-v85","painel-ia-chat-v76","painel-ia-chat-v73","painel-ia-chat-v72"].forEach((k) => sessionStorage.removeItem(k)); } catch {} };
 
   return <div className={open ? "floating-ai open" : "floating-ai"}>
     {open && <section className="floating-ai-panel" aria-label="Assistente do Painel de Bordo">
@@ -146,9 +139,8 @@ export default function FloatingPanelAssistant() {
       </header>
       <div className="floating-ai-creditbar"><span>PAINEL IA</span><b>GRÁTIS — SEM CRÉDITOS</b><em>USO LIVRE</em></div>
       <div className="floating-ai-context"><BrainCircuit /><span>Versão de análise da V52: cruza viagens, largadas, capturas e condições oceânicas disponíveis no painel.</span></div>
-      <div className="floating-ai-quick">{quickPrompts.map((item, index) => <button key={item.label} type="button" onClick={() => void ask(item.prompt, item.mode)} disabled={asking || assistant?.configured === false}>{index === 0 ? <BrainCircuit /> : <MessageSquareText />}<span>{item.label}<small>GRÁTIS</small></span></button>)}</div>
       <div className="floating-ai-chat" aria-live="polite">
-        {messages.length === 0 ? <div className="floating-ai-welcome"><Sparkles /><div><b>Pronto para analisar o histórico do barco.</b><span>Faça uma pergunta ou use uma das análises rápidas. O Painel IA está livre e não desconta créditos.</span></div></div> : messages.map((message, index) => <article className={`floating-ai-message ${message.role}`} key={`${message.role}-${index}`}><small>{message.role === "user" ? "VOCÊ" : modelLabel(message.model || assistant?.model)}</small><div>{message.content}</div></article>)}
+        {messages.length === 0 ? <div className="floating-ai-welcome"><Sparkles /><div><b>Pronto para analisar o histórico do barco.</b><span>Digite sua pergunta na caixa de mensagem abaixo. O Painel IA está livre e não desconta créditos.</span></div></div> : messages.map((message, index) => <article className={`floating-ai-message ${message.role}`} key={`${message.role}-${index}`}><small>{message.role === "user" ? "VOCÊ" : modelLabel(message.model || assistant?.model)}</small><div>{message.content}</div></article>)}
         {asking && <article className="floating-ai-message assistant thinking"><small>{modelLabel(assistant?.model)}</small><div><LoaderCircle className="spin" /> Analisando viagens, largadas e condições oceânicas…</div></article>}
         <div ref={endRef} />
       </div>
