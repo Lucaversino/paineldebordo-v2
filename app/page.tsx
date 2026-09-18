@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   X,
   LogOut,
+  Globe2,
 } from "lucide-react";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
@@ -32,6 +33,7 @@ const Operations = dynamic(() => import("../components/Operations"), { ssr: fals
 const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"), { ssr: false });
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
 const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
+const MarineTrafficPage = dynamic(() => import("../components/MarineTrafficPage"), { ssr: false, loading: ModuleLoading });
 const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
 const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
 const AdminBillingPage = dynamic(() => import("../components/AdminBillingPage"), { ssr: false, loading: ModuleLoading });
@@ -233,6 +235,7 @@ export default function Home() {
       [Gauge, "Dashboard"],
       [Wind, "Ventos e Mar"],
       [Ship, "AIS"],
+      [Globe2, "MarineTraffic"],
       [WalletCards, "Meus créditos"],
       [Radio, "Viagem atual"],
       [Waves, "Largadas"],
@@ -527,6 +530,8 @@ export default function Home() {
             defaultLat={Number(data.sets?.at(-1)?.endLatitude ?? data.sets?.at(-1)?.startLatitude ?? -27.15)}
             defaultLon={Number(data.sets?.at(-1)?.endLongitude ?? data.sets?.at(-1)?.startLongitude ?? -48.55)}
           />
+        ) : view === "MarineTraffic" ? (
+          <MarineTrafficPage />
         ) : view === "Meus créditos" ? (
           <CreditsPage />
         ) : view === "Admin — AIS, IA e Créditos" ? (

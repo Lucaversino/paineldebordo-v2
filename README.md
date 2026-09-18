@@ -1,3 +1,7 @@
+## V96 — MarineTraffic no Painel
+
+Nova aba **MarineTraffic** no menu lateral com o mapa do MarineTraffic incorporado por iframe, botão de recarregar e abertura externa de segurança. Nenhuma função do AIS próprio ou sistema de créditos foi alterada. Consulte `FIX-V96-MARINETRAFFIC-IFRAME.md`.
+
 ## V93 — camada AIS automática no mapa
 
 O mapa AIS agora carrega embarcações reais automaticamente sem consumir créditos do usuário. A fonte principal é **AISStream** e o fallback é **VesselAPI Free**. A pesquisa manual existente continua separada e mantém a cobrança configurada. As chaves permanecem somente no backend e a nova rota usa cache por região para reduzir chamadas externas.
