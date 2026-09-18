@@ -111,7 +111,8 @@ export async function GET(request: NextRequest) {
 
   try {
     if (action === "credits") {
-      const [wallet, settings] = await Promise.all([ensureWallet(user), getBillingSettings()]);
+      const settings = await getBillingSettings();
+      const wallet = await ensureWallet(user, settings);
       return NextResponse.json({
         configured: Boolean(apiKey),
         credits: wallet.balance,

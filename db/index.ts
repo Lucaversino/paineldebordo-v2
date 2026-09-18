@@ -18,9 +18,10 @@ function getClient() {
   if (!globalThis.__painelSql) {
     globalThis.__painelSql = postgres(connectionString, {
       prepare: false,
-      max: 1,
-      idle_timeout: 20,
-      connect_timeout: 15,
+      max: 3,
+      idle_timeout: 12,
+      connect_timeout: 7,
+      max_lifetime: 600,
     });
   }
   return globalThis.__painelSql;

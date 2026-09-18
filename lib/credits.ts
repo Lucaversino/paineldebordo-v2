@@ -12,6 +12,7 @@ export type BillingSettings = {
   AI_BASIC_QUERY_CREDITS: number;
   AI_FULL_ANALYSIS_CREDITS: number;
   AI_ADVANCED_ANALYSIS_CREDITS: number;
+  AI_WELCOME_BONUS_BRL: number;
   AIS_CACHE_MINUTES: number;
   AIS_PROVIDER_COST_PER_QUERY_BRL: number;
   OPENAI_INPUT_COST_PER_1M: number;
@@ -19,6 +20,17 @@ export type BillingSettings = {
   AI_BASIC_MODEL: string;
   AI_FULL_MODEL: string;
   AI_ADVANCED_MODEL: string;
+};
+
+export type WalletState = {
+  userId: string;
+  email: string;
+  role: string;
+  balance: number;
+  aiBonusBrl: number;
+  freeAisAccess: boolean;
+  freeAiAccess: boolean;
+  isSuperAdmin: boolean;
 };
 
 const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
@@ -29,6 +41,7 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
   AI_BASIC_QUERY_CREDITS: "1",
   AI_FULL_ANALYSIS_CREDITS: "2",
   AI_ADVANCED_ANALYSIS_CREDITS: "3",
+  AI_WELCOME_BONUS_BRL: "2.00",
   AIS_CACHE_MINUTES: "0",
   AIS_PROVIDER_COST_PER_QUERY_BRL: "0",
   OPENAI_INPUT_COST_PER_1M: "0",
@@ -39,9 +52,12 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 };
 
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
+const SETTINGS_CACHE_MS = 60_000;
+const BILLING_SCHEMA_VERSION = "80";
 
 let schemaPromise: Promise<void> | null = null;
 let schemaReady = false;
+let settingsCache: { value: BillingSettings; expiresAt: number } | null = null;
 
 function asNumber(value: unknown, fallback = 0) {
   const n = Number(value);
@@ -54,6 +70,34 @@ function rowsOf<T = any>(result: unknown): T[] {
 
 export function isSuperAdmin(user: Pick<PanelUser, "email">) {
   return Boolean(user.email && user.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL);
+}
+
+function errorText(error: unknown) {
+  const anyError = error as any;
+  return [anyError?.code, anyError?.message, anyError?.cause?.code, anyError?.cause?.message]
+    .filter(Boolean).join(" ").toUpperCase();
+}
+
+function missingBillingTable(error: unknown) {
+  const text = errorText(error);
+  return text.includes("42P01") || text.includes("BILLING_SETTINGS") && text.includes("DOES NOT EXIST");
+}
+
+function transientDbError(error: unknown) {
+  const text = errorText(error);
+  return ["CONNECTION_CLOSED", "ECONNRESET", "ETIMEDOUT", "CONNECTION TERMINATED", "SOCKET"].some((part) => text.includes(part));
+}
+
+async function retryDb<T>(work: () => Promise<T>, retries = 1): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try { return await work(); } catch (error) {
+      lastError = error;
+      if (!transientDbError(error) || attempt >= retries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 async function createBillingSchema() {
@@ -71,6 +115,8 @@ async function createBillingSchema() {
       email text,
       role text not null default 'user',
       balance integer not null default 0,
+      ai_bonus_brl double precision not null default 0,
+      ai_bonus_granted boolean not null default false,
       free_ais_access boolean not null default false,
       free_ai_access boolean not null default false,
       created_at text not null default CURRENT_TIMESTAMP::text,
@@ -150,34 +196,37 @@ async function createBillingSchema() {
       on conflict (key) do nothing
     `);
   }
+  await db.execute(sql`
+    insert into public.billing_settings (key, value)
+    values ('BILLING_SCHEMA_VERSION', ${BILLING_SCHEMA_VERSION})
+    on conflict (key) do update set value = excluded.value, updated_at = CURRENT_TIMESTAMP::text
+  `);
 }
 
-function errorText(error: unknown) {
-  const anyError = error as any;
-  return [anyError?.code, anyError?.message, anyError?.cause?.code, anyError?.cause?.message]
-    .filter(Boolean).join(" ").toUpperCase();
-}
+async function migrateBillingSchemaIfNeeded() {
+  const db = getDb();
+  const versionRows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    select value from public.billing_settings where key = 'BILLING_SCHEMA_VERSION' limit 1
+  `), 1));
+  if (String(versionRows[0]?.value || "") === BILLING_SCHEMA_VERSION) return;
 
-function missingBillingTable(error: unknown) {
-  const text = errorText(error);
-  return text.includes("42P01") || text.includes("BILLING_SETTINGS") && text.includes("DOES NOT EXIST");
-}
-
-function transientDbError(error: unknown) {
-  const text = errorText(error);
-  return ["CONNECTION_CLOSED", "ECONNRESET", "ETIMEDOUT", "CONNECTION TERMINATED", "SOCKET"].some((part) => text.includes(part));
-}
-
-async function retryDb<T>(work: () => Promise<T>, retries = 1): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try { return await work(); } catch (error) {
-      lastError = error;
-      if (!transientDbError(error) || attempt >= retries) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 140 * (attempt + 1)));
-    }
-  }
-  throw lastError;
+  // Existing users do NOT receive the launch bonus retroactively. Only wallets created after V80 do.
+  await db.execute(sql`
+    alter table public.credit_wallets
+      add column if not exists ai_bonus_brl double precision not null default 0,
+      add column if not exists ai_bonus_granted boolean not null default false
+  `);
+  await db.execute(sql`update public.credit_wallets set ai_bonus_granted = true where ai_bonus_granted = false`);
+  await db.execute(sql`
+    insert into public.billing_settings (key, value)
+    values ('AI_WELCOME_BONUS_BRL', '2.00')
+    on conflict (key) do nothing
+  `);
+  await db.execute(sql`
+    insert into public.billing_settings (key, value)
+    values ('BILLING_SCHEMA_VERSION', ${BILLING_SCHEMA_VERSION})
+    on conflict (key) do update set value = excluded.value, updated_at = CURRENT_TIMESTAMP::text
+  `);
 }
 
 export async function ensureBillingSchema() {
@@ -186,14 +235,12 @@ export async function ensureBillingSchema() {
     schemaPromise = (async () => {
       const db = getDb();
       try {
-        // V78: normal requests only probe the already-created schema.
-        // This avoids many concurrent CREATE TABLE/INDEX statements on Vercel cold starts.
         await retryDb(() => db.execute(sql`select 1 from public.billing_settings limit 1`), 1);
       } catch (error) {
         if (!missingBillingTable(error)) throw error;
-        // First installation only: bootstrap once if the billing tables truly do not exist.
         await createBillingSchema();
       }
+      await migrateBillingSchemaIfNeeded();
       schemaReady = true;
     })().catch((error) => {
       schemaPromise = null;
@@ -204,10 +251,7 @@ export async function ensureBillingSchema() {
   await schemaPromise;
 }
 
-export async function getBillingSettings(): Promise<BillingSettings> {
-  await ensureBillingSchema();
-  const db = getDb();
-  const result = await retryDb(() => db.execute(sql`select key, value from public.billing_settings`), 1);
+function parseSettings(result: unknown): BillingSettings {
   const map = new Map(rowsOf<any>(result).map((row) => [String(row.key), String(row.value)]));
   const get = (key: keyof BillingSettings) => map.get(key) ?? DEFAULT_SETTINGS[key];
   return {
@@ -218,6 +262,7 @@ export async function getBillingSettings(): Promise<BillingSettings> {
     AI_BASIC_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AI_BASIC_QUERY_CREDITS"), 1))),
     AI_FULL_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_FULL_ANALYSIS_CREDITS"), 2))),
     AI_ADVANCED_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_ADVANCED_ANALYSIS_CREDITS"), 3))),
+    AI_WELCOME_BONUS_BRL: Math.max(0, asNumber(get("AI_WELCOME_BONUS_BRL"), 2)),
     AIS_CACHE_MINUTES: Math.max(0, Math.round(asNumber(get("AIS_CACHE_MINUTES"), 0))),
     AIS_PROVIDER_COST_PER_QUERY_BRL: Math.max(0, asNumber(get("AIS_PROVIDER_COST_PER_QUERY_BRL"), 0)),
     OPENAI_INPUT_COST_PER_1M: Math.max(0, asNumber(get("OPENAI_INPUT_COST_PER_1M"), 0)),
@@ -228,30 +273,75 @@ export async function getBillingSettings(): Promise<BillingSettings> {
   };
 }
 
-export async function ensureWallet(user: PanelUser) {
+export async function getBillingSettings(): Promise<BillingSettings> {
+  if (settingsCache && settingsCache.expiresAt > Date.now()) return settingsCache.value;
+  await ensureBillingSchema();
+  const db = getDb();
+  const result = await retryDb(() => db.execute(sql`select key, value from public.billing_settings`), 1);
+  const value = parseSettings(result);
+  settingsCache = { value, expiresAt: Date.now() + SETTINGS_CACHE_MS };
+  return value;
+}
+
+export function invalidateBillingSettingsCache() {
+  settingsCache = null;
+}
+
+export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSettings): Promise<WalletState> {
   await ensureBillingSchema();
   const db = getDb();
   const admin = isSuperAdmin(user);
-  await retryDb(() => db.execute(sql`
-    insert into public.credit_wallets (user_id, email, role, balance, free_ais_access, free_ai_access)
-    values (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${admin}, ${admin})
-    on conflict (user_id) do update set
-      email = excluded.email,
-      role = ${admin ? "super_admin" : "user"},
-      free_ais_access = ${admin},
-      free_ai_access = ${admin},
-      updated_at = CURRENT_TIMESTAMP::text
-  `), 1);
-  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-    select user_id, email, role, balance, free_ais_access, free_ai_access
+  const settings = suppliedSettings || await getBillingSettings();
+
+  let rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
     from public.credit_wallets where user_id = ${user.id} limit 1
   `), 1));
-  const row = rows[0] || {};
+
+  if (!rows.length) {
+    const welcomeBonus = admin ? 0 : settings.AI_WELCOME_BONUS_BRL;
+    rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+      insert into public.credit_wallets
+        (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
+      values
+        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, ${admin}, ${admin})
+      on conflict (user_id) do nothing
+      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+    `), 1));
+    if (!rows.length) {
+      rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+        select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+        from public.credit_wallets where user_id = ${user.id} limit 1
+      `), 1));
+    } else if (welcomeBonus > 0) {
+      await db.execute(sql`
+        insert into public.credit_transactions
+          (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
+        values
+          (${user.id}, 0, 0, 'ai_welcome_bonus', 'Bônus inicial do Painel IA', ${welcomeBonus}, 'AI_WELCOME_V80', ${JSON.stringify({ aiOnly: true })})
+      `).catch(() => null);
+    }
+  }
+
+  let row = rows[0] || {};
+  const expectedRole = admin ? "super_admin" : "user";
+  const flagsWrong = Boolean(row.free_ais_access) !== admin || Boolean(row.free_ai_access) !== admin || String(row.role || "") !== expectedRole || String(row.email || "") !== String(user.email || "");
+  if (flagsWrong) {
+    const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
+      update public.credit_wallets set
+        email = ${user.email || null}, role = ${expectedRole}, free_ais_access = ${admin}, free_ai_access = ${admin}, updated_at = CURRENT_TIMESTAMP::text
+      where user_id = ${user.id}
+      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+    `), 1));
+    if (updated[0]) row = updated[0];
+  }
+
   return {
     userId: user.id,
     email: row.email || user.email,
-    role: row.role || (admin ? "super_admin" : "user"),
+    role: row.role || expectedRole,
     balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
+    aiBonusBrl: admin ? 0 : Math.max(0, Math.round(asNumber(row.ai_bonus_brl, 0) * 100) / 100),
     freeAisAccess: Boolean(row.free_ais_access ?? admin),
     freeAiAccess: Boolean(row.free_ai_access ?? admin),
     isSuperAdmin: admin,
@@ -273,21 +363,32 @@ export function priceForCredits(settings: BillingSettings, credits: number) {
   return Math.round(credits * settings.CREDIT_UNIT_PRICE * 100) / 100;
 }
 
-export async function assertCanUse(user: PanelUser, mode: ServiceMode) {
-  const [wallet, settings] = await Promise.all([ensureWallet(user), getBillingSettings()]);
+export function quoteService(wallet: WalletState, settings: BillingSettings, mode: ServiceMode) {
   const isAis = mode.startsWith("ais_");
   const isFree = isAis ? wallet.freeAisAccess : wallet.freeAiAccess;
-  const credits = isFree ? 0 : creditsForMode(settings, mode);
-  if (!isFree && wallet.balance < credits) {
-    const error = Object.assign(new Error(`Saldo insuficiente. Esta operação custa ${credits} crédito(s).`), {
+  const configuredCredits = isFree ? 0 : creditsForMode(settings, mode);
+  const fullPriceBrl = isFree ? 0 : priceForCredits(settings, configuredCredits);
+  const bonusAppliedBrl = !isAis && !isFree ? Math.min(wallet.aiBonusBrl, fullPriceBrl) : 0;
+  const remainingBrl = Math.max(0, fullPriceBrl - bonusAppliedBrl);
+  const credits = isFree || remainingBrl <= 0 ? 0 : Math.min(configuredCredits, Math.ceil((remainingBrl / settings.CREDIT_UNIT_PRICE) - 1e-9));
+  return { isAis, isFree, configuredCredits, fullPriceBrl, bonusAppliedBrl, credits };
+}
+
+export async function assertCanUse(user: PanelUser, mode: ServiceMode) {
+  const settings = await getBillingSettings();
+  const wallet = await ensureWallet(user, settings);
+  const quote = quoteService(wallet, settings, mode);
+  if (!quote.isFree && wallet.balance < quote.credits) {
+    const error = Object.assign(new Error(`Saldo insuficiente. Esta operação precisa de ${quote.credits} crédito(s) após o bônus da IA.`), {
       status: 402,
       code: "insufficient_credits",
       balance: wallet.balance,
-      required: credits,
+      required: quote.credits,
+      aiBonusBrl: wallet.aiBonusBrl,
     });
     throw error;
   }
-  return { wallet, settings, credits, isFree };
+  return { wallet, settings, ...quote };
 }
 
 export async function debitCreditsAfterSuccess(args: {
@@ -299,35 +400,61 @@ export async function debitCreditsAfterSuccess(args: {
 }) {
   const db = getDb();
   const access = await assertCanUse(args.user, args.mode);
-  if (access.isFree || access.credits <= 0) {
-    return { charged: 0, balance: access.wallet.balance, free: true, settings: access.settings };
+  if (access.isFree) {
+    return { charged: 0, balance: access.wallet.balance, free: true, bonusUsedBrl: 0, aiBonusBrl: access.wallet.aiBonusBrl, settings: access.settings };
   }
 
-  const amountBrl = priceForCredits(access.settings, access.credits);
-  const updated = rowsOf<any>(await db.execute(sql`
+  const bonusUsedBrl = Math.round(access.bonusAppliedBrl * 100) / 100;
+  const creditsToCharge = access.credits;
+  if (bonusUsedBrl <= 0 && creditsToCharge <= 0) {
+    return { charged: 0, balance: access.wallet.balance, free: false, bonusUsedBrl: 0, aiBonusBrl: access.wallet.aiBonusBrl, settings: access.settings };
+  }
+
+  const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
     update public.credit_wallets
-    set balance = balance - ${access.credits}, updated_at = CURRENT_TIMESTAMP::text
-    where user_id = ${args.user.id} and balance >= ${access.credits}
-    returning balance
-  `));
+    set
+      ai_bonus_brl = greatest(0, ai_bonus_brl - ${bonusUsedBrl}),
+      balance = balance - ${creditsToCharge},
+      updated_at = CURRENT_TIMESTAMP::text
+    where user_id = ${args.user.id}
+      and balance >= ${creditsToCharge}
+      and ai_bonus_brl + 0.0001 >= ${bonusUsedBrl}
+    returning balance, ai_bonus_brl
+  `), 1));
+
   if (!updated.length) {
-    const current = await ensureWallet(args.user);
-    const error = Object.assign(new Error(`Saldo insuficiente. Esta operação custa ${access.credits} crédito(s).`), {
-      status: 402,
-      code: "insufficient_credits",
+    const current = await ensureWallet(args.user, access.settings);
+    const error = Object.assign(new Error("Saldo ou bônus da IA mudou durante a operação. Tente novamente."), {
+      status: 409,
+      code: "wallet_changed",
       balance: current.balance,
-      required: access.credits,
+      aiBonusBrl: current.aiBonusBrl,
     });
     throw error;
   }
+
   const balance = Math.max(0, Math.round(asNumber(updated[0].balance, 0)));
-  await db.execute(sql`
-    insert into public.credit_transactions
-      (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
-    values
-      (${args.user.id}, ${-access.credits}, ${balance}, ${args.mode}, ${args.description}, ${amountBrl}, ${args.reference || null}, ${args.metadata ? JSON.stringify(args.metadata) : null})
-  `);
-  return { charged: access.credits, balance, free: false, settings: access.settings };
+  const aiBonusBrl = Math.max(0, Math.round(asNumber(updated[0].ai_bonus_brl, 0) * 100) / 100);
+
+  if (bonusUsedBrl > 0) {
+    await db.execute(sql`
+      insert into public.credit_transactions
+        (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
+      values
+        (${args.user.id}, 0, ${balance}, 'ai_bonus_spend', ${args.description + " — bônus IA"}, ${-bonusUsedBrl}, ${args.reference || null}, ${args.metadata ? JSON.stringify(args.metadata) : null})
+    `).catch(() => null);
+  }
+  if (creditsToCharge > 0) {
+    const amountBrl = priceForCredits(access.settings, creditsToCharge);
+    await db.execute(sql`
+      insert into public.credit_transactions
+        (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
+      values
+        (${args.user.id}, ${-creditsToCharge}, ${balance}, ${args.mode}, ${args.description}, ${amountBrl}, ${args.reference || null}, ${args.metadata ? JSON.stringify(args.metadata) : null})
+    `);
+  }
+
+  return { charged: creditsToCharge, balance, free: false, bonusUsedBrl, aiBonusBrl, settings: access.settings };
 }
 
 export async function addPurchasedCredits(args: {
@@ -339,12 +466,12 @@ export async function addPurchasedCredits(args: {
 }) {
   await ensureBillingSchema();
   const db = getDb();
-  const result = rowsOf<any>(await db.execute(sql`
+  const result = rowsOf<any>(await retryDb(() => db.execute(sql`
     update public.credit_wallets
     set balance = balance + ${args.credits}, updated_at = CURRENT_TIMESTAMP::text
     where user_id = ${args.userId}
     returning balance
-  `));
+  `), 1));
   if (!result.length) throw new Error("Carteira do usuário não encontrada para creditar a compra.");
   const balance = Math.max(0, Math.round(asNumber(result[0].balance, 0)));
   await db.execute(sql`
@@ -427,6 +554,7 @@ export async function updateBillingSettings(user: PanelUser, values: Partial<Rec
       on conflict (key) do update set value = excluded.value, updated_at = CURRENT_TIMESTAMP::text
     `);
   }
+  invalidateBillingSettingsCache();
   return getBillingSettings();
 }
 
@@ -434,9 +562,9 @@ export async function getAdminBillingStats(user: PanelUser) {
   if (!isSuperAdmin(user)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
   await ensureBillingSchema();
   const db = getDb();
-  const pick = async (query: any) => rowsOf<any>(await db.execute(query))[0] || {};
+  const pick = async (query: any) => rowsOf<any>(await retryDb(() => db.execute(query), 1))[0] || {};
   const [wallet, transactions, payments, ais, ai] = await Promise.all([
-    pick(sql`select coalesce(sum(balance),0)::int as balance, count(*)::int as users from public.credit_wallets`),
+    pick(sql`select coalesce(sum(balance),0)::int as balance, coalesce(sum(ai_bonus_brl),0)::float8 as ai_bonus, count(*)::int as users from public.credit_wallets`),
     pick(sql`select coalesce(sum(case when delta > 0 then delta else 0 end),0)::int as sold, coalesce(sum(case when delta < 0 then -delta else 0 end),0)::int as used from public.credit_transactions`),
     pick(sql`select coalesce(sum(amount_brl),0)::float8 as revenue, count(*) filter (where status = 'approved')::int as approved from public.payment_orders where status = 'approved'`),
     pick(sql`select count(*)::int as queries, count(distinct vessel_name)::int as vessels, coalesce(sum(credits_charged),0)::int as credits, coalesce(sum(provider_calls),0)::int as calls, count(*) filter (where cache_hit)::int as cache, coalesce(sum(estimated_api_cost_brl),0)::float8 as cost from public.ais_usage where status = 'success'`),
@@ -457,6 +585,7 @@ export async function getAdminBillingStats(user: PanelUser) {
     creditsSold: asNumber(transactions.sold, 0),
     creditsUsed: asNumber(transactions.used, 0),
     creditsInWallets: asNumber(wallet.balance, 0),
+    aiBonusOutstandingBrl: asNumber(wallet.ai_bonus, 0),
     users: asNumber(wallet.users, 0),
     revenue,
     ais: { queries: asNumber(ais.queries, 0), vessels: asNumber(ais.vessels, 0), credits: asNumber(ais.credits, 0), providerCalls: asNumber(ais.calls, 0), cacheHits: asNumber(ais.cache, 0), cost: aisCost },

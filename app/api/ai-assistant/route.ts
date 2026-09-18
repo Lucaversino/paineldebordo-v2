@@ -3,7 +3,7 @@ import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { getEnvironmentalSnapshots } from "../../../lib/environmentalSnapshots";
-import { assertCanUse, debitCreditsAfterSuccess, getBillingSettings, logAiUsage, priceForCredits } from "../../../lib/credits";
+import { assertCanUse, debitCreditsAfterSuccess, ensureWallet, getBillingSettings, logAiUsage, priceForCredits, quoteService } from "../../../lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -243,21 +243,28 @@ export async function GET() {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
   const settings = await getBillingSettings();
-  const access = await assertCanUse(auth.user!, "ai_basic");
+  const wallet = await ensureWallet(auth.user!, settings);
+  const basic = quoteService(wallet, settings, "ai_basic");
+  const full = quoteService(wallet, settings, "ai_full");
+  const advanced = quoteService(wallet, settings, "ai_advanced");
   const model = settings.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
   return Response.json({
     configured: Boolean(process.env.OPENAI_API_KEY),
     model,
     reasoningEffort: process.env.OPENAI_REASONING_EFFORT || "high",
-    wallet: access.wallet,
+    wallet,
     pricing: {
-      basicCredits: access.wallet.freeAiAccess ? 0 : settings.AI_BASIC_QUERY_CREDITS,
-      fullCredits: access.wallet.freeAiAccess ? 0 : settings.AI_FULL_ANALYSIS_CREDITS,
-      advancedCredits: access.wallet.freeAiAccess ? 0 : settings.AI_ADVANCED_ANALYSIS_CREDITS,
-      basicBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_BASIC_QUERY_CREDITS),
-      fullBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_FULL_ANALYSIS_CREDITS),
-      advancedBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_ADVANCED_ANALYSIS_CREDITS),
-      adminFree: access.wallet.freeAiAccess,
+      basicCredits: basic.credits,
+      fullCredits: full.credits,
+      advancedCredits: advanced.credits,
+      basicBrl: basic.fullPriceBrl,
+      fullBrl: full.fullPriceBrl,
+      advancedBrl: advanced.fullPriceBrl,
+      basicBonusBrl: basic.bonusAppliedBrl,
+      fullBonusBrl: full.bonusAppliedBrl,
+      advancedBonusBrl: advanced.bonusAppliedBrl,
+      welcomeBonusBrl: settings.AI_WELCOME_BONUS_BRL,
+      adminFree: wallet.freeAiAccess,
     },
   });
 }
@@ -431,7 +438,7 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
     model: result?.model || model,
     responseId: result?.id || null,
     usage,
-    billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free },
+    billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free, bonusUsedBrl: debit.bonusUsedBrl, aiBonusBrl: debit.aiBonusBrl },
     generatedAt: new Date().toISOString(),
   });
 }

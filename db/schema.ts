@@ -207,6 +207,8 @@ export const creditWallets = pgTable("credit_wallets", {
   email: text("email"),
   role: text("role").notNull().default("user"),
   balance: integer("balance").notNull().default(0),
+  aiBonusBrl: doublePrecision("ai_bonus_brl").notNull().default(0),
+  aiBonusGranted: boolean("ai_bonus_granted").notNull().default(false),
   freeAisAccess: boolean("free_ais_access").notNull().default(false),
   freeAiAccess: boolean("free_ai_access").notNull().default(false),
   createdAt: text("created_at").notNull().default(nowText),

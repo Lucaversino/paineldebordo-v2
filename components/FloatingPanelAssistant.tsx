@@ -7,8 +7,8 @@ type AssistantStatus = {
   configured: boolean;
   model: string;
   reasoningEffort?: string;
-  wallet?: { balance: number; freeAiAccess?: boolean; isSuperAdmin?: boolean };
-  pricing?: { basicCredits: number; fullCredits: number; advancedCredits: number; basicBrl: number; fullBrl: number; advancedBrl: number; adminFree: boolean };
+  wallet?: { balance: number; aiBonusBrl?: number; freeAiAccess?: boolean; isSuperAdmin?: boolean };
+  pricing?: { basicCredits: number; fullCredits: number; advancedCredits: number; basicBrl: number; fullBrl: number; advancedBrl: number; basicBonusBrl?: number; fullBonusBrl?: number; advancedBonusBrl?: number; welcomeBonusBrl?: number; adminFree: boolean };
 };
 type ChatMessage = { role: "user" | "assistant"; content: string; model?: string };
 type AiMode = "basic" | "full" | "advanced";
@@ -75,6 +75,9 @@ export default function FloatingPanelAssistant() {
     if (assistant?.pricing?.adminFree) return "GRÁTIS";
     if (!assistant?.pricing) return "VALOR...";
     const credits = mode === "advanced" ? assistant.pricing.advancedCredits : mode === "full" ? assistant.pricing.fullCredits : assistant.pricing.basicCredits;
+    const costBrl = mode === "advanced" ? assistant.pricing.advancedBrl : mode === "full" ? assistant.pricing.fullBrl : assistant.pricing.basicBrl;
+    const bonus = Number(assistant?.wallet?.aiBonusBrl || 0);
+    if (bonus > 0 && bonus + 0.0001 >= costBrl) return "BÔNUS IA";
     return `${credits} CR`;
   };
 
@@ -97,7 +100,7 @@ export default function FloatingPanelAssistant() {
       setMessages((current) => [...current, { role: "assistant", content: String(result.answer || ""), model: result.model }]);
       if (result?.billing) {
         const nextBalance = Number(result.billing.balance ?? assistant?.wallet?.balance ?? 0);
-        setAssistant((current) => current ? ({ ...current, wallet: { ...(current.wallet || { balance: 0 }), balance: nextBalance } }) : current);
+        setAssistant((current) => current ? ({ ...current, wallet: { ...(current.wallet || { balance: 0 }), balance: nextBalance, aiBonusBrl: Number(result.billing.aiBonusBrl ?? current.wallet?.aiBonusBrl ?? 0) } }) : current);
         window.dispatchEvent(new CustomEvent("painel-billing-changed", { detail: { balance: nextBalance } }));
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao consultar a IA."); }
@@ -112,11 +115,11 @@ export default function FloatingPanelAssistant() {
         <div className="floating-ai-brand"><span><Sparkles /></span><div><small>PAINEL IA</small><b>Assistente de pesca</b><em className={assistant?.configured ? "ready" : ""}>{statusText}</em></div></div>
         <div className="floating-ai-head-actions"><button type="button" onClick={clearConversation}>Limpar</button><button type="button" className="icon" onClick={() => setOpen(false)}><Minimize2 /></button><button type="button" className="icon close" onClick={() => setOpen(false)}><X /></button></div>
       </header>
-      <div className="floating-ai-creditbar"><span>MEUS CRÉDITOS</span><b>{assistant?.pricing?.adminFree ? "GRÁTIS — ADMIN" : `${assistant?.wallet?.balance ?? 0} créditos`}</b></div>
+      <div className="floating-ai-creditbar"><span>MEUS CRÉDITOS</span><b>{assistant?.pricing?.adminFree ? "GRÁTIS — ADMIN" : `${assistant?.wallet?.balance ?? 0} créditos`}</b>{!assistant?.pricing?.adminFree && Number(assistant?.wallet?.aiBonusBrl || 0) > 0 && <em>Bônus IA: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(assistant?.wallet?.aiBonusBrl || 0))}</em>}</div>
       <div className="floating-ai-context"><BrainCircuit /><span>Leio viagens, largadas, capturas e registros ambientais preservados no painel.</span></div>
       <div className="floating-ai-quick">{quickPrompts.map((item, index) => <button key={item.label} type="button" onClick={() => ask(item.prompt, item.mode)} disabled={asking || assistant?.configured === false}>{index === 0 ? <BrainCircuit /> : <MessageSquareText />}<span>{item.label}<small>{costLabel(item.mode)}</small></span></button>)}</div>
       <div className="floating-ai-chat" aria-live="polite">
-        {messages.length === 0 ? <div className="floating-ai-welcome"><Sparkles /><div><b>Converse com o Painel IA</b><span>Perguntas simples usam menos dados e custam {costLabel("basic")}. Análises completas e avançadas usam o histórico necessário.</span></div></div> : messages.map((message, index) => <article className={`floating-ai-message ${message.role}`} key={`${message.role}-${index}`}><small>{message.role === "user" ? "VOCÊ" : modelLabel(message.model || assistant?.model)}</small><div>{message.content}</div></article>)}
+        {messages.length === 0 ? <div className="floating-ai-welcome"><Sparkles /><div><b>Converse com o Painel IA</b><span>{Number(assistant?.wallet?.aiBonusBrl || 0) > 0 ? `Você tem R$ ${Number(assistant?.wallet?.aiBonusBrl || 0).toFixed(2).replace(".", ",")} de bônus exclusivo para testar a IA. ` : ""}Perguntas simples usam menos dados e custam {costLabel("basic")}. Análises completas e avançadas usam o histórico necessário.</span></div></div> : messages.map((message, index) => <article className={`floating-ai-message ${message.role}`} key={`${message.role}-${index}`}><small>{message.role === "user" ? "VOCÊ" : modelLabel(message.model || assistant?.model)}</small><div>{message.content}</div></article>)}
         {asking && <article className="floating-ai-message assistant thinking"><small>{modelLabel(assistant?.model)}</small><div><LoaderCircle className="spin" /> Analisando os dados do painel…</div></article>}
         <div ref={endRef} />
       </div>

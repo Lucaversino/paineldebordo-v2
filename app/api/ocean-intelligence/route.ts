@@ -6,6 +6,7 @@ import { requirePanelUserResponse } from "../../../lib/panelAuth";
 const RAD = Math.PI / 180;
 const DAY_MS = 86400000;
 const SYNODIC = 29.530588853;
+const oceanCache = new Map<string, { expiresAt: number; payload: any }>();
 
 function moonPhase(date: Date) {
   const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14);
@@ -99,7 +100,7 @@ async function fetchOpenMeteo(lat: number, lon: number) {
   weatherUrl.search = new URLSearchParams({ latitude: String(lat), longitude: String(lon), timezone: tz, current: "wind_speed_10m,wind_direction_10m,wind_gusts_10m", wind_speed_unit: "kmh", daily: "sunrise,sunset" }).toString();
   const marineUrl = new URL("https://marine-api.open-meteo.com/v1/marine");
   marineUrl.search = new URLSearchParams({ latitude: String(lat), longitude: String(lon), timezone: tz, hourly: "wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction,sea_level_height_msl", forecast_days: "3" }).toString();
-  const [wRes, mRes] = await Promise.all([fetch(weatherUrl, { headers: { accept: "application/json" } }), fetch(marineUrl, { headers: { accept: "application/json" } })]);
+  const [wRes, mRes] = await Promise.all([fetch(weatherUrl, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000) }), fetch(marineUrl, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000) })]);
   const weather = wRes.ok ? await wRes.json() : null;
   const marine = mRes.ok ? await mRes.json() : null;
   const idx = marine?.hourly?.time?.length ? nearestIndex(marine.hourly.time) : 0;
@@ -124,7 +125,7 @@ async function fetchOpenMeteo(lat: number, lon: number) {
 async function fetchChlorophyll(lat: number, lon: number) {
   const endpoint = `https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNnoaaSNPPnoaa20chlaGapfilledDaily.csv?chlor_a[(last)][(0.0)][(${lat})][(${lon})]`;
   try {
-    const r = await fetch(endpoint, { headers: { accept: "text/csv" } });
+    const r = await fetch(endpoint, { headers: { accept: "text/csv" }, signal: AbortSignal.timeout(6000) });
     if (!r.ok) return null;
     const text = await r.text();
     const lines = text.trim().split(/\r?\n/);
@@ -153,11 +154,15 @@ export async function GET() {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
   const user = auth.user!;
+  const cached = oceanCache.get(user.id);
+  if (cached && cached.expiresAt > Date.now()) return Response.json(cached.payload);
   const db = getDb();
-  const allSets = await db.select({ id:fishingSets.id, tripId:fishingSets.tripId, setNumber:fishingSets.setNumber, startedAt:fishingSets.startedAt, depth:fishingSets.depthMeters, lat:fishingSets.startLatitude, lon:fishingSets.startLongitude })
-    .from(fishingSets).innerJoin(trips, eq(fishingSets.tripId, trips.id)).where(eq(trips.ownerId, user.id)).orderBy(asc(fishingSets.startedAt));
-  const allCatches = await db.select({ fishingSetId:catches.fishingSetId, weightKg:catches.weightKg, catchType:catches.catchType })
-    .from(catches).innerJoin(trips, eq(catches.tripId, trips.id)).where(eq(trips.ownerId, user.id));
+  const [allSets, allCatches] = await Promise.all([
+    db.select({ id:fishingSets.id, tripId:fishingSets.tripId, setNumber:fishingSets.setNumber, startedAt:fishingSets.startedAt, depth:fishingSets.depthMeters, lat:fishingSets.startLatitude, lon:fishingSets.startLongitude })
+      .from(fishingSets).innerJoin(trips, eq(fishingSets.tripId, trips.id)).where(eq(trips.ownerId, user.id)).orderBy(asc(fishingSets.startedAt)),
+    db.select({ fishingSetId:catches.fishingSetId, weightKg:catches.weightKg, catchType:catches.catchType })
+      .from(catches).innerJoin(trips, eq(catches.tripId, trips.id)).where(eq(trips.ownerId, user.id)),
+  ]);
   const kgBySet = new Map<number, number>();
   allCatches.filter(c=>c.catchType !== "DISCARD").forEach(c=>kgBySet.set(c.fishingSetId,(kgBySet.get(c.fishingSetId)||0)+Number(c.weightKg||0)));
   const rows = allSets.map(s=>({ ...s, kg:kgBySet.get(s.id)||0, hour:new Date(s.startedAt).getHours() })).filter(r=>r.kg>0);
@@ -175,8 +180,10 @@ export async function GET() {
   const bestMoon = patterns.moon.find(x=>x.samples>=2) || patterns.moon[0] || null;
   const sampleCount = rows.length;
   const confidence = sampleCount >= 30 ? "alta" : sampleCount >= 12 ? "média" : sampleCount >= 5 ? "baixa" : "insuficiente";
-  return Response.json({ environment, analysis:{ sampleCount, confidence, bestHour, bestDepth, bestMoon, patterns, notes:[
+  const payload = { environment, analysis:{ sampleCount, confidence, bestHour, bestDepth, bestMoon, patterns, notes:[
     sampleCount < 5 ? "Ainda há poucas largadas com captura para detectar padrões confiáveis." : "A análise aprende com as largadas registradas neste painel e compara produtividade média por faixa.",
     "Correlação não prova causa: lua, vento, maré e clorofila devem ser comparados com histórico antes de orientar uma decisão operacional.",
-  ] }, sources:{ marine:"Open-Meteo Marine", weather:"Open-Meteo Forecast", chlorophyll:"NOAA CoastWatch ERDDAP / VIIRS" } });
+  ] }, sources:{ marine:"Open-Meteo Marine", weather:"Open-Meteo Forecast", chlorophyll:"NOAA CoastWatch ERDDAP / VIIRS" } };
+  oceanCache.set(user.id, { expiresAt: Date.now() + 120_000, payload });
+  return Response.json(payload);
 }

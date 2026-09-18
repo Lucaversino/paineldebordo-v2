@@ -1,3 +1,11 @@
+# PAINEL DE BORDO — v80
+
+Versão focada em desempenho. Dashboard e navegação carregam módulos pesados somente quando necessários, consultas principais do Dashboard foram paralelizadas e o registro ambiental de novas largadas passou para segundo plano após o salvamento operacional.
+
+Cada **novo usuário** recebe **R$ 2,00 de bônus exclusivo para o Painel IA**. O bônus não serve para AIS, é consumido antes dos créditos comprados e pode ser alterado pelo Super Admin.
+
+Consulte `FIX-V80-PERFORMANCE-BONUS-IA.md`.
+
 ## v71 — AIS mobile
 
 - Aviso “Nenhum barco selecionado” agora possui botão × para fechar e liberar totalmente a visão do mapa.

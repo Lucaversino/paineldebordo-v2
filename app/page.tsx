@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Anchor,
   BarChart3,
@@ -23,24 +24,18 @@ import {
   X,
   LogOut,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import Operations from "../components/Operations";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
-import OceanIntelligence from "../components/OceanIntelligence";
-import PositionForecast from "../components/PositionForecast";
-import AISPage from "../components/AISPage";
-import FloatingPanelAssistant from "../components/FloatingPanelAssistant";
-import CreditsPage from "../components/CreditsPage";
-import AdminBillingPage from "../components/AdminBillingPage";
+
+const ModuleLoading = () => <section className="content"><div className="emptydash"><h2>Carregando módulo…</h2></div></section>;
+const Operations = dynamic(() => import("../components/Operations"), { ssr: false, loading: ModuleLoading });
+const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"), { ssr: false });
+const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
+const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
+const FloatingPanelAssistant = dynamic(() => import("../components/FloatingPanelAssistant"), { ssr: false });
+const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
+const AdminBillingPage = dynamic(() => import("../components/AdminBillingPage"), { ssr: false, loading: ModuleLoading });
+const DashboardProductionChart = dynamic(() => import("../components/DashboardProductionChart"), { ssr: false });
 const fmt = (n: number, d = 0) =>
   new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: d,
@@ -84,49 +79,22 @@ export default function Home() {
     }
   };
   useEffect(() => {
-    load();
-    fetch("/api/session", { cache: "no-store", signal: AbortSignal.timeout(8000) })
-      .then((r) => r.ok ? r.json() : null)
-      .then((result) => result?.billing && setBilling(result.billing))
-      .catch(() => null);
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("view") === "credits") setView("Meus créditos");
     } catch {}
+    void load();
+    const timer = window.setTimeout(() => {
+      fetch("/api/session", { cache: "no-store", signal: AbortSignal.timeout(5000) })
+        .then((r) => r.ok ? r.json() : null)
+        .then((result) => result?.billing && setBilling(result.billing))
+        .catch(() => null);
+    }, 700);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  // V78: o histórico ambiental continua sendo preenchido, mas somente quando
-  // o Dashboard está aberto e depois da interface principal já estar estável.
-  // Isso evita disputar conexões com carteira, AIS e IA no carregamento inicial.
-  useEffect(() => {
-    if (view !== "Dashboard") return;
-    let stopped = false;
-    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    const backfill = async () => {
-      try {
-        if (sessionStorage.getItem("painel-env-backfill-v78") === "1") return;
-        sessionStorage.setItem("painel-env-backfill-v78", "1");
-      } catch {}
-      await sleep(15000);
-      for (let round = 0; round < 2 && !stopped; round++) {
-        if (!navigator.onLine || view !== "Dashboard") return;
-        try {
-          const response = await fetch("/api/environmental-snapshots", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ action: "backfill", limit: 1 }),
-            signal: AbortSignal.timeout(12000),
-          });
-          if (!response.ok) return;
-          const result = await response.json().catch(() => ({}));
-          if (!Number(result.remaining || 0)) return;
-        } catch { return; }
-        await sleep(2500);
-      }
-    };
-    void backfill();
-    return () => { stopped = true; };
-  }, [view]);
+  // V80: largadas novas continuam registrando ambiente automaticamente.
+  // O backfill histórico pesado fica manual em Configurações para não disputar recursos no carregamento.
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
     window.location.replace("/login");
@@ -541,31 +509,7 @@ export default function Home() {
                       </div>
                     </div>
                     {chart.length ? (
-                      <ResponsiveContainer width="100%" height={230}>
-                        <AreaChart data={chart}>
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            stroke="#ffffff12"
-                          />
-                          <XAxis dataKey="day" />
-                          <YAxis />
-                          <Tooltip />
-                          <Area
-                            type="monotone"
-                            dataKey="kg"
-                            stroke="#19d3a2"
-                            fill="#19d3a233"
-                            strokeWidth={3}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="meta"
-                            stroke="#5c7a84"
-                            fill="none"
-                            strokeDasharray="6 5"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                      <DashboardProductionChart data={chart} />
                     ) : (
                       <div className="chartempty">
                         O gráfico aparecerá depois da primeira captura.

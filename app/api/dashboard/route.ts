@@ -1,4 +1,5 @@
 import { getDb } from "../../../db";
+import { after } from "next/server";
 import {
   boats,
   catches,
@@ -10,6 +11,10 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { claimLegacyData } from "../../../lib/userData";
 import { captureEnvironmentalSnapshot } from "../../../lib/environmentalSnapshots";
+
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 
 function parseDmm(value: unknown, latitude: boolean) {
   const raw = String(value || "")
@@ -73,54 +78,51 @@ export async function GET() {
     .innerJoin(boats, eq(trips.boatId, boats.id))
     .where(and(eq(trips.status, "IN_PROGRESS"), eq(trips.ownerId, user.id)))
     .limit(1);
-  if (!trip)
-    return Response.json({
-      trip: null,
-      total: 0,
-      corvinaTotal: 0,
-      mixtureTotal: 0,
-      discardTotal: 0,
-      setCount: 0,
-      sets: [],
-      daily: [],
-      speciesOptions: [],
-    });
-  const [totals] = await db
-    .select({
-      corvinaTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'PRIMARY' then ${catches.weightKg} else 0 end),0)`,
-      mixtureTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'MIXTURE' then ${catches.weightKg} else 0 end),0)`,
-      discardTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'DISCARD' then ${catches.weightKg} else 0 end),0)`,
-      count: sql<number>`count(distinct ${fishingSets.id})`,
-    })
-    .from(fishingSets)
-    .leftJoin(catches, eq(catches.fishingSetId, fishingSets.id))
-    .where(eq(fishingSets.tripId, trip.id));
-  const sets = await db
-    .select({
-      id: fishingSets.id,
-      setNumber: fishingSets.setNumber,
-      startedAt: fishingSets.startedAt,
-      startLatitude: fishingSets.startLatitude,
-      startLongitude: fishingSets.startLongitude,
-      total: sql<number>`coalesce(sum(case when ${catches.catchType} != 'DISCARD' then ${catches.weightKg} else 0 end),0)`,
-    })
-    .from(fishingSets)
-    .leftJoin(catches, eq(catches.fishingSetId, fishingSets.id))
-    .where(eq(fishingSets.tripId, trip.id))
-    .groupBy(fishingSets.id)
-    .orderBy(asc(fishingSets.setNumber));
-  const daily = await db
-    .select({
-      day: sql<string>`date(${catches.caughtAt})`,
-      kg: sql<number>`sum(case when ${catches.catchType} = 'PRIMARY' then ${catches.weightKg} else 0 end)`,
-    })
-    .from(catches)
-    .where(eq(catches.tripId, trip.id))
-    .groupBy(sql`date(${catches.caughtAt})`)
-    .orderBy(sql`date(${catches.caughtAt})`);
-  const speciesOptions = await db.select({ id: species.id, name: species.commonName }).from(species)
-    .where(and(eq(species.ownerId, user.id), eq(species.active, true))).orderBy(asc(species.commonName));
-  return Response.json({
+  if (!trip) return Response.json({ trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] });
+  const [totalsRows, sets, daily, speciesOptions] = await Promise.all([
+    db
+      .select({
+        corvinaTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'PRIMARY' then ${catches.weightKg} else 0 end),0)`,
+        mixtureTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'MIXTURE' then ${catches.weightKg} else 0 end),0)`,
+        discardTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'DISCARD' then ${catches.weightKg} else 0 end),0)`,
+        count: sql<number>`count(distinct ${fishingSets.id})`,
+      })
+      .from(fishingSets)
+      .leftJoin(catches, eq(catches.fishingSetId, fishingSets.id))
+      .where(eq(fishingSets.tripId, trip.id)),
+    db
+      .select({
+        id: fishingSets.id,
+        setNumber: fishingSets.setNumber,
+        startedAt: fishingSets.startedAt,
+        startLatitude: fishingSets.startLatitude,
+        startLongitude: fishingSets.startLongitude,
+        endLatitude: fishingSets.endLatitude,
+        endLongitude: fishingSets.endLongitude,
+        total: sql<number>`coalesce(sum(case when ${catches.catchType} != 'DISCARD' then ${catches.weightKg} else 0 end),0)`,
+      })
+      .from(fishingSets)
+      .leftJoin(catches, eq(catches.fishingSetId, fishingSets.id))
+      .where(eq(fishingSets.tripId, trip.id))
+      .groupBy(fishingSets.id)
+      .orderBy(asc(fishingSets.setNumber)),
+    db
+      .select({
+        day: sql<string>`date(${catches.caughtAt})`,
+        kg: sql<number>`sum(case when ${catches.catchType} = 'PRIMARY' then ${catches.weightKg} else 0 end)`,
+      })
+      .from(catches)
+      .where(eq(catches.tripId, trip.id))
+      .groupBy(sql`date(${catches.caughtAt})`)
+      .orderBy(sql`date(${catches.caughtAt})`),
+    db
+      .select({ id: species.id, name: species.commonName })
+      .from(species)
+      .where(and(eq(species.ownerId, user.id), eq(species.active, true)))
+      .orderBy(asc(species.commonName)),
+  ]);
+  const totals = totalsRows[0];
+  const payload = {
     trip,
     total: Number(totals?.corvinaTotal || 0),
     corvinaTotal: Number(totals?.corvinaTotal || 0),
@@ -130,7 +132,8 @@ export async function GET() {
     sets,
     daily,
     speciesOptions,
-  });
+  };
+  return Response.json(payload);
 }
 
 export async function POST(req: Request) {
@@ -308,23 +311,23 @@ export async function POST(req: Request) {
       extraCatches.push(saved);
     }
 
-    // v69: registra automaticamente um snapshot ambiental da largada. A captura
-    // nunca impede o salvamento operacional: se alguma fonte externa falhar,
-    // a largada permanece salva e o backfill automático tenta novamente depois.
-    let environmentSnapshot: any = null;
-    try {
-      environmentSnapshot = await captureEnvironmentalSnapshot(db, {
-        ownerId: user.id,
-        tripId: body.tripId,
-        fishingSetId: row.id,
-        latitude: startLatitude,
-        longitude: startLongitude,
-        referenceTime: startedAt,
-      });
-    } catch (error) {
-      console.error("environmental snapshot on set create", error);
-    }
-    return Response.json({ ...row, catch: catchRow, extraCatches, environmentSnapshot }, { status: 201 });
+    // V80: salva a largada primeiro e coleta vento/mar/lua em segundo plano.
+    // O usuário não fica esperando APIs externas para concluir o registro operacional.
+    after(async () => {
+      try {
+        await captureEnvironmentalSnapshot(getDb(), {
+          ownerId: user.id,
+          tripId: body.tripId,
+          fishingSetId: row.id,
+          latitude: startLatitude,
+          longitude: startLongitude,
+          referenceTime: startedAt,
+        });
+      } catch (error) {
+        console.error("environmental snapshot on set create", error);
+      }
+    });
+    return Response.json({ ...row, catch: catchRow, extraCatches, environmentSnapshot: { status: "QUEUED" } }, { status: 201 });
   }
   return Response.json({ error: "Ação inválida." }, { status: 400 });
 }

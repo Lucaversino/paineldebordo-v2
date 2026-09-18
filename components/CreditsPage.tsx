@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { CreditCard, LoaderCircle, RefreshCw, WalletCards } from "lucide-react";
 
 type Billing = {
-  wallet: { balance: number; freeAisAccess?: boolean; freeAiAccess?: boolean; isSuperAdmin?: boolean };
-  settings: { creditUnitPrice: number; aisSingleCredits: number; aisUpdateCredits: number; aiBasicCredits: number; aiFullCredits: number; aiAdvancedCredits: number };
+  wallet: { balance: number; aiBonusBrl?: number; freeAisAccess?: boolean; freeAiAccess?: boolean; isSuperAdmin?: boolean };
+  settings: { creditUnitPrice: number; aisSingleCredits: number; aisUpdateCredits: number; aiBasicCredits: number; aiFullCredits: number; aiAdvancedCredits: number; aiWelcomeBonusBrl?: number };
   packages: Array<{ credits: number; amountBrl: number }>;
   transactions: Array<{ id: number; delta: number; balanceAfter: number; kind: string; description: string; amountBrl?: number | null; createdAt: string }>;
 };
@@ -63,7 +63,7 @@ export default function CreditsPage() {
   return <section className="credits-page">
     <div className="credits-head"><div><small>CARTEIRA ÚNICA</small><h2>Meus créditos</h2><p>AIS e Painel IA usam a mesma carteira.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>
     {paymentStatus && <div className={`credits-payment-status ${paymentStatus}`}>{paymentStatus === "success" ? "Pagamento recebido pelo Mercado Pago. Aguardando/confirmação do webhook para liberar os créditos." : paymentStatus === "pending" ? "Pagamento pendente. Os créditos serão liberados somente após a confirmação do Mercado Pago." : "Pagamento não concluído. Nenhum crédito foi adicionado."}</div>}
-    <article className="credits-balance"><WalletCards /><div><span>Saldo atual</span><b>{data.wallet.isSuperAdmin ? "GRÁTIS — ADMIN" : `${data.wallet.balance} créditos`}</b>{!data.wallet.isSuperAdmin && <em>Equivalente: {brl(equivalent)}</em>}</div></article>
+    <article className="credits-balance"><WalletCards /><div><span>Saldo atual</span><b>{data.wallet.isSuperAdmin ? "GRÁTIS — ADMIN" : `${data.wallet.balance} créditos`}</b>{!data.wallet.isSuperAdmin && <em>Equivalente: {brl(equivalent)}</em>}</div>{!data.wallet.isSuperAdmin && Number(data.wallet.aiBonusBrl || 0) > 0 && <div className="credits-ai-bonus"><small>BÔNUS DE BOAS-VINDAS · SÓ IA</small><b>{brl(Number(data.wallet.aiBonusBrl || 0))}</b><span>Use no Painel IA antes dos créditos comprados.</span></div>}</article>
     <div className="credits-services">
       <article><b>Consulta AIS</b><span>{data.wallet.freeAisAccess ? "GRÁTIS — ADMIN" : `${data.settings.aisSingleCredits} créditos`}</span><small>Localizar um barco</small></article>
       <article><b>Atualizar AIS</b><span>{data.wallet.freeAisAccess ? "GRÁTIS — ADMIN" : `${data.settings.aisUpdateCredits} créditos`}</span><small>Nova posição</small></article>
@@ -73,6 +73,6 @@ export default function CreditsPage() {
     </div>
     {!data.wallet.isSuperAdmin && <><h3 className="credits-section-title">Comprar créditos</h3><div className="credits-packages">{data.packages.map((pack) => <button key={pack.credits} type="button" onClick={() => buy(pack.credits)} disabled={buying != null}><CreditCard /><b>{pack.credits} CRÉDITOS</b><span>{brl(pack.amountBrl)}</span>{buying === pack.credits && <LoaderCircle className="spin" />}</button>)}</div></>}
     {error && <div className="credits-error">{error}</div>}
-    <div className="credits-statement"><div className="credits-statement-head"><div><small>MOVIMENTAÇÃO</small><h3>Extrato de créditos</h3></div></div>{data.transactions.length ? data.transactions.map((item) => <article key={item.id}><div><b>{item.description}</b><small>{when(item.createdAt)}</small></div><div className={item.delta >= 0 ? "plus" : "minus"}>{item.delta >= 0 ? "+" : ""}{item.delta} créditos<small>Saldo: {item.balanceAfter}</small></div></article>) : <p>Nenhuma movimentação ainda.</p>}</div>
+    <div className="credits-statement"><div className="credits-statement-head"><div><small>MOVIMENTAÇÃO</small><h3>Extrato de créditos</h3></div></div>{data.transactions.length ? data.transactions.map((item) => <article key={item.id}><div><b>{item.description}</b><small>{when(item.createdAt)}</small></div><div className={item.delta > 0 ? "plus" : item.delta < 0 ? "minus" : "bonus"}>{item.kind === "ai_welcome_bonus" ? `${brl(Number(item.amountBrl || 0))} bônus IA` : item.kind === "ai_bonus_spend" ? `${brl(Math.abs(Number(item.amountBrl || 0)))} bônus usado` : <>{item.delta >= 0 ? "+" : ""}{item.delta} créditos</>}<small>Saldo: {item.balanceAfter}</small></div></article>) : <p>Nenhuma movimentação ainda.</p>}</div>
   </section>;
 }

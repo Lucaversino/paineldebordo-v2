@@ -1856,3 +1856,8 @@ main.loginpage{
 .header-wallet-pill{display:flex;align-items:center;gap:6px;border:1px solid #28595e;background:#0a3035;color:#42e0b7;border-radius:10px;padding:8px 10px;font-weight:900}.header-wallet-pill svg{width:17px;height:17px}
 @media(max-width:760px){.header-wallet-pill span{display:none}.header-wallet-pill{padding:9px}}
 .credits-payment-status{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#12363a;border:1px solid #2c6668;color:#cce8e6}.credits-payment-status.success{border-color:#2a7964;color:#8ef0d2}.credits-payment-status.pending{border-color:#8b7534;color:#f0d98e}.credits-payment-status.failure{border-color:#87434a;color:#ffacb2}
+
+/* V80 — bônus IA de boas-vindas */
+.credits-ai-bonus{margin-left:auto;min-width:240px;padding:12px 14px;border:1px solid #2d7b6c;border-radius:12px;background:#092c31}.credits-ai-bonus small,.credits-ai-bonus b,.credits-ai-bonus span{display:block}.credits-ai-bonus small{color:#5fe8c3;font-size:10px;font-weight:900;letter-spacing:.08em}.credits-ai-bonus b{font-size:23px;color:#ecfff9;margin:4px 0}.credits-ai-bonus span{font-size:11px;color:#8fb6b7}.credits-statement .bonus{color:#f2d66b;font-weight:900;text-align:right}
+@media(max-width:600px){.credits-balance{align-items:flex-start;flex-wrap:wrap}.credits-ai-bonus{width:100%;margin-left:0;min-width:0}}
+.floating-ai-creditbar em{margin-left:auto;margin-right:12px;color:#f2d66b;font-style:normal;font-weight:900;font-size:12px}
