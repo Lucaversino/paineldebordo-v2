@@ -1,3 +1,11 @@
+# PAINEL DE BORDO — v87
+
+Continuação direta da V86. O antigo Painel/Pilot IA foi substituído pela **FISH IA**, com interface flutuante limpa, conversa sem mensagens prontas, tipografia grande e personalidade de pescador experiente com foco em **corvina (Micropogonias furnieri)**, Lua, vento, maré, temperatura da água e clorofila.
+
+O painel administrativo agora possui controle **LIGAR/DESLIGAR FISH IA** individualmente para cada usuário. Consulte `FIX-V87-FISH-IA.md`.
+
+---
+
 # PAINEL DE BORDO — v85
 
 Continuação direta da **V84**. A V85 restaura a lógica de análise do **Painel IA da V52** dentro do botão flutuante e deixa a IA **livre/grátis para todos os usuários**, sem desconto de créditos. Os créditos continuam existindo somente para os recursos AIS.

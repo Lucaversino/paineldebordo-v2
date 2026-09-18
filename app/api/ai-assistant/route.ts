@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
+import { ensureWallet } from "../../../lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -58,35 +59,11 @@ function extractOutputText(response: any) {
   return "";
 }
 
-async function testOpenAiConnection(apiKey: string, model: string) {
-  try {
-    const response = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, {
-      headers: { authorization: `Bearer ${apiKey}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(6_000),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (response.ok) return { ok: true, status: response.status };
-    return {
-      ok: false,
-      status: response.status,
-      error: response.status === 401
-        ? "OPENAI_API_KEY recusada"
-        : response.status === 404
-          ? `Modelo ${model} não encontrado ou sem acesso`
-          : body?.error?.message || `OpenAI respondeu HTTP ${response.status}`,
-    };
-  } catch (error: any) {
-    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
-    return { ok: false, error: timedOut ? "Tempo esgotado ao testar a OpenAI" : "Não foi possível alcançar a OpenAI" };
-  }
-}
-
 async function buildFishingContext(ownerId: string, mode: AiMode) {
   const db = getDb();
-  const tripLimit = mode === "basic" ? 8 : mode === "full" ? 16 : 24;
-  const setLimit = mode === "basic" ? 36 : mode === "full" ? 96 : 160;
-  const catchLimit = mode === "basic" ? 360 : mode === "full" ? 1000 : 1800;
+  const tripLimit = mode === "basic" ? 5 : mode === "full" ? 12 : 20;
+  const setLimit = mode === "basic" ? 24 : mode === "full" ? 72 : 140;
+  const catchLimit = mode === "basic" ? 180 : mode === "full" ? 720 : 1500;
 
   const tripRows = await db
     .select({
@@ -253,23 +230,28 @@ export async function GET(request: Request) {
   const user = await getPanelUserFromRequest(request);
   if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
-  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
-  const connection = apiKey ? await testOpenAiConnection(apiKey, model) : { ok: false, error: "OPENAI_API_KEY ausente" };
-
-  return Response.json({
-    configured: Boolean(apiKey),
-    model,
-    reasoningEffort: process.env.OPENAI_REASONING_EFFORT || "high",
-    connection,
-    free: true,
-    creditsRequired: 0,
-  });
+  try {
+    const wallet = await ensureWallet(user);
+    if (!wallet.fishAiEnabled) {
+      return Response.json({ enabled: false }, { status: 403 });
+    }
+    const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
+    const model = process.env.FISH_AI_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
+    return Response.json({ enabled: true, configured: Boolean(apiKey), model });
+  } catch (error) {
+    console.error("FISH IA access check failed", error);
+    return Response.json({ error: "Não foi possível verificar o acesso à FISH IA." }, { status: 503 });
+  }
 }
 
 export async function POST(request: Request) {
   const user = await getPanelUserFromRequest(request);
   if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
+
+  const wallet = await ensureWallet(user);
+  if (!wallet.fishAiEnabled) {
+    return Response.json({ error: "FISH IA desativada para este usuário." }, { status: 403 });
+  }
 
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
@@ -279,45 +261,67 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const question = String(body?.question || "").trim().slice(0, 2000);
   if (!question) return Response.json({ error: "Escreva uma pergunta para o assistente." }, { status: 400 });
-  const mode: AiMode = body?.mode === "advanced" ? "advanced" : body?.mode === "full" ? "full" : "basic";
+  const mode: AiMode = "basic";
 
-  let fishingContext: any;
-  try {
-    fishingContext = await buildFishingContext(user.id, mode);
-  } catch (error) {
-    console.error("Painel IA V85 context error", error);
-    fishingContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], finishedTripCount: 0, totalSets: 0, topSets: [], recentSetDetails: [] };
+  const needsPanelContext = /\b(viagem|largada|captura|hist[oó]rico|meta|produ[cç][aã]o|meus dados|minha pesca|meu barco|painel|comparar|desempenho|quanto peguei|quanto pescamos)\b/i.test(question);
+  let fishingContext: any = { generatedAt: new Date().toISOString(), note: "A pergunta não exige consulta ao histórico do banco." };
+  if (needsPanelContext) {
+    try {
+      fishingContext = await Promise.race([
+        buildFishingContext(user.id, mode),
+        new Promise((resolve) => setTimeout(() => resolve(null), 3_500)),
+      ]);
+      if (!fishingContext) {
+        fishingContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], note: "Contexto do banco não ficou pronto a tempo; responda sem inventar dados do usuário." };
+      }
+    } catch (error) {
+      console.error("FISH IA context error", error);
+      fishingContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], note: "Contexto do banco indisponível; responda sem inventar dados do usuário." };
+    }
   }
 
   const environment = compactExternalContext(body?.environment);
   const statisticalAnalysis = compactExternalContext(body?.statisticalAnalysis);
   const conversation = normalizeConversation(body?.conversation);
-  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
-  const configuredEffort = process.env.OPENAI_REASONING_EFFORT || "high";
-  const reasoningEffort = ALLOWED_EFFORTS.has(configuredEffort) ? configuredEffort : "high";
+  const model = process.env.FISH_AI_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const configuredEffort = process.env.FISH_AI_REASONING_EFFORT || "low";
+  const reasoningEffort = ALLOWED_EFFORTS.has(configuredEffort) ? configuredEffort : "low";
 
-  const instructions = `Você é o PAINEL IA, assistente especialista em análise operacional de pesca industrial embarcada.
-Seu trabalho é transformar os dados reais do Painel de Bordo em análises úteis para o mestre da embarcação, com foco especial em produtividade de largadas e pesca de corvina quando ela for a espécie principal.
+  const instructions = `Você é a FISH IA, um parceiro de bordo especialista em pesca de corvina (Micropogonias furnieri) e operação de pesca industrial.
 
-REGRAS DE QUALIDADE:
-1. Use prioritariamente os dados fornecidos pelo sistema. Nunca invente captura, posição, vento, maré, temperatura, clorofila, lua ou resultado que não esteja no contexto.
-2. Diferencie claramente: FATO OBSERVADO, PADRÃO ESTATÍSTICO e HIPÓTESE OPERACIONAL.
-3. Correlação não é causalidade. Se a amostra for pequena, diga isso de forma objetiva.
-4. Compare viagem atual com viagens anteriores quando houver histórico suficiente.
-5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila quando esses dados estiverem disponíveis.
-6. Não trate previsão de pesca como garantia. Expresse janelas e condições como hipóteses operacionais baseadas no histórico.
-7. Dados de maré/modelos oceânicos não substituem carta náutica, avisos oficiais, decisão do comandante nem procedimentos de segurança.
-8. Seja direto, técnico e compreensível para uso a bordo. Evite texto genérico.
-9. Quando a pergunta pedir uma decisão, entregue uma recomendação operacional condicionada às evidências, acompanhada do grau de confiança.
-10. Responda em português do Brasil.
+PERSONALIDADE E JEITO DE CONVERSAR:
+- Fale em português do Brasil como um pescador muito experiente, seguro, prático e direto.
+- Tenha linguagem natural de quem vive o mar, sem parecer robô, sem texto engessado e sem frases prontas.
+- Seja firme e "brabo" no conhecimento, mas sem arrogância, grosseria ou exagero.
+- Responda rápido. Por padrão, use respostas curtas e úteis; aprofunde só quando a pessoa pedir.
+- Não force listas, títulos ou formatos fixos. Converse normalmente e acompanhe o jeito da pergunta.
+- Faça pergunta de retorno somente quando realmente faltar uma informação essencial.
 
-FORMATO PREFERIDO:
-- RESUMO: 2 a 4 linhas.
-- EVIDÊNCIAS: números e comparações concretas do painel.
-- LEITURA OPERACIONAL: o que os padrões podem indicar.
-- O QUE OBSERVAR NA PRÓXIMA LARGADA: checklist curto.
-- CONFIANÇA: alta, média, baixa ou insuficiente, com motivo.
-Use texto simples e listas curtas; não use tabelas extensas.`;
+ESPECIALIDADE PRINCIPAL — CORVINA (Micropogonias furnieri):
+Você domina biologia, ecologia e comportamento da corvina ao longo do dia e das estações: alimentação, deslocamentos, profundidade, fundo, estuários e costa, agregações, reprodução, influência de salinidade, temperatura, turbidez, disponibilidade de alimento, horário e condições oceanográficas. Use esse conhecimento junto com o histórico real do barco.
+
+LUA, MARÉ E OCEANO:
+- Entenda fases da Lua, iluminação lunar, sizígia/quadratura, relação entre Lua e amplitude de maré, horários de enchente/vazante, corrente e janelas operacionais.
+- Não trate Lua como "garantia" de peixe. Separe conhecimento científico, experiência prática e padrão observado no histórico do usuário.
+- Entenda vento por direção, intensidade e duração; efeitos sobre corrente superficial, ressurgência, mistura da coluna d'água, onda, turbidez e deslocamento de massas d'água.
+- Entenda temperatura da água e frentes térmicas, sempre comparando com o padrão das capturas registradas.
+- Entenda clorofila-a como indicador de produtividade do fitoplâncton e estrutura de massas d'água. Saiba interpretar manchas, bordas, gradientes e limitações de dados de satélite; não diga que clorofila alta significa automaticamente mais corvina.
+
+USO DO PAINEL DE BORDO:
+Você também é especialista no próprio sistema. Pode orientar o usuário sobre Dashboard, Ventos e Mar, AIS, Meus créditos, Viagem atual, Largadas, Capturas, Histórico, Comparar viagens, Embarcações, Espécies, Relatórios e Configurações. Se a pergunta for "como faço isso no painel?", explique o caminho de forma simples.
+
+REGRAS IMPORTANTES:
+1. Use os dados reais enviados pelo Painel de Bordo quando existirem.
+2. Nunca invente posição, captura, vento, maré, temperatura, clorofila, Lua ou previsão atual que não esteja nos dados recebidos.
+3. Quando faltar dado atual, diga exatamente qual dado falta e como ele mudaria a leitura.
+4. Diferencie fato medido, padrão do histórico e hipótese de pesca.
+5. Correlação não é garantia de captura. Não prometa onde o peixe está.
+6. Segurança e navegação vêm primeiro; não substitua carta náutica, avisos oficiais, instrumentos de bordo ou decisão do comandante.
+7. Use a conversa recente para manter contexto e não repetir explicações desnecessárias.
+8. Não mencione créditos, preço, gratuidade, plano ou cobrança da FISH IA.
+9. Não use mensagens de boas-vindas automáticas nem respostas pré-fabricadas.
+
+Seu objetivo é conversar como aquele pescador veterano que conhece corvina, mar e o barco, olha os dados e vai direto no que interessa.`
 
   const payload = {
     pergunta: question,
@@ -335,9 +339,9 @@ Use texto simples e listas curtas; não use tabelas extensas.`;
       body: JSON.stringify({
         model,
         instructions,
-        input: `Analise o contexto operacional abaixo e responda à pergunta do usuário.\n\n${JSON.stringify(payload)}`,
+        input: `Converse com o usuário e responda usando o contexto disponível. Vá direto ao ponto.\n\n${JSON.stringify(payload)}`,
         reasoning: { effort: reasoningEffort },
-        max_output_tokens: mode === "basic" ? 1200 : 1800,
+        max_output_tokens: 700,
         store: false,
       }),
       cache: "no-store",
@@ -346,12 +350,12 @@ Use texto simples e listas curtas; não use tabelas extensas.`;
   } catch (error: any) {
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
     void logUsage({ userId: user.id, requestType: mode, model, status: "error", errorText: timedOut ? "timeout" : "network" });
-    return Response.json({ error: timedOut ? "A OpenAI demorou para responder. Tente novamente. A IA é grátis e nenhum crédito foi consumido." : "Não foi possível conectar à OpenAI agora. A IA é grátis e nenhum crédito foi consumido." }, { status: timedOut ? 504 : 502 });
+    return Response.json({ error: timedOut ? "A resposta demorou mais que o esperado. Tente novamente." : "Não foi possível conectar à FISH IA agora. Tente novamente." }, { status: timedOut ? 504 : 502 });
   }
 
   const result = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
-    const detail = result?.error?.message || "A OpenAI não conseguiu processar esta análise.";
+    const detail = result?.error?.message || "A FISH IA não conseguiu processar esta mensagem.";
     void logUsage({ userId: user.id, requestType: mode, model, status: "error", errorText: detail });
     const friendly = openAIResponse.status === 401
       ? "A OPENAI_API_KEY foi recusada. Confira a chave na Vercel."
@@ -364,7 +368,7 @@ Use texto simples e listas curtas; não use tabelas extensas.`;
   const answer = extractOutputText(result);
   if (!answer) {
     void logUsage({ userId: user.id, requestType: mode, model, result, status: "empty", errorText: "sem texto" });
-    return Response.json({ error: "A IA concluiu a solicitação sem retornar texto. Tente novamente." }, { status: 502 });
+    return Response.json({ error: "A FISH IA não retornou texto. Tente novamente." }, { status: 502 });
   }
 
   void logUsage({ userId: user.id, requestType: mode, model: result?.model || model, result, status: "success" });
@@ -378,8 +382,7 @@ Use texto simples e listas curtas; não use tabelas extensas.`;
       outputTokens: result.usage.output_tokens ?? null,
       totalTokens: result.usage.total_tokens ?? null,
     } : null,
-    billing: { chargedCredits: 0, free: true },
-    free: true,
+    billing: { chargedCredits: 0 },
     generatedAt: new Date().toISOString(),
   });
 }

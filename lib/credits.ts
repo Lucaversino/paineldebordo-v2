@@ -31,6 +31,7 @@ export type WalletState = {
   freeAisAccess: boolean;
   freeAiAccess: boolean;
   isSuperAdmin: boolean;
+  fishAiEnabled: boolean;
 };
 
 const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
@@ -53,7 +54,7 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
 const SETTINGS_CACHE_MS = 60_000;
-const BILLING_SCHEMA_VERSION = "85";
+const BILLING_SCHEMA_VERSION = "87";
 const ADMIN_INITIAL_CREDITS = Math.max(0, Math.round(Number(process.env.ADMIN_INITIAL_CREDITS || 80) || 80));
 
 let schemaPromise: Promise<void> | null = null;
@@ -120,6 +121,7 @@ async function createBillingSchema() {
       ai_bonus_granted boolean not null default false,
       free_ais_access boolean not null default false,
       free_ai_access boolean not null default false,
+      fish_ai_enabled boolean not null default true,
       created_at text not null default CURRENT_TIMESTAMP::text,
       updated_at text not null default CURRENT_TIMESTAMP::text
     )
@@ -211,12 +213,13 @@ async function migrateBillingSchemaIfNeeded() {
   `), 1));
   if (String(versionRows[0]?.value || "") === BILLING_SCHEMA_VERSION) return;
 
-  // V85: Painel IA fica livre para todos. Créditos continuam sendo usados somente pelo AIS.
+  // V87: FISH IA sem cobrança, com controle liga/desliga individual pelo administrador.
   await db.execute(sql`
     alter table public.credit_wallets
       add column if not exists ai_bonus_brl double precision not null default 0,
       add column if not exists ai_bonus_granted boolean not null default false,
-      add column if not exists free_ai_access boolean not null default true
+      add column if not exists free_ai_access boolean not null default true,
+      add column if not exists fish_ai_enabled boolean not null default true
   `);
   await db.execute(sql`
     update public.credit_wallets
@@ -306,7 +309,7 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
   const settings = suppliedSettings || await getBillingSettings();
 
   let rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-    select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+    select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access, fish_ai_enabled
     from public.credit_wallets where user_id = ${user.id} limit 1
   `), 1));
 
@@ -314,15 +317,15 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
     const welcomeBonus = 0;
     rows = rowsOf<any>(await retryDb(() => db.execute(sql`
       insert into public.credit_wallets
-        (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
+        (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access, fish_ai_enabled)
       values
-        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, false, true)
+        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, false, true, true)
       on conflict (user_id) do nothing
-      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access, fish_ai_enabled
     `), 1));
     if (!rows.length) {
       rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-        select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+        select user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access, fish_ai_enabled
         from public.credit_wallets where user_id = ${user.id} limit 1
       `), 1));
     } else if (welcomeBonus > 0) {
@@ -330,7 +333,7 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
         insert into public.credit_transactions
           (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
         values
-          (${user.id}, 0, 0, 'ai_welcome_bonus', 'Bônus inicial do Painel IA', ${welcomeBonus}, 'AI_WELCOME_V80', ${JSON.stringify({ aiOnly: true })})
+          (${user.id}, 0, 0, 'ai_welcome_bonus', 'Bônus inicial da FISH IA', ${welcomeBonus}, 'AI_WELCOME_V80', ${JSON.stringify({ aiOnly: true })})
       `).catch(() => null);
     }
   }
@@ -343,7 +346,7 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
       update public.credit_wallets set
         email = ${user.email || null}, role = ${expectedRole}, ai_bonus_brl = 0, ai_bonus_granted = true, free_ais_access = false, free_ai_access = true, updated_at = CURRENT_TIMESTAMP::text
       where user_id = ${user.id}
-      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
+      returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access, fish_ai_enabled
     `), 1));
     if (updated[0]) row = updated[0];
   }
@@ -385,6 +388,7 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
     freeAisAccess: false,
     freeAiAccess: true,
     isSuperAdmin: admin,
+    fishAiEnabled: row.fish_ai_enabled !== false,
   };
 }
 
@@ -604,6 +608,7 @@ export type AdminCreditUser = {
   balance: number;
   role: string;
   createdAt?: string | null;
+  fishAiEnabled: boolean;
 };
 
 export async function listAdminCreditUsers(user: PanelUser, search = "", limit = 300): Promise<AdminCreditUser[]> {
@@ -616,7 +621,7 @@ export async function listAdminCreditUsers(user: PanelUser, search = "", limit =
   // V86: usa somente credit_wallets. Todo usuário autenticado ganha carteira em /api/session.
   // Isso evita consultar auth.users no carregamento do Admin, que podia prender a rota no pooler.
   const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
-    select user_id, coalesce(email, '') as email, balance, role, created_at
+    select user_id, coalesce(email, '') as email, balance, role, created_at, fish_ai_enabled
     from public.credit_wallets
     where ${term === ""} or lower(coalesce(email, '')) like ${`%${term}%`} or lower(user_id) like ${`%${term}%`}
     order by created_at desc
@@ -629,6 +634,7 @@ export async function listAdminCreditUsers(user: PanelUser, search = "", limit =
     balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
     role: String(row.role || "user"),
     createdAt: row.created_at || null,
+    fishAiEnabled: row.fish_ai_enabled !== false,
   })).filter((row) => row.userId);
 }
 
@@ -656,7 +662,7 @@ export async function grantManualCredits(args: {
   if (!existing.length) throw Object.assign(new Error("Usuário não encontrado. Peça para o usuário entrar no painel uma vez para criar a carteira."), { status: 404 });
   const email = String(existing[0]?.email || "");
 
-  // A liberação manual afeta somente o saldo AIS. O Painel IA permanece livre.
+  // A liberação manual afeta somente o saldo AIS. A FISH IA não usa esse saldo.
   await retryDb(() => db.execute(sql`
     update public.credit_wallets
     set free_ais_access = false, free_ai_access = true, updated_at = CURRENT_TIMESTAMP::text
@@ -688,6 +694,34 @@ export async function grantManualCredits(args: {
     creditsAdded: credits,
     balance,
     reference,
+  };
+}
+
+
+export async function setFishAiEnabled(args: {
+  admin: PanelUser;
+  targetUserId: string;
+  enabled: boolean;
+}) {
+  if (!isSuperAdmin(args.admin)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
+  await ensureBillingSchema();
+  const targetUserId = String(args.targetUserId || "").trim();
+  if (!targetUserId) throw Object.assign(new Error("Usuário inválido."), { status: 400 });
+
+  const db = getDb();
+  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    update public.credit_wallets
+    set fish_ai_enabled = ${Boolean(args.enabled)}, updated_at = CURRENT_TIMESTAMP::text
+    where user_id = ${targetUserId}
+    returning user_id, coalesce(email, '') as email, fish_ai_enabled
+  `), 1));
+  if (!rows.length) throw Object.assign(new Error("Usuário não encontrado."), { status: 404 });
+
+  return {
+    ok: true,
+    userId: String(rows[0].user_id),
+    email: String(rows[0].email || ""),
+    fishAiEnabled: rows[0].fish_ai_enabled !== false,
   };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, LoaderCircle, PlusCircle, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
+import { Activity, CheckCircle2, LoaderCircle, PlusCircle, Power, PowerOff, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 function brl(value: number) {
@@ -20,6 +20,7 @@ export default function AdminBillingPage() {
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [creditBusy, setCreditBusy] = useState("");
+  const [aiBusy, setAiBusy] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
   const [creditNotes, setCreditNotes] = useState<Record<string, string>>({});
@@ -133,6 +134,32 @@ export default function AdminBillingPage() {
     }
   }
 
+  async function toggleFishAi(user: any) {
+    setAiBusy(user.userId);
+    setError("");
+    setSuccess("");
+    try {
+      const nextEnabled = user.fishAiEnabled === false;
+      const response = await adminFetch("/api/billing/admin/fish-ai", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId: user.userId, enabled: nextEnabled }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Não foi possível alterar a FISH IA.");
+      setData((current: any) => ({
+        ...current,
+        users: (current?.users || []).map((item: any) => item.userId === user.userId ? { ...item, fishAiEnabled: result.fishAiEnabled } : item),
+      }));
+      setSuccess(`FISH IA ${result.fishAiEnabled ? "ligada" : "desligada"} para ${user.email || "o usuário"}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Falha ao alterar a FISH IA.");
+    } finally {
+      setAiBusy("");
+    }
+  }
+
   async function grantCredits(user: any, quickAmount?: number) {
     const amount = Math.round(Number(quickAmount ?? creditAmounts[user.userId] ?? 0));
     if (!Number.isFinite(amount) || amount < 1) {
@@ -188,13 +215,13 @@ export default function AdminBillingPage() {
   });
 
   return <section className="admin-billing-page">
-    <div className="credits-head"><div><small>SUPER ADMIN</small><h2>AIS, IA e Créditos</h2><p>Gerencie créditos do AIS e acompanhe o Painel IA gratuito.</p></div><ShieldCheck /></div>
+    <div className="credits-head"><div><small>SUPER ADMIN</small><h2>AIS, FISH IA e Créditos</h2><p>Gerencie créditos do AIS e controle o acesso à FISH IA de cada usuário.</p></div><ShieldCheck /></div>
 
     {success && <div className="admin-success"><CheckCircle2 /> {success}</div>}
     {error && <div className="credits-error">{error}</div>}
 
     <div className="admin-service-stats">
-      <article><h3>Diagnóstico das APIs</h3><p>Teste a conexão real da Data Docked, OpenAI e banco. O Painel IA V86 é gratuito para os usuários.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin" /> : <Activity />} Testar APIs agora</button></article>
+      <article><h3>Diagnóstico das APIs</h3><p>Teste a conexão real da Data Docked, OpenAI e banco usados pelo sistema.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin" /> : <Activity />} Testar APIs agora</button></article>
       {health && <><article><h3>Data Docked</h3><p>Status: <b>{health.datadocked?.ok ? "ONLINE" : "ERRO"}</b></p><p>Créditos do provedor: <b>{health.datadocked?.ok ? health.datadocked.credits : "—"}</b></p>{!health.datadocked?.ok && <p>{health.datadocked?.error}</p>}</article><article><h3>OpenAI</h3><p>Status: <b>{health.openai?.ok ? "CHAVE/MODELO OK" : "ERRO"}</b></p><p>Modelo: <b>{health.openai?.model || "—"}</b></p>{!health.openai?.ok && <p>{health.openai?.error}</p>}</article><article><h3>Banco</h3><p>Status: <b>{health.database?.ok ? "ONLINE" : "ERRO"}</b></p>{!health.database?.ok && <p>{health.database?.error}</p>}</article></>}
     </div>
 
@@ -203,7 +230,7 @@ export default function AdminBillingPage() {
       <article><small>Créditos manuais</small><b>{x.manualCreditsGranted || 0}</b></article>
       <article><small>Créditos utilizados</small><b>{x.creditsUsed}</b></article>
       <article><small>Nas carteiras</small><b>{x.creditsInWallets}</b></article>
-      <article><small>Painel IA V86</small><b>GRÁTIS</b></article>
+      <article><small>FISH IA</small><b>Controle individual</b></article>
       <article><small>Receita confirmada</small><b>{brl(x.revenue)}</b></article>
       <article><small>Custo AIS estimado</small><b>{brl(x.ais.cost)}</b></article>
       <article><small>Custo OpenAI estimado</small><b>{brl(x.ai.cost)}</b></article>
@@ -213,7 +240,7 @@ export default function AdminBillingPage() {
       <article><small>Usuários com carteira</small><b>{x.users || 0}</b></article>
     </div>
 
-    <div className="admin-service-stats"><article><h3>AIS</h3><p>Consultas: <b>{x.ais.queries}</b></p><p>Barcos pesquisados: <b>{x.ais.vessels}</b></p><p>Créditos: <b>{x.ais.credits}</b></p><p>Chamadas API: <b>{x.ais.providerCalls}</b></p><p>Cache: <b>{x.ais.cacheHits}</b></p></article><article><h3>IA — GRÁTIS</h3><p>Solicitações: <b>{x.ai.queries}</b></p><p>Perguntas simples: <b>{x.ai.basic}</b></p><p>Análises completas: <b>{x.ai.full}</b></p><p>Análises avançadas: <b>{x.ai.advanced}</b></p><p>Créditos cobrados: <b>0</b></p><p>Tokens: <b>{x.ai.tokens}</b></p><p>Custo estimado da API: <b>{brl(x.ai.cost)}</b></p></article></div>
+    <div className="admin-service-stats"><article><h3>AIS</h3><p>Consultas: <b>{x.ais.queries}</b></p><p>Barcos pesquisados: <b>{x.ais.vessels}</b></p><p>Créditos: <b>{x.ais.credits}</b></p><p>Chamadas API: <b>{x.ais.providerCalls}</b></p><p>Cache: <b>{x.ais.cacheHits}</b></p></article><article><h3>FISH IA</h3><p>Conversas: <b>{x.ai.queries}</b></p><p>Tokens: <b>{x.ai.tokens}</b></p><p>Custo estimado da API: <b>{brl(x.ai.cost)}</b></p></article></div>
 
     <section className="admin-credit-manager">
       <div className="admin-credit-manager-head"><div><small>GESTÃO MANUAL</small><h3>Créditos dos usuários</h3><p>Escolha um usuário e adicione créditos diretamente na carteira.</p></div><div className="admin-credit-manager-actions"><button type="button" onClick={() => void loadUsers()} disabled={usersLoading}>{usersLoading ? <LoaderCircle className="spin" /> : <RefreshCw />} Atualizar usuários</button><WalletCards /></div></div>
@@ -222,6 +249,7 @@ export default function AdminBillingPage() {
       <div className="admin-user-credit-list">
         {usersLoading && !users.length ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando usuários...</div> : users.length ? users.map((user: any) => <article key={user.userId} className="admin-user-credit-card">
           <div className="admin-user-identity"><div className="admin-user-avatar"><UserRound /></div><div><b>{user.email || "Sem e-mail"}</b><small>{user.role === "super_admin" ? "ADMINISTRADOR" : "USUÁRIO"} · {user.userId}</small></div><strong>{user.balance} créditos</strong></div>
+          <div className="admin-user-ai-control"><span>FISH IA</span><button type="button" className={`admin-fish-toggle ${user.fishAiEnabled === false ? "off" : "on"}`} disabled={aiBusy === user.userId} onClick={() => void toggleFishAi(user)}>{aiBusy === user.userId ? <LoaderCircle className="spin" /> : user.fishAiEnabled === false ? <PowerOff /> : <Power />}{user.fishAiEnabled === false ? "DESLIGADA" : "LIGADA"}</button></div>
           <div className="admin-credit-quick"><span>Rápido:</span>{[10, 20, 50, 100].map((value) => <button key={value} type="button" disabled={creditBusy === user.userId} onClick={() => void grantCredits(user, value)}>+{value}</button>)}</div>
           <div className="admin-credit-form-row"><input type="number" min="1" max="100000" step="1" value={creditAmounts[user.userId] || ""} onChange={(e) => setCreditAmounts((current) => ({ ...current, [user.userId]: e.target.value }))} placeholder="Quantidade de créditos" /><input value={creditNotes[user.userId] || ""} onChange={(e) => setCreditNotes((current) => ({ ...current, [user.userId]: e.target.value }))} maxLength={160} placeholder="Observação (opcional)" /><button type="button" className="primary" disabled={creditBusy === user.userId} onClick={() => void grantCredits(user)}>{creditBusy === user.userId ? <LoaderCircle className="spin" /> : <PlusCircle />} Adicionar</button></div>
         </article>) : <div className="admin-no-users">Nenhum usuário encontrado.</div>}
@@ -229,7 +257,7 @@ export default function AdminBillingPage() {
     </section>
 
     <form className="admin-settings-form" onSubmit={submit}>
-      <h3>Configurações administrativas <small>• Painel IA V86 = GRÁTIS</small></h3>
+      <h3>Configurações administrativas <small>• FISH IA</small></h3>
       <div className="admin-settings-grid">
         <label>Valor de 1 crédito (R$)<input name="CREDIT_UNIT_PRICE" type="number" min="0.01" step="0.01" defaultValue={s.CREDIT_UNIT_PRICE}/></label>
         <label>Consulta AIS (créditos)<input name="AIS_SINGLE_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_SINGLE_QUERY_CREDITS}/></label>
@@ -243,9 +271,6 @@ export default function AdminBillingPage() {
         <label>Custo interno AIS / chamada (R$)<input name="AIS_PROVIDER_COST_PER_QUERY_BRL" type="number" min="0" step="0.0001" defaultValue={s.AIS_PROVIDER_COST_PER_QUERY_BRL}/></label>
         <label>OpenAI input / 1M tokens (R$)<input name="OPENAI_INPUT_COST_PER_1M" type="number" min="0" step="0.01" defaultValue={s.OPENAI_INPUT_COST_PER_1M}/></label>
         <label>OpenAI output / 1M tokens (R$)<input name="OPENAI_OUTPUT_COST_PER_1M" type="number" min="0" step="0.01" defaultValue={s.OPENAI_OUTPUT_COST_PER_1M}/></label>
-        <label>Modelo IA simples<input name="AI_BASIC_MODEL" defaultValue={s.AI_BASIC_MODEL || ""} placeholder="vazio = OPENAI_MODEL"/></label>
-        <label>Modelo IA completa<input name="AI_FULL_MODEL" defaultValue={s.AI_FULL_MODEL || ""} placeholder="vazio = OPENAI_MODEL"/></label>
-        <label>Modelo IA avançada<input name="AI_ADVANCED_MODEL" defaultValue={s.AI_ADVANCED_MODEL || ""} placeholder="vazio = OPENAI_MODEL"/></label>
       </div>
       <button className="primary" disabled={saving}>{saving ? <LoaderCircle className="spin" /> : <Save />} Salvar configurações</button>
     </form>

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const dataDockedKey = process.env.DATADOCKED_API_KEY?.trim();
   const openAiKey = process.env.OPENAI_API_KEY?.trim();
-  const model = process.env.OPENAI_MODEL || "gpt-5.6-sol";
+  const model = process.env.FISH_AI_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol";
 
   const [dbResult, aisResult, aiResult] = await Promise.allSettled([
     Promise.race([

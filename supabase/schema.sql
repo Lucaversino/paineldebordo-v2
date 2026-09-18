@@ -213,7 +213,8 @@ create table if not exists public.credit_wallets (
   ai_bonus_brl double precision not null default 0,
   ai_bonus_granted boolean not null default false,
   free_ais_access boolean not null default false,
-  free_ai_access boolean not null default false,
+  free_ai_access boolean not null default true,
+  fish_ai_enabled boolean not null default true,
   created_at text not null default CURRENT_TIMESTAMP::text,
   updated_at text not null default CURRENT_TIMESTAMP::text
 );
@@ -289,17 +290,18 @@ insert into public.billing_settings(key,value) values
 ('CREDIT_UNIT_PRICE','1.00'),
 ('AIS_SINGLE_QUERY_CREDITS','2'),
 ('AIS_UPDATE_CREDITS','2'),
-('AI_BASIC_QUERY_CREDITS','1'),
-('AI_FULL_ANALYSIS_CREDITS','2'),
-('AI_ADVANCED_ANALYSIS_CREDITS','3'),
-('AI_WELCOME_BONUS_BRL','2.00'),
+('AI_BASIC_QUERY_CREDITS','0'),
+('AI_FULL_ANALYSIS_CREDITS','0'),
+('AI_ADVANCED_ANALYSIS_CREDITS','0'),
+('AI_WELCOME_BONUS_BRL','0'),
 ('AIS_CACHE_MINUTES','0'),
 ('AIS_PROVIDER_COST_PER_QUERY_BRL','0'),
 ('OPENAI_INPUT_COST_PER_1M','0'),
 ('OPENAI_OUTPUT_COST_PER_1M','0'),
 ('AI_BASIC_MODEL',''),
 ('AI_FULL_MODEL',''),
-('AI_ADVANCED_MODEL','')
+('AI_ADVANCED_MODEL',''),
+('BILLING_SCHEMA_VERSION','87')
 on conflict (key) do nothing;
 
 

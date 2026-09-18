@@ -18,6 +18,7 @@ export async function GET() {
         isSuperAdmin: admin,
         freeAisAccess: false,
         freeAiAccess: true,
+        fishAiEnabled: wallet.fishAiEnabled,
         balance: wallet.balance,
       },
     });
@@ -31,6 +32,7 @@ export async function GET() {
         isSuperAdmin: admin,
         freeAisAccess: false,
         freeAiAccess: true,
+        fishAiEnabled: true,
         balance: null,
       },
     });

@@ -32,7 +32,7 @@ const Operations = dynamic(() => import("../components/Operations"), { ssr: fals
 const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"), { ssr: false });
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
 const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
-const FloatingPanelAssistant = dynamic(() => import("../components/FloatingPanelAssistant"), { ssr: false });
+const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
 const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
 const AdminBillingPage = dynamic(() => import("../components/AdminBillingPage"), { ssr: false, loading: ModuleLoading });
 const DashboardProductionChart = dynamic(() => import("../components/DashboardProductionChart"), { ssr: false });
@@ -535,7 +535,7 @@ export default function Home() {
           <Operations view={view} onDashboard={() => setView("Dashboard")} />
         )}
       </main>
-      <FloatingPanelAssistant />
+      <FishAI />
       {modal && t && (
         <div className="overlay" onMouseDown={() => setModal(null)}>
           <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
