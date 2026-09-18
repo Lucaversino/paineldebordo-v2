@@ -197,6 +197,31 @@ function formatCoordMarine(value: number, latitude = true) {
   return `${degreeText}º ${minuteText}' ${hemisphere}`;
 }
 
+function coordinateDigitsToDecimal(raw: string, latitude: boolean) {
+  const digits = raw.replace(/\D/g, "").slice(0, 6);
+  if (digits.length < 4) return null;
+  const degreeDigits = latitude ? 2 : (digits.length >= 7 ? 3 : 2);
+  const degrees = Number(digits.slice(0, degreeDigits));
+  const minuteDigits = digits.slice(degreeDigits);
+  if (!minuteDigits) return null;
+  const wholeMinutes = Number(minuteDigits.slice(0, 2));
+  const decimalMinutes = minuteDigits.slice(2) ? Number(`0.${minuteDigits.slice(2)}`) : 0;
+  const minutes = wholeMinutes + decimalMinutes;
+  if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || minutes >= 60) return null;
+  const max = latitude ? 90 : 180;
+  const value = degrees + minutes / 60;
+  if (value > max) return null;
+  return -value; // Painel operacional usa Sul/Oeste automaticamente.
+}
+
+function coordinateDigitsDisplay(raw: string, direction: "S" | "W") {
+  const digits = raw.replace(/\D/g, "").slice(0, 6);
+  if (!digits) return "";
+  const degrees = digits.slice(0, 2);
+  const minutes = digits.slice(2);
+  return `${degrees}${minutes ? "º" : ""}${minutes}${digits ? ` ${direction}` : ""}`;
+}
+
 function parseProviderTime(value?: string) {
   if (!value) return null;
   const normalized = /UTC$/i.test(value.trim()) ? value.trim().replace(/ UTC$/i, " GMT") : value.trim();
@@ -245,18 +270,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
   const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
   const searchModeRef = useRef<SearchMode>("vessel");
-  const areaRadiusRef = useRef<50 | 100>(50);
+  const areaRadiusRef = useRef<50>(50);
 
   const [nameQuery, setNameQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
-  const [areaRadius, setAreaRadius] = useState<50 | 100>(50);
+  const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
+  const [manualLatDigits, setManualLatDigits] = useState("");
+  const [manualLonDigits, setManualLonDigits] = useState("");
+  const [manualCoordError, setManualCoordError] = useState("");
   const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
   const [areaCost, setAreaCost] = useState<number | null>(null);
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
-  useEffect(() => { areaRadiusRef.current = areaRadius; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, areaRadius); }, [areaRadius]);
+  useEffect(() => { areaRadiusRef.current = 50; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, 50); }, [areaCenter]);
   const [matches, setMatches] = useState<VesselMatch[]>([]);
   const [matchTotal, setMatchTotal] = useState(0);
   const [tracked, setTracked] = useState<Vessel | null>(null);
@@ -326,7 +354,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  function drawAreaSelection(lat: number, lon: number, radiusKm: 50 | 100) {
+  function drawAreaSelection(lat: number, lon: number, radiusKm: 50 = 50) {
     const source = areaSourceRef.current;
     if (!source) return;
     source.clear();
@@ -365,18 +393,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(`Centro da área definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
   }
 
+  function applyManualAreaCoordinates(closeMobilePanel = false) {
+    const lat = coordinateDigitsToDecimal(manualLatDigits, true);
+    const lon = coordinateDigitsToDecimal(manualLonDigits, false);
+    if (lat == null || lon == null) {
+      setManualCoordError("Confira latitude e longitude. Ex.: 254530 / 462550.");
+      return;
+    }
+    setManualCoordError("");
+    const coords = { lat, lon };
+    setAreaCenter(coords);
+    drawAreaSelection(lat, lon, 50);
+    centerOn(lat, lon, 8, true);
+    setStatusMessage(`Centro manual definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+    if (closeMobilePanel) setMobilePanel(null);
+  }
+
   async function searchArea() {
     const selected = areaCenter || center;
     if (!selected) return;
-    if (areaRadius === 100) {
-      const ok = window.confirm("A pesquisa de 100 km usa 9 consultas de 50 km porque o Data Docked limita cada busca a 50 km. Custo estimado: 90 créditos. Continuar?");
-      if (!ok) return;
-      if (credits != null && credits < 90) {
-        setStatus("error");
-        setStatusMessage(`Saldo insuficiente: 100 km exige cerca de 90 créditos e você tem ${credits}.`);
-        return;
-      }
-    }
     setStatus("loading");
     setStatusMessage(`Pesquisando embarcações em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
@@ -396,11 +431,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         receivedAt: Number(raw?.receivedAt) || Date.now(),
       })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon));
       setAreaVessels(rows);
-      setAreaCost(Number(data?.creditCost) || (areaRadius === 100 ? 90 : 10));
+      setAreaCost(Number(data?.creditCost) || 10);
       drawAreaVessels(rows);
-      centerOn(selected.lat, selected.lon, areaRadius === 100 ? 7 : 8);
+      centerOn(selected.lat, selected.lon, 8);
       setStatus("ready");
-      setStatusMessage(`${rows.length} barco(s) encontrado(s) em ${areaRadius} km · ${data?.creditCost || (areaRadius === 100 ? 90 : 10)} créditos`);
+      setStatusMessage(`${rows.length} barco(s) encontrado(s) em 50 km · ${data?.creditCost || 10} créditos`);
       await refreshCredits();
     } catch {
       setStatus("error");
@@ -704,17 +739,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function locateDevice() {
     if (!navigator.geolocation) {
-      setStatusMessage("Geolocalização não disponível neste dispositivo.");
+      setStatusMessage("GPS não disponível. Digite latitude e longitude manualmente na busca por área.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         setDevicePosition(coords);
-        centerOn(coords.lat, coords.lon, 12, true);
-        setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
+        centerOn(coords.lat, coords.lon, searchModeRef.current === "area" ? 8 : 12, true);
+        if (searchModeRef.current === "area") {
+          setAreaCenter(coords);
+          drawAreaSelection(coords.lat, coords.lon, 50);
+          setStatusMessage(`GPS localizado e definido como centro da busca · ${formatCoordMarine(coords.lat, true)} · ${formatCoordMarine(coords.lon, false)}`);
+        } else {
+          setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
+        }
       },
-      () => setStatusMessage("Localização não autorizada ou indisponível."),
+      () => setStatusMessage("GPS não autorizado ou indisponível. Use os campos de latitude e longitude."),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
     );
   }
@@ -947,20 +988,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         ) : (
           <div className="ais-v70-area-search">
             <div className="ais-name-search-head">
-              <div className="ais-name-title"><Crosshair /><span><b>PESQUISAR EMBARCAÇÕES NA ÁREA</b><small>Toque no mapa para escolher o centro do círculo.</small></span></div>
-              <div className="ais-v70-area-cost">{areaRadius === 50 ? "10 CR" : "90 CR"}</div>
+              <div className="ais-name-title"><Crosshair /><span><b>PESQUISAR EMBARCAÇÕES NA ÁREA</b><small>Área fixa de 50 km. Use GPS, toque no mapa ou digite a posição.</small></span></div>
+              <div className="ais-v70-area-cost">10 CR</div>
             </div>
             <div className="ais-v70-radius-row">
-              <button type="button" className={areaRadius === 50 ? "active" : ""} onClick={() => setAreaRadius(50)}>50 km <small>10 créditos</small></button>
-              <button type="button" className={areaRadius === 100 ? "active expensive" : "expensive"} onClick={() => setAreaRadius(100)}>100 km <small>90 créditos</small></button>
+              <button type="button" className="active">50 km <small>10 créditos</small></button>
               <button type="button" onClick={chooseAreaCenterFromMap}><Crosshair /> Centro do mapa</button>
-              {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, areaRadius); centerOn(devicePosition.lat, devicePosition.lon, areaRadius === 100 ? 7 : 8); }}><LocateFixed /> Meu GPS</button>}
+              <button type="button" onClick={locateDevice}><LocateFixed /> Usar GPS</button>
+              {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Aplicar meu GPS</button>}
             </div>
+            <div className="ais-v74-manual-coords">
+              <div className="ais-v74-coordinate-field"><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></div>
+              <div className="ais-v74-coordinate-field"><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></div>
+              <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> USAR LAT/LONG</button>
+            </div>
+            {manualCoordError && <p className="ais-v74-coordinate-error">{manualCoordError}</p>}
             <div className="ais-v70-area-position">
-              <span><small>CENTRO</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Toque no mapa para selecionar"}</b></span>
-              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR {areaRadius} KM</button>
+              <span><small>CENTRO DA BUSCA · 50 KM</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Escolha pelo mapa, GPS ou latitude/longitude"}</b></span>
+              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR 50 KM</button>
             </div>
-            {areaRadius === 100 && <p className="ais-v70-cost-warning">O Data Docked limita cada busca a 50 km. A opção de 100 km combina 9 consultas e custa aproximadamente 90 créditos.</p>}
             {areaVessels.length > 0 && (
               <div className="ais-v70-area-results">
                 <div><b>{areaVessels.length} barcos encontrados</b><span>{areaCost != null ? `${areaCost} créditos usados` : ""}</span></div>
@@ -1069,10 +1115,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                   </>
                 ) : (
                   <>
-                    <div className="ais-v70-mobile-radius"><button type="button" className={areaRadius === 50 ? "active" : ""} onClick={() => setAreaRadius(50)}>50 km <small>10 CR</small></button><button type="button" className={areaRadius === 100 ? "active expensive" : "expensive"} onClick={() => setAreaRadius(100)}>100 km <small>90 CR</small></button></div>
-                    <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Fechar e tocar no mapa para escolher o centro</button>
-                    <div className="ais-v70-mobile-area-current"><small>Centro selecionado</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
-                    <button type="button" className="ais-v70-area-go" onClick={() => { searchArea(); setMobilePanel(null); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar área de {areaRadius} km</button>
+                    <div className="ais-v70-mobile-radius single"><button type="button" className="active">50 km <small>10 CR</small></button></div>
+                    <div className="ais-v74-mobile-location-actions">
+                      <button type="button" onClick={locateDevice}><LocateFixed /> GPS do celular</button>
+                      {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Usar GPS encontrado</button>}
+                    </div>
+                    <div className="ais-v74-mobile-coordinates">
+                      <label><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></label>
+                      <label><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></label>
+                      <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar lat/long</button>
+                    </div>
+                    {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
+                    <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Usar centro atual do mapa</button>
+                    <div className="ais-v70-mobile-area-current"><small>Centro selecionado · raio 50 km</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
+                    <button type="button" className="ais-v70-area-go" onClick={() => { searchArea(); setMobilePanel(null); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar área de 50 km</button>
                   </>
                 )}
               </div>
