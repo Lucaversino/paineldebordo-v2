@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
 
 let schemaPromise: Promise<void> | null = null;
+let schemaReady = false;
 
 function asNumber(value: unknown, fallback = 0) {
   const n = Number(value);
@@ -149,10 +150,52 @@ async function createBillingSchema() {
   }
 }
 
+function errorText(error: unknown) {
+  const anyError = error as any;
+  return [anyError?.code, anyError?.message, anyError?.cause?.code, anyError?.cause?.message]
+    .filter(Boolean).join(" ").toUpperCase();
+}
+
+function missingBillingTable(error: unknown) {
+  const text = errorText(error);
+  return text.includes("42P01") || text.includes("BILLING_SETTINGS") && text.includes("DOES NOT EXIST");
+}
+
+function transientDbError(error: unknown) {
+  const text = errorText(error);
+  return ["CONNECTION_CLOSED", "ECONNRESET", "ETIMEDOUT", "CONNECTION TERMINATED", "SOCKET"].some((part) => text.includes(part));
+}
+
+async function retryDb<T>(work: () => Promise<T>, retries = 1): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try { return await work(); } catch (error) {
+      lastError = error;
+      if (!transientDbError(error) || attempt >= retries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 140 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export async function ensureBillingSchema() {
+  if (schemaReady) return;
   if (!schemaPromise) {
-    schemaPromise = createBillingSchema().catch((error) => {
+    schemaPromise = (async () => {
+      const db = getDb();
+      try {
+        // V78: normal requests only probe the already-created schema.
+        // This avoids many concurrent CREATE TABLE/INDEX statements on Vercel cold starts.
+        await retryDb(() => db.execute(sql`select 1 from public.billing_settings limit 1`), 1);
+      } catch (error) {
+        if (!missingBillingTable(error)) throw error;
+        // First installation only: bootstrap once if the billing tables truly do not exist.
+        await createBillingSchema();
+      }
+      schemaReady = true;
+    })().catch((error) => {
       schemaPromise = null;
+      schemaReady = false;
       throw error;
     });
   }
@@ -162,7 +205,7 @@ export async function ensureBillingSchema() {
 export async function getBillingSettings(): Promise<BillingSettings> {
   await ensureBillingSchema();
   const db = getDb();
-  const result = await db.execute(sql`select key, value from public.billing_settings`);
+  const result = await retryDb(() => db.execute(sql`select key, value from public.billing_settings`), 1);
   const map = new Map(rowsOf<any>(result).map((row) => [String(row.key), String(row.value)]));
   const get = (key: keyof BillingSettings) => map.get(key) ?? DEFAULT_SETTINGS[key];
   return {
@@ -186,7 +229,7 @@ export async function ensureWallet(user: PanelUser) {
   await ensureBillingSchema();
   const db = getDb();
   const admin = isSuperAdmin(user);
-  await db.execute(sql`
+  await retryDb(() => db.execute(sql`
     insert into public.credit_wallets (user_id, email, role, balance, free_ais_access, free_ai_access)
     values (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${admin}, ${admin})
     on conflict (user_id) do update set
@@ -195,11 +238,11 @@ export async function ensureWallet(user: PanelUser) {
       free_ais_access = ${admin},
       free_ai_access = ${admin},
       updated_at = CURRENT_TIMESTAMP::text
-  `);
-  const rows = rowsOf<any>(await db.execute(sql`
+  `), 1);
+  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
     select user_id, email, role, balance, free_ais_access, free_ai_access
     from public.credit_wallets where user_id = ${user.id} limit 1
-  `));
+  `), 1));
   const row = rows[0] || {};
   return {
     userId: user.id,
@@ -312,14 +355,14 @@ export async function addPurchasedCredits(args: {
 export async function listCreditTransactions(userId: string, limit = 50) {
   await ensureBillingSchema();
   const db = getDb();
-  return rowsOf<any>(await db.execute(sql`
+  return rowsOf<any>(await retryDb(() => db.execute(sql`
     select id, delta, balance_after as "balanceAfter", kind, description, amount_brl as "amountBrl",
            reference, metadata_json as "metadataJson", created_at as "createdAt"
     from public.credit_transactions
     where user_id = ${userId}
     order by id desc
     limit ${Math.max(1, Math.min(200, limit))}
-  `));
+  `), 1));
 }
 
 export async function logAiUsage(args: {

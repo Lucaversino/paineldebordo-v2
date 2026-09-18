@@ -25,60 +25,78 @@ function vesselKey(input: any) {
   return "";
 }
 
+let aisLibrarySchemaReady = false;
+let aisLibrarySchemaPromise: Promise<void> | null = null;
+
 async function ensureTables(db: ReturnType<typeof getDb>) {
-  await db.execute(sql`
-    create table if not exists public.ais_saved_vessels (
-      id serial primary key,
-      owner_id text not null,
-      vessel_key text not null,
-      name text not null,
-      mmsi text,
-      imo text,
-      country text,
-      vessel_type text,
-      callsign text,
-      last_latitude double precision,
-      last_longitude double precision,
-      last_sog double precision,
-      last_cog double precision,
-      last_heading double precision,
-      last_destination text,
-      last_status text,
-      last_data_source text,
-      last_position_received text,
-      last_update_time text,
-      saved_at text not null default CURRENT_TIMESTAMP::text,
-      updated_at text not null default CURRENT_TIMESTAMP::text,
-      unique(owner_id, vessel_key)
-    )
-  `);
-  await db.execute(sql`create index if not exists idx_ais_saved_owner_updated on public.ais_saved_vessels(owner_id, updated_at)`);
-  await db.execute(sql`
-    create table if not exists public.ais_search_history (
-      id serial primary key,
-      owner_id text not null,
-      vessel_key text not null,
-      name text not null,
-      mmsi text,
-      imo text,
-      latitude double precision not null,
-      longitude double precision not null,
-      sog double precision,
-      cog double precision,
-      heading double precision,
-      destination text,
-      nav_status text,
-      data_source text,
-      position_received text,
-      update_time text,
-      queried_at text not null default CURRENT_TIMESTAMP::text
-    )
-  `);
-  await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
-  await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
-  await db.execute(sql`create index if not exists idx_ais_history_owner_vessel on public.ais_search_history(owner_id, vessel_key)`);
-  await db.execute(sql`alter table public.ais_saved_vessels enable row level security`);
-  await db.execute(sql`alter table public.ais_search_history enable row level security`);
+  if (aisLibrarySchemaReady) return;
+  if (!aisLibrarySchemaPromise) {
+    aisLibrarySchemaPromise = (async () => {
+      try {
+        await db.execute(sql`select 1 from public.ais_saved_vessels limit 1`);
+        await db.execute(sql`select credits_used from public.ais_search_history limit 1`);
+      } catch (error: any) {
+        const text = [error?.code, error?.message, error?.cause?.code, error?.cause?.message].filter(Boolean).join(" ").toUpperCase();
+        const missing = text.includes("42P01") || text.includes("42703");
+        if (!missing) throw error;
+        await db.execute(sql`
+            create table if not exists public.ais_saved_vessels (
+              id serial primary key,
+              owner_id text not null,
+              vessel_key text not null,
+              name text not null,
+              mmsi text,
+              imo text,
+              country text,
+              vessel_type text,
+              callsign text,
+              last_latitude double precision,
+              last_longitude double precision,
+              last_sog double precision,
+              last_cog double precision,
+              last_heading double precision,
+              last_destination text,
+              last_status text,
+              last_data_source text,
+              last_position_received text,
+              last_update_time text,
+              saved_at text not null default CURRENT_TIMESTAMP::text,
+              updated_at text not null default CURRENT_TIMESTAMP::text,
+              unique(owner_id, vessel_key)
+            )
+          `);
+          await db.execute(sql`create index if not exists idx_ais_saved_owner_updated on public.ais_saved_vessels(owner_id, updated_at)`);
+          await db.execute(sql`
+            create table if not exists public.ais_search_history (
+              id serial primary key,
+              owner_id text not null,
+              vessel_key text not null,
+              name text not null,
+              mmsi text,
+              imo text,
+              latitude double precision not null,
+              longitude double precision not null,
+              sog double precision,
+              cog double precision,
+              heading double precision,
+              destination text,
+              nav_status text,
+              data_source text,
+              position_received text,
+              update_time text,
+              queried_at text not null default CURRENT_TIMESTAMP::text
+            )
+          `);
+          await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
+          await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
+          await db.execute(sql`create index if not exists idx_ais_history_owner_vessel on public.ais_search_history(owner_id, vessel_key)`);
+          await db.execute(sql`alter table public.ais_saved_vessels enable row level security`);
+          await db.execute(sql`alter table public.ais_search_history enable row level security`);
+      }
+      aisLibrarySchemaReady = true;
+    })().catch((error) => { aisLibrarySchemaPromise = null; aisLibrarySchemaReady = false; throw error; });
+  }
+  await aisLibrarySchemaPromise;
 }
 
 export async function GET() {

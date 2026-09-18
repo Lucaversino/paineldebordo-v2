@@ -215,49 +215,74 @@ function compactDayForecast(weather: any, marine: any) {
   return rows;
 }
 
+let environmentalSchemaReady = false;
+let environmentalSchemaPromise: Promise<void> | null = null;
+
+function environmentalTableMissing(error: unknown) {
+  const anyError = error as any;
+  const text = [anyError?.code, anyError?.message, anyError?.cause?.code, anyError?.cause?.message].filter(Boolean).join(" ").toUpperCase();
+  return text.includes("42P01") || (text.includes("ENVIRONMENTAL_SNAPSHOTS") && text.includes("DOES NOT EXIST"));
+}
+
 export async function ensureEnvironmentalSnapshotsTable(db: ReturnType<typeof getDb>) {
-  await db.execute(sql`
-    create table if not exists public.environmental_snapshots (
-      id serial primary key,
-      owner_id text not null,
-      trip_id integer not null,
-      fishing_set_id integer not null,
-      latitude double precision,
-      longitude double precision,
-      reference_time text not null,
-      source_mode text not null,
-      status text not null default 'PENDING',
-      wind_speed_kmh double precision,
-      wind_direction_deg double precision,
-      wind_direction text,
-      gust_kmh double precision,
-      wave_height_m double precision,
-      wave_direction_deg double precision,
-      wave_direction text,
-      wave_period_s double precision,
-      swell_height_m double precision,
-      swell_direction_deg double precision,
-      swell_direction text,
-      swell_period_s double precision,
-      sea_temperature_c double precision,
-      current_kmh double precision,
-      current_direction_deg double precision,
-      current_direction text,
-      sea_level_msl_m double precision,
-      chlorophyll_mg_m3 double precision,
-      chlorophyll_time text,
-      lunar_phase text,
-      lunar_illumination double precision,
-      sunrise text,
-      sunset text,
-      payload_json text,
-      error_text text,
-      captured_at text not null default CURRENT_TIMESTAMP::text
-    )
-  `);
-  await db.execute(sql`create unique index if not exists idx_env_snapshot_set on public.environmental_snapshots(fishing_set_id)`);
-  await db.execute(sql`create index if not exists idx_env_snapshot_owner_trip on public.environmental_snapshots(owner_id, trip_id)`);
-  await db.execute(sql`create index if not exists idx_env_snapshot_owner_status on public.environmental_snapshots(owner_id, status)`);
+  if (environmentalSchemaReady) return;
+  if (!environmentalSchemaPromise) {
+    environmentalSchemaPromise = (async () => {
+      try {
+        await db.execute(sql`select 1 from public.environmental_snapshots limit 1`);
+      } catch (error) {
+        if (!environmentalTableMissing(error)) throw error;
+        await db.execute(sql`
+            create table if not exists public.environmental_snapshots (
+              id serial primary key,
+              owner_id text not null,
+              trip_id integer not null,
+              fishing_set_id integer not null,
+              latitude double precision,
+              longitude double precision,
+              reference_time text not null,
+              source_mode text not null,
+              status text not null default 'PENDING',
+              wind_speed_kmh double precision,
+              wind_direction_deg double precision,
+              wind_direction text,
+              gust_kmh double precision,
+              wave_height_m double precision,
+              wave_direction_deg double precision,
+              wave_direction text,
+              wave_period_s double precision,
+              swell_height_m double precision,
+              swell_direction_deg double precision,
+              swell_direction text,
+              swell_period_s double precision,
+              sea_temperature_c double precision,
+              current_kmh double precision,
+              current_direction_deg double precision,
+              current_direction text,
+              sea_level_msl_m double precision,
+              chlorophyll_mg_m3 double precision,
+              chlorophyll_time text,
+              lunar_phase text,
+              lunar_illumination double precision,
+              sunrise text,
+              sunset text,
+              payload_json text,
+              error_text text,
+              captured_at text not null default CURRENT_TIMESTAMP::text
+            )
+          `);
+          await db.execute(sql`create unique index if not exists idx_env_snapshot_set on public.environmental_snapshots(fishing_set_id)`);
+          await db.execute(sql`create index if not exists idx_env_snapshot_owner_trip on public.environmental_snapshots(owner_id, trip_id)`);
+          await db.execute(sql`create index if not exists idx_env_snapshot_owner_status on public.environmental_snapshots(owner_id, status)`);
+      }
+      environmentalSchemaReady = true;
+    })().catch((error) => {
+      environmentalSchemaPromise = null;
+      environmentalSchemaReady = false;
+      throw error;
+    });
+  }
+  await environmentalSchemaPromise;
 }
 
 function normalizeRow(row: any): EnvironmentalSnapshot {

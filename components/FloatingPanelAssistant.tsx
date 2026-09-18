@@ -49,12 +49,12 @@ export default function FloatingPanelAssistant() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const loadStatus = () => fetch("/api/ai-assistant", { cache: "no-store" })
+  const loadStatus = () => fetch("/api/ai-assistant", { cache: "no-store", signal: AbortSignal.timeout(10000) })
     .then((r) => r.ok ? r.json() : null)
     .then((status) => { if (status) setAssistant(status); })
     .catch(() => null);
 
-  useEffect(() => { void loadStatus(); }, []);
+  useEffect(() => { if (open && !assistant) void loadStatus(); }, [open, assistant]);
   useEffect(() => { try { window.sessionStorage.setItem("painel-ia-chat-v76", JSON.stringify(messages.slice(-18))); } catch {} }, [messages]);
   useEffect(() => {
     if (!open) return;

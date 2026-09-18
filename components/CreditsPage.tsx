@@ -18,13 +18,23 @@ export default function CreditsPage() {
   const [error, setError] = useState("");
   const [buying, setBuying] = useState<number | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<string>("");
+  const [loading, setLoading] = useState(true);
   const load = async () => {
     setError("");
-    const response = await fetch("/api/billing", { cache: "no-store" });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) { setError(result?.error || "Não foi possível carregar os créditos."); return; }
-    setData(result);
-    if (result?.wallet && Number.isFinite(Number(result.wallet.balance))) window.dispatchEvent(new CustomEvent("painel-billing-changed", { detail: { balance: Number(result.wallet.balance) } }));
+    setLoading(true);
+    try {
+      const response = await fetch("/api/billing", { cache: "no-store", signal: AbortSignal.timeout(10000) });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Não foi possível carregar os créditos.");
+      setData(result);
+      if (result?.wallet && Number.isFinite(Number(result.wallet.balance))) window.dispatchEvent(new CustomEvent("painel-billing-changed", { detail: { balance: Number(result.wallet.balance) } }));
+    } catch (cause) {
+      const timedOut = cause instanceof DOMException && cause.name === "TimeoutError";
+      setError(timedOut ? "A carteira demorou para responder. Tente novamente." : cause instanceof Error ? cause.message : "Não foi possível carregar os créditos.");
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
     void load();
@@ -48,7 +58,7 @@ export default function CreditsPage() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao iniciar pagamento."); setBuying(null); }
   }
 
-  if (!data) return <section className="credits-page"><div className="credits-loading"><LoaderCircle className="spin" /> Carregando carteira...</div>{error && <p>{error}</p>}</section>;
+  if (!data) return <section className="credits-page"><div className="credits-loading">{loading ? <><LoaderCircle className="spin" /> Carregando carteira...</> : <><WalletCards /> Carteira indisponível</>}</div>{error && <div className="credits-error">{error}<button type="button" onClick={() => void load()}><RefreshCw /> Tentar novamente</button></div>}</section>;
   const equivalent = data.wallet.balance * data.settings.creditUnitPrice;
   return <section className="credits-page">
     <div className="credits-head"><div><small>CARTEIRA ÚNICA</small><h2>Meus créditos</h2><p>AIS e Painel IA usam a mesma carteira.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>

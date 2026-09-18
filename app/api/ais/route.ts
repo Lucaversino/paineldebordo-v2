@@ -4,7 +4,6 @@ import { getDb } from "../../../db";
 import {
   assertCanUse,
   debitCreditsAfterSuccess,
-  ensureBillingSchema,
   ensureWallet,
   getBillingSettings,
   logAisUsage,
@@ -66,32 +65,49 @@ function normalizePosition(raw: any, fallbackName = "") {
   };
 }
 
+let aisHistorySchemaReady = false;
+let aisHistorySchemaPromise: Promise<void> | null = null;
+
 async function ensureAisHistoryColumns() {
-  const db = getDb();
-  await db.execute(sql`
-    create table if not exists public.ais_search_history (
-      id serial primary key,
-      owner_id text not null,
-      vessel_key text not null,
-      name text not null,
-      mmsi text,
-      imo text,
-      latitude double precision not null,
-      longitude double precision not null,
-      sog double precision,
-      cog double precision,
-      heading double precision,
-      destination text,
-      nav_status text,
-      data_source text,
-      position_received text,
-      update_time text,
-      credits_used integer not null default 0,
-      queried_at text not null default CURRENT_TIMESTAMP::text
-    )
-  `);
-  await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
-  await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
+  if (aisHistorySchemaReady) return;
+  if (!aisHistorySchemaPromise) {
+    aisHistorySchemaPromise = (async () => {
+      const db = getDb();
+      try {
+        await db.execute(sql`select credits_used from public.ais_search_history limit 1`);
+      } catch (error: any) {
+        const text = [error?.code, error?.message, error?.cause?.code, error?.cause?.message].filter(Boolean).join(" ").toUpperCase();
+        const missing = text.includes("42P01") || text.includes("42703");
+        if (!missing) throw error;
+          await db.execute(sql`
+            create table if not exists public.ais_search_history (
+              id serial primary key,
+              owner_id text not null,
+              vessel_key text not null,
+              name text not null,
+              mmsi text,
+              imo text,
+              latitude double precision not null,
+              longitude double precision not null,
+              sog double precision,
+              cog double precision,
+              heading double precision,
+              destination text,
+              nav_status text,
+              data_source text,
+              position_received text,
+              update_time text,
+              credits_used integer not null default 0,
+              queried_at text not null default CURRENT_TIMESTAMP::text
+            )
+          `);
+          await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
+          await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
+      }
+      aisHistorySchemaReady = true;
+    })().catch((error) => { aisHistorySchemaPromise = null; aisHistorySchemaReady = false; throw error; });
+  }
+  await aisHistorySchemaPromise;
 }
 
 async function saveHistory(userId: string, vessel: { name: string; lat: number; lon: number; positionReceived: string; updateTime: string; dataSource: string; vesselRef: string }, creditsUsed: number) {
@@ -115,7 +131,6 @@ async function saveHistory(userId: string, vessel: { name: string; lat: number; 
 export async function GET() {
   const user = await getPanelUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureBillingSchema();
   const [wallet, settings] = await Promise.all([ensureWallet(user), getBillingSettings()]);
   return NextResponse.json({
     configured: Boolean(process.env.DATADOCKED_API_KEY?.trim()),

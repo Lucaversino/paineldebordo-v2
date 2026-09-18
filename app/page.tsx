@@ -85,7 +85,7 @@ export default function Home() {
   };
   useEffect(() => {
     load();
-    fetch("/api/session", { cache: "no-store" })
+    fetch("/api/session", { cache: "no-store", signal: AbortSignal.timeout(8000) })
       .then((r) => r.ok ? r.json() : null)
       .then((result) => result?.billing && setBilling(result.billing))
       .catch(() => null);
@@ -95,34 +95,38 @@ export default function Home() {
     } catch {}
   }, []);
 
-  // v69: preenche gradualmente o histórico ambiental das largadas antigas sem
-  // bloquear a tela. Cada visita continua de onde parou até cobrir as viagens
-  // atuais e finalizadas.
+  // V78: o histórico ambiental continua sendo preenchido, mas somente quando
+  // o Dashboard está aberto e depois da interface principal já estar estável.
+  // Isso evita disputar conexões com carteira, AIS e IA no carregamento inicial.
   useEffect(() => {
+    if (view !== "Dashboard") return;
     let stopped = false;
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
     const backfill = async () => {
-      await sleep(1600);
-      for (let round = 0; round < 10 && !stopped; round++) {
-        if (!navigator.onLine) return;
+      try {
+        if (sessionStorage.getItem("painel-env-backfill-v78") === "1") return;
+        sessionStorage.setItem("painel-env-backfill-v78", "1");
+      } catch {}
+      await sleep(15000);
+      for (let round = 0; round < 2 && !stopped; round++) {
+        if (!navigator.onLine || view !== "Dashboard") return;
         try {
           const response = await fetch("/api/environmental-snapshots", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ action: "backfill", limit: 3 }),
+            body: JSON.stringify({ action: "backfill", limit: 1 }),
+            signal: AbortSignal.timeout(12000),
           });
           if (!response.ok) return;
           const result = await response.json().catch(() => ({}));
           if (!Number(result.remaining || 0)) return;
-        } catch {
-          return;
-        }
-        await sleep(900);
+        } catch { return; }
+        await sleep(2500);
       }
     };
     void backfill();
     return () => { stopped = true; };
-  }, []);
+  }, [view]);
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
     window.location.replace("/login");
