@@ -1,3 +1,7 @@
+## V92 — gráfico legível no modo escuro
+
+O tooltip do gráfico de desempenho foi corrigido para fundo escuro e texto branco, inclusive com fallback para o tooltip padrão do Recharts.
+
 # PAINEL DE BORDO — v87
 
 Continuação direta da V86. O antigo Painel/Pilot IA foi substituído pela **FISH IA**, com interface flutuante limpa, conversa sem mensagens prontas, tipografia grande e personalidade de pescador experiente com foco em **corvina (Micropogonias furnieri)**, Lua, vento, maré, temperatura da água e clorofila.
@@ -362,3 +366,13 @@ Veja `FIX-V88-FISH-AI-HISTORICO.md`.
 
 ## V90 — posição da Inteligência Oceânica
 A análise ambiental usa por padrão a primeira posição registrada na primeira largada do dia. O usuário pode alterar temporariamente o ponto pelo botão **Alterar posição** sem modificar os dados da largada no banco. A posição é exibida em graus e minutos decimais (S/W).
+
+
+## V91 — gráfico de desempenho legível
+
+- Remove o tooltip branco do gráfico.
+- Tooltip próprio em tema escuro com Capturado, Meta esperada, Diferença e Ritmo da meta.
+- Resumo numérico permanente acima do gráfico.
+- Linha da produção acumulada e linha da meta agora têm identificação visual distinta.
+- Eixos e datas ficam mais legíveis e usam formatação pt-BR.
+- Layout responsivo para celular.
