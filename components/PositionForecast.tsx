@@ -1,21 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  Bookmark,
   Compass,
   Download,
   Droplets,
+  Folder,
   Gauge,
+  History,
   LocateFixed,
   Navigation,
   RefreshCw,
+  Save,
   Share2,
   Thermometer,
+  Trash2,
   Waves,
   Wind,
+  X,
 } from "lucide-react";
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import NauticalMap from "./NauticalMap";
+
+const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
 
 function digitsToDecimal(raw: string, direction: "S" | "W") {
   const digits = raw.replace(/\D/g, "");
@@ -34,6 +42,16 @@ function decimalToDigits(value: number | null | undefined) {
   const degrees = Math.floor(absolute);
   const minutes = ((absolute - degrees) * 60).toFixed(2).replace(".", "");
   return `${String(degrees).padStart(2, "0")}${minutes}`;
+}
+
+function nauticalPosition(lat: number, lon: number) {
+  function part(value: number, direction: "S" | "W") {
+    const a = Math.abs(Number(value));
+    const deg = Math.floor(a);
+    const min = (a - deg) * 60;
+    return `${String(deg).padStart(2, "0")}º ${min.toFixed(2)}' ${direction}`;
+  }
+  return `${part(lat, "S")} · ${part(lon, "W")}`;
 }
 
 function CoordinateField({ label, direction, value, onChange }: {
@@ -71,6 +89,15 @@ function shortTime(value: string | null) {
   return new Intl.DateTimeFormat("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
+function fullDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
 function chlorophyllColor(value: number | null, min: number, max: number) {
   if (value == null || !Number.isFinite(value)) return "hsl(195 25% 16%)";
   const span = Math.max(0.01, max - min);
@@ -86,6 +113,35 @@ function windColor(value: number | null, max: number) {
   return `hsl(${hue} 75% ${34 + t * 10}%)`;
 }
 
+function LibraryItem({ item, saved, onOpen, onSave, onDelete }: {
+  item: any;
+  saved?: boolean;
+  onOpen: () => void;
+  onSave?: () => void;
+  onDelete: () => void;
+}) {
+  const current = item?.payload?.current || {};
+  return (
+    <article className="forecast-library-item">
+      <div className="forecast-library-main">
+        <b>{item.title || (saved ? "Previsão salva" : "Consulta de previsão")}</b>
+        <span>{item.positionLabel || nauticalPosition(Number(item.latitude), Number(item.longitude))}</span>
+        <small>{fullDateTime(item.createdAt)}</small>
+      </div>
+      <div className="forecast-library-weather">
+        <span><Wind /> {fmt(current.windSpeedKmh, 0)} km/h</span>
+        <span><Waves /> {fmt(current.waveHeightM)} m</span>
+        <span><Gauge /> {fmt(current.seaLevelMslM, 2)} m</span>
+      </div>
+      <div className="forecast-library-actions">
+        <button onClick={onOpen}>Abrir</button>
+        {!saved && onSave && <button className="save" onClick={onSave}><Bookmark /> Salvar</button>}
+        <button className="danger" onClick={onDelete} aria-label="Excluir"><Trash2 /></button>
+      </div>
+    </article>
+  );
+}
+
 export default function PositionForecast() {
   const [latDigits, setLatDigits] = useState("");
   const [lonDigits, setLonDigits] = useState("");
@@ -93,10 +149,84 @@ export default function PositionForecast() {
   const [busy, setBusy] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [mapMode, setMapMode] = useState<"wind" | "chlorophyll">("wind");
+  const [history, setHistory] = useState<any[]>([]);
+  const [saved, setSaved] = useState<any[]>([]);
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [saveDialog, setSaveDialog] = useState<{ payload: any; latitudeRaw: string; longitudeRaw: string } | null>(null);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [saveBusy, setSaveBusy] = useState(false);
 
   const lat = digitsToDecimal(latDigits, "S");
   const lon = digitsToDecimal(lonDigits, "W");
+
+  useEffect(() => {
+    let restoredLocally = false;
+    try {
+      const raw = localStorage.getItem(LAST_FORECAST_KEY);
+      if (raw) {
+        const last = JSON.parse(raw);
+        if (last?.payload?.position) {
+          setData(last.payload);
+          setLatDigits(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat)));
+          setLonDigits(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon)));
+          restoredLocally = true;
+        }
+      }
+    } catch {}
+
+    void (async () => {
+      const json = await loadLibrary();
+      if (!restoredLocally && json?.history?.[0]?.payload?.position) {
+        const last = json.history[0];
+        setData(last.payload);
+        setLatDigits(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat)));
+        setLonDigits(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon)));
+      }
+    })();
+  }, []);
+
+  async function loadLibrary() {
+    setLibraryBusy(true);
+    try {
+      const response = await fetch("/api/forecast-library", { cache: "no-store", signal: AbortSignal.timeout(10000) });
+      const json = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setHistory(Array.isArray(json.history) ? json.history : []);
+        setSaved(Array.isArray(json.saved) ? json.saved : []);
+        return json;
+      }
+    } catch {}
+    finally { setLibraryBusy(false); }
+    return null;
+  }
+
+  async function rememberForecast(payload: any, latitudeRaw: string, longitudeRaw: string) {
+    try {
+      localStorage.setItem(LAST_FORECAST_KEY, JSON.stringify({ payload, latitudeRaw, longitudeRaw, savedAt: new Date().toISOString() }));
+    } catch {}
+    try {
+      const latitude = Number(payload?.position?.lat);
+      const longitude = Number(payload?.position?.lon);
+      const response = await fetch("/api/forecast-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "history",
+          payload,
+          latitude,
+          longitude,
+          latitudeRaw,
+          longitudeRaw,
+          positionLabel: nauticalPosition(latitude, longitude),
+          source: "Open-Meteo / NOAA",
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (response.ok && json.history) setHistory((old) => [json.history, ...old.filter((x) => x.id !== json.history.id)].slice(0, 20));
+    } catch {}
+  }
 
   async function consult() {
     if (lat == null || lon == null) {
@@ -105,11 +235,14 @@ export default function PositionForecast() {
     }
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const response = await fetch(`/api/position-forecast?lat=${lat}&lon=${lon}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
+      await rememberForecast(json, latDigits, lonDigits);
+      setNotice("Previsão carregada e adicionada ao histórico.");
     } catch (e) {
       const timedOut = e instanceof DOMException && e.name === "TimeoutError";
       setError(timedOut ? "A previsão demorou demais para responder. Tente novamente; o painel não ficará travado." : (e instanceof Error ? e.message : "Não foi possível consultar agora."));
@@ -121,22 +254,113 @@ export default function PositionForecast() {
   async function useLastSet() {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const response = await fetch("/api/ocean-intelligence", { cache: "no-store", signal: AbortSignal.timeout(10000) });
       const json = await response.json();
       const position = json?.environment?.position;
       if (!position) throw new Error("Ainda não há posição registrada nas largadas.");
-      setLatDigits(decimalToDigits(Number(position.lat)));
-      setLonDigits(decimalToDigits(Number(position.lon)));
+      const nextLat = decimalToDigits(Number(position.lat));
+      const nextLon = decimalToDigits(Number(position.lon));
+      setLatDigits(nextLat);
+      setLonDigits(nextLon);
       const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
       const forecastJson = await forecastResponse.json().catch(() => ({}));
       if (!forecastResponse.ok) throw new Error(forecastJson.error || "Falha na consulta.");
       setData(forecastJson);
+      await rememberForecast(forecastJson, nextLat, nextLon);
+      setNotice("Última largada carregada e adicionada ao histórico.");
     } catch (e) {
       const timedOut = e instanceof DOMException && e.name === "TimeoutError";
       setError(timedOut ? "A consulta da última largada demorou demais. Tente novamente." : (e instanceof Error ? e.message : "Não foi possível carregar a última posição."));
     } finally {
       setBusy(false);
+    }
+  }
+
+  function clearSearch() {
+    setLatDigits("");
+    setLonDigits("");
+    setError("");
+    setNotice("Campos limpos. A previsão atual continua aberta abaixo para você consultar outra posição.");
+  }
+
+  function openForecast(item: any) {
+    if (!item?.payload?.position) return;
+    setData(item.payload);
+    setLatDigits(item.latitudeRaw || decimalToDigits(Number(item.payload.position.lat)));
+    setLonDigits(item.longitudeRaw || decimalToDigits(Number(item.payload.position.lon)));
+    setError("");
+    setNotice(item.title ? `Previsão “${item.title}” aberta sem nova consulta.` : "Previsão do histórico aberta sem nova consulta.");
+    try {
+      localStorage.setItem(LAST_FORECAST_KEY, JSON.stringify({ payload: item.payload, latitudeRaw: item.latitudeRaw, longitudeRaw: item.longitudeRaw, savedAt: new Date().toISOString() }));
+    } catch {}
+    setTimeout(() => document.querySelector(".position-current-head")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }
+
+  function startSave(payload = data, latitudeRaw = latDigits, longitudeRaw = lonDigits, suggested = "") {
+    if (!payload) return;
+    setSaveTitle(suggested);
+    setSaveDialog({ payload, latitudeRaw, longitudeRaw });
+  }
+
+  async function saveForecast() {
+    if (!saveDialog || !saveTitle.trim()) return;
+    setSaveBusy(true);
+    setError("");
+    try {
+      const latitude = Number(saveDialog.payload?.position?.lat);
+      const longitude = Number(saveDialog.payload?.position?.lon);
+      const response = await fetch("/api/forecast-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save",
+          title: saveTitle.trim(),
+          payload: saveDialog.payload,
+          latitude,
+          longitude,
+          latitudeRaw: saveDialog.latitudeRaw,
+          longitudeRaw: saveDialog.longitudeRaw,
+          positionLabel: nauticalPosition(latitude, longitude),
+          source: "Open-Meteo / NOAA",
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.error || "Não foi possível salvar.");
+      if (json.saved) setSaved((old) => [json.saved, ...old]);
+      setSaveDialog(null);
+      setSaveTitle("");
+      setNotice("Previsão salva com sucesso.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível salvar a previsão.");
+    } finally {
+      setSaveBusy(false);
+    }
+  }
+
+  async function deleteLibraryItem(type: "history" | "saved", id: number) {
+    try {
+      const response = await fetch(`/api/forecast-library?type=${type}&id=${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      if (type === "history") setHistory((old) => old.filter((x) => x.id !== id));
+      else setSaved((old) => old.filter((x) => x.id !== id));
+      setNotice(type === "history" ? "Consulta removida do histórico." : "Previsão removida dos salvos.");
+    } catch {
+      setError("Não foi possível excluir agora.");
+    }
+  }
+
+  async function clearHistory() {
+    if (!history.length) return;
+    if (!window.confirm("Limpar todo o histórico de previsões? As previsões salvas não serão apagadas.")) return;
+    try {
+      const response = await fetch("/api/forecast-library?type=history", { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      setHistory([]);
+      setNotice("Histórico de previsões limpo.");
+    } catch {
+      setError("Não foi possível limpar o histórico agora.");
     }
   }
 
@@ -190,7 +414,7 @@ export default function PositionForecast() {
         <div>
           <small>MÓDULO OCEÂNICO</small>
           <h2>Ventos e Mar</h2>
-          <p>Consulte uma posição por latitude e longitude. Previsão profissional sem complicação.</p>
+          <p>Consulte uma posição por latitude e longitude. A última previsão fica aberta e pode ser salva.</p>
         </div>
         <div className="position-title-badge"><Compass /> PREVISÃO POR POSIÇÃO</div>
       </div>
@@ -203,11 +427,41 @@ export default function PositionForecast() {
           <CoordinateField label="Latitude" direction="S" value={latDigits} onChange={setLatDigits} />
           <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={setLonDigits} />
         </div>
-        <div className="position-search-actions">
+        <div className="position-search-actions position-v68-search-actions">
           <button className="position-consult" onClick={consult} disabled={busy}>{busy ? <RefreshCw className="spin" /> : <Navigation />} {busy ? "CONSULTANDO..." : "CONSULTAR PREVISÃO"}</button>
           <button className="position-last" onClick={useLastSet} disabled={busy}>Usar última largada</button>
+          <button className="position-clear" onClick={clearSearch} disabled={busy}><X /> Limpar campos</button>
         </div>
+        {notice && <p className="position-notice">{notice}</p>}
         {error && <p className="position-error">{error}</p>}
+      </div>
+
+      <div className="forecast-library-grid">
+        <section className="forecast-library-panel saved-panel">
+          <div className="forecast-library-head">
+            <div><Folder /><span><small>PASTA</small><b>Previsões salvas</b><em>{saved.length} salva(s)</em></span></div>
+            {libraryBusy && <RefreshCw className="spin" />}
+          </div>
+          <div className="forecast-library-list">
+            {saved.map((item) => (
+              <LibraryItem key={`saved-${item.id}`} item={item} saved onOpen={() => openForecast(item)} onDelete={() => deleteLibraryItem("saved", item.id)} />
+            ))}
+            {!saved.length && <div className="forecast-library-empty"><Bookmark /><span>Salve pontos importantes e dê um nome, como “Castilho 35 m” ou “Ponto da corvina”.</span></div>}
+          </div>
+        </section>
+
+        <section className="forecast-library-panel history-panel">
+          <div className="forecast-library-head">
+            <div><History /><span><small>CONSULTAS</small><b>Histórico de previsões</b><em>{history.length} de 20</em></span></div>
+            <button className="forecast-clear-history" onClick={clearHistory} disabled={!history.length}><Trash2 /> Limpar histórico</button>
+          </div>
+          <div className="forecast-library-list">
+            {history.map((item) => (
+              <LibraryItem key={`history-${item.id}`} item={item} onOpen={() => openForecast(item)} onSave={() => startSave(item.payload, item.latitudeRaw || "", item.longitudeRaw || "")} onDelete={() => deleteLibraryItem("history", item.id)} />
+            ))}
+            {!history.length && <div className="forecast-library-empty"><History /><span>Suas próximas consultas aparecerão aqui automaticamente.</span></div>}
+          </div>
+        </section>
       </div>
 
       {!data ? (
@@ -219,8 +473,9 @@ export default function PositionForecast() {
       ) : (
         <>
           <div className="position-current-head">
-            <div><small>CONDIÇÕES AGORA</small><h3>{Math.abs(data.position.lat).toFixed(4)}° S · {Math.abs(data.position.lon).toFixed(4)}° W</h3></div>
+            <div><small>CONDIÇÕES AGORA</small><h3>{Math.abs(data.position.lat).toFixed(4)}° S · {Math.abs(data.position.lon).toFixed(4)}° W</h3><p className="position-nautical-label">{nauticalPosition(Number(data.position.lat), Number(data.position.lon))}</p></div>
             <div className="position-current-actions">
+              <button className="position-save-current" onClick={() => startSave()}><Save /> Salvar previsão</button>
               <button onClick={exportPdf}><Download /> Exportar PDF</button>
               <button onClick={shareWhatsApp} disabled={shareBusy}><Share2 /> {shareBusy ? "Compartilhando..." : "WhatsApp"}</button>
               <span className={`condition-pill ${String(data.current.condition || "").toLowerCase().replace(" ", "-")}`}>{data.current.condition}</span>
@@ -324,6 +579,26 @@ export default function PositionForecast() {
             <span>{data.disclaimer}</span>
           </div>
         </>
+      )}
+
+      {saveDialog && (
+        <div className="forecast-save-overlay" role="dialog" aria-modal="true">
+          <div className="forecast-save-modal">
+            <button className="forecast-save-close" onClick={() => setSaveDialog(null)}><X /></button>
+            <div className="forecast-save-icon"><Save /></div>
+            <small>SALVAR PREVISÃO</small>
+            <h3>Dê um nome para este ponto</h3>
+            <p>{nauticalPosition(Number(saveDialog.payload.position.lat), Number(saveDialog.payload.position.lon))}</p>
+            <label>
+              <span>Nome da previsão</span>
+              <input autoFocus maxLength={60} value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)} placeholder="Ex.: Corvina Castilho, Ponto 35 m..." onKeyDown={(e) => { if (e.key === "Enter") void saveForecast(); }} />
+            </label>
+            <div className="forecast-save-actions">
+              <button onClick={() => setSaveDialog(null)}>Cancelar</button>
+              <button className="primary" onClick={saveForecast} disabled={saveBusy || !saveTitle.trim()}>{saveBusy ? <RefreshCw className="spin" /> : <Save />} {saveBusy ? "Salvando..." : "Salvar previsão"}</button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

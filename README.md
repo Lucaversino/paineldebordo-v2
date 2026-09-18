@@ -229,3 +229,13 @@ A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
 - Se existirem tiles locais em `public/cartas`, eles continuam tendo prioridade.
 - O catálogo oficial é descoberto em `/api/dhn/charts` e a carta pode ser escolhida automaticamente pela posição/zoom quando o WMS fornece limites geográficos.
 - Os scripts KAP/BSB continuam no projeto para uso offline, mas não são necessários para o mapa online.
+
+## V68 — Ventos e Mar: histórico e salvos
+
+- A última consulta permanece aberta após recarregar a página.
+- Cada nova consulta é adicionada automaticamente ao histórico (até 20 registros por usuário).
+- Previsões podem ser salvas com nome personalizado.
+- Abrir histórico ou salvos reutiliza o snapshot sem chamar novamente as APIs meteorológicas.
+- Botão **Limpar campos** prepara latitude/longitude para uma nova busca sem apagar o resultado atual.
+- Botão **Limpar histórico** não remove as previsões salvas.
+- As tabelas `forecast_history` e `saved_forecasts` são criadas automaticamente pela rota privada `/api/forecast-library`.

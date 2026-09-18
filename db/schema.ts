@@ -159,3 +159,37 @@ export const aisSearchHistory = pgTable("ais_search_history", {
   index("idx_ais_history_owner_time").on(t.ownerId, t.queriedAt),
   index("idx_ais_history_owner_vessel").on(t.ownerId, t.vesselKey),
 ]);
+
+
+export const forecastHistory = pgTable("forecast_history", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  title: text("title"),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  latitudeRaw: text("latitude_raw"),
+  longitudeRaw: text("longitude_raw"),
+  positionLabel: text("position_label"),
+  payloadJson: text("payload_json").notNull(),
+  source: text("source"),
+  createdAt: text("created_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_forecast_history_owner_time").on(t.ownerId, t.id),
+]);
+
+export const savedForecasts = pgTable("saved_forecasts", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  title: text("title").notNull(),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  latitudeRaw: text("latitude_raw"),
+  longitudeRaw: text("longitude_raw"),
+  positionLabel: text("position_label"),
+  payloadJson: text("payload_json").notNull(),
+  source: text("source"),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_saved_forecasts_owner_time").on(t.ownerId, t.id),
+]);

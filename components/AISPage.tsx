@@ -715,6 +715,46 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const trackedProviderDate = tracked ? parseProviderTime(tracked.positionReceived || tracked.updateTime) : null;
   const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
   const trackedKey = tracked ? vesselKeyFrom(tracked) : "";
+  const recentCards = useMemo(() => {
+    const rows: Array<{ key: string; vessel: Vessel; historyItem?: AisHistoryItem; current: boolean }> = [];
+    const seen = new Set<string>();
+
+    if (tracked) {
+      const key = vesselKeyFrom(tracked) || `tracked:${tracked.name || "barco"}:${tracked.lat}:${tracked.lon}`;
+      rows.push({ key, vessel: tracked, current: true });
+      seen.add(key);
+    }
+
+    for (const item of historyItems) {
+      if (rows.length >= 3) break;
+      const key = item.vesselKey || (item.imo && item.imo !== "0" ? `imo:${item.imo}` : `mmsi:${item.mmsi || item.id}`);
+      if (seen.has(key)) continue;
+      rows.push({
+        key,
+        historyItem: item,
+        current: false,
+        vessel: {
+          mmsi: item.mmsi || "",
+          imo: item.imo || "",
+          name: item.name,
+          lat: Number(item.latitude),
+          lon: Number(item.longitude),
+          sog: item.sog,
+          cog: item.cog,
+          heading: item.heading,
+          destination: item.destination || "",
+          navStatusText: item.navStatus || "",
+          dataSource: item.dataSource || "",
+          positionReceived: item.positionReceived || "",
+          updateTime: item.updateTime || "",
+          receivedAt: new Date(item.queriedAt).getTime() || Date.now(),
+        },
+      });
+      seen.add(key);
+    }
+
+    return rows.slice(0, 3);
+  }, [tracked, historyItems]);
 
   return (
     <section className="ais-page ais-v61-page ais-v62-page">
@@ -859,80 +899,96 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         </div>
       </div>
 
-      {tracked && (
-        <div className="ais-v63-result-wrap">
-          <div className="ais-vessel-card ais-v61-vessel-card ais-v62-vessel-card ais-v63-below-card">
-            <div className="ais-v62-card-head">
-              <div>
-                <small>EMBARCAÇÃO LOCALIZADA</small>
-                <h3>{tracked.name || `MMSI ${tracked.mmsi}`}</h3>
-                <em>MMSI {tracked.mmsi || "—"}{tracked.imo ? ` · IMO ${tracked.imo}` : ""}</em>
-              </div>
-              {trackedSource && (
-                <div className={`ais-v62-source-badge ${trackedSource.className}`}>
-                  <Radio />
-                  <span>FONTE DA POSIÇÃO</span>
-                  <b>{trackedSource.title}</b>
-                  <small>{trackedSource.short}</small>
-                </div>
-              )}
+      {recentCards.length > 0 && (
+        <section className="ais-v67-recent-section">
+          <div className="ais-v67-recent-head">
+            <div>
+              <small>POSIÇÕES RECENTES</small>
+              <b>Últimos barcos consultados</b>
             </div>
-
-            <div className="ais-v62-position-hero">
-              <small>POSIÇÃO AIS RECEBIDA</small>
-              <strong>{formatCoordMarine(tracked.lat, true)}</strong>
-              <strong>{formatCoordMarine(tracked.lon, false)}</strong>
-              <span>WGS84 · graus e minutos decimais</span>
-            </div>
-
-            <div className="ais-v62-time-row">
-              <div>
-                <small>HORÁRIO DA POSIÇÃO</small>
-                <b>{trackedProviderDate ? formatLocalDateTime(trackedProviderDate) : (tracked.positionReceived || "Não informado")}</b>
-                {tracked.positionReceived && <em>{tracked.positionReceived}</em>}
-                {trackedAge && <strong className={trackedAge.className}>{trackedAge.label}</strong>}
-              </div>
-              <div>
-                <small>CONSULTA REALIZADA AGORA</small>
-                <b>{formatLocalDateTime(clockNow)}</b>
-                <em>Horário local deste dispositivo</em>
-                <strong className="fresh">CONSULTA ONLINE</strong>
-              </div>
-            </div>
-
-            <div className="ais-detail-grid ais-v62-detail-grid">
-              <span><small>VELOCIDADE</small><b>{tracked.sog != null ? `${Number(tracked.sog).toFixed(1)} kn` : "—"}</b></span>
-              <span><small>RUMO</small><b>{tracked.cog != null ? `${Math.round(tracked.cog)}°` : "—"}</b></span>
-              <span><small>PROA</small><b>{tracked.heading != null && tracked.heading < 511 ? `${Math.round(tracked.heading)}°` : "—"}</b></span>
-              <span><small>STATUS</small><b>{tracked.navStatusText || "Não informado"}</b></span>
-              <span><small>DESTINO</small><b>{tracked.destination || "—"}</b></span>
-              <span><small>DADOS ATUALIZADOS</small><b>{tracked.updateTime || "—"}</b></span>
-            </div>
-
-            <div className="ais-v62-source-note">
-              <b>{trackedSource?.className === "satellite" ? "Posição recebida por AIS via satélite." : trackedSource?.className === "terrestrial" ? "Esta posição foi informada pela API como AIS terrestre." : "Origem AIS conforme informada pelo provedor."}</b>
-              <span>O painel identifica como satélite somente quando a Data Docked devolve a fonte como Satellite/S-AIS.</span>
-            </div>
-
-            <div className="ais-v64-card-actions">
-              <button className="ais-refresh-position" type="button" onClick={() => getVesselPosition({
-                name: tracked.name || "",
-                mmsi: tracked.mmsi,
-                imo: tracked.imo || "",
-                country: "",
-                countryIso: "",
-                shipType: "",
-                typeSpecific: tracked.vesselType || "",
-                callsign: tracked.callsign || "",
-              }, true)} disabled={status === "loading"}>
-                <RefreshCw /> ATUALIZAR POSIÇÃO · 1 CRÉDITO
-              </button>
-              <button className={`ais-save-current ${trackedKey && savedKeys.has(trackedKey) ? "saved" : ""}`} type="button" onClick={() => trackedKey && savedKeys.has(trackedKey) ? removeSavedVessel(trackedKey) : saveVessel(tracked)}>
-                <Bookmark /> {trackedKey && savedKeys.has(trackedKey) ? "SALVO NA PASTA" : "SALVAR BARCO"}
-              </button>
-            </div>
+            <span>até 3 cards · abrir histórico não gasta créditos</span>
           </div>
-        </div>
+
+          <div className="ais-v67-recent-grid">
+            {recentCards.map(({ key, vessel, historyItem, current }) => {
+              const source = sourceInfo(vessel.dataSource);
+              const age = positionAgeLabel(vessel.positionReceived || vessel.updateTime);
+              const providerDate = parseProviderTime(vessel.positionReceived || vessel.updateTime);
+              const vesselKey = vesselKeyFrom(vessel);
+              const isSaved = vesselKey ? savedKeys.has(vesselKey) : false;
+              return (
+                <article key={`${key}-${historyItem?.id || "current"}`} className={`ais-v67-square-card ${current ? "current" : "history"}`}>
+                  <div className="ais-v67-card-top">
+                    <div className="ais-v67-card-name">
+                      <small>{current ? "EMBARCAÇÃO LOCALIZADA" : "HISTÓRICO AIS"}</small>
+                      <h3>{vessel.name || `MMSI ${vessel.mmsi}`}</h3>
+                      <em>MMSI {vessel.mmsi || "—"}{vessel.imo ? ` · IMO ${vessel.imo}` : ""}</em>
+                    </div>
+                    <div className={`ais-v67-source ${source.className}`}>
+                      <Radio />
+                      <span>{source.short}</span>
+                    </div>
+                  </div>
+
+                  <div className="ais-v67-position">
+                    <small>POSIÇÃO AIS</small>
+                    <strong>{formatCoordMarine(vessel.lat, true)}</strong>
+                    <strong>{formatCoordMarine(vessel.lon, false)}</strong>
+                    <span>WGS84 · graus e minutos decimais</span>
+                  </div>
+
+                  <div className="ais-v67-time">
+                    <div>
+                      <small>HORÁRIO DA POSIÇÃO</small>
+                      <b>{providerDate ? formatLocalDateTime(providerDate) : (vessel.positionReceived || "Não informado")}</b>
+                    </div>
+                    <strong className={age.className}>{age.label}</strong>
+                  </div>
+
+                  <div className="ais-v67-mini-grid">
+                    <span><small>VELOCIDADE</small><b>{vessel.sog != null ? `${Number(vessel.sog).toFixed(1)} kn` : "—"}</b></span>
+                    <span><small>RUMO</small><b>{vessel.cog != null ? `${Math.round(vessel.cog)}°` : "—"}</b></span>
+                    <span><small>PROA</small><b>{vessel.heading != null && vessel.heading < 511 ? `${Math.round(vessel.heading)}°` : "—"}</b></span>
+                    <span><small>STATUS</small><b>{vessel.navStatusText || "Não informado"}</b></span>
+                    <span className="wide"><small>DESTINO</small><b>{vessel.destination || "—"}</b></span>
+                    <span><small>FONTE</small><b>{source.title}</b></span>
+                  </div>
+
+                  <div className="ais-v67-card-actions">
+                    {current ? (
+                      <>
+                        <button type="button" className="primary" onClick={() => getVesselPosition({
+                          name: vessel.name || "",
+                          mmsi: vessel.mmsi,
+                          imo: vessel.imo || "",
+                          country: "",
+                          countryIso: "",
+                          shipType: "",
+                          typeSpecific: vessel.vesselType || "",
+                          callsign: vessel.callsign || "",
+                        }, true)} disabled={status === "loading"}>
+                          <RefreshCw /> Atualizar · 1 CR
+                        </button>
+                        <button type="button" className={isSaved ? "saved" : ""} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {isSaved ? "Salvo" : "Salvar"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" className="primary" onClick={() => historyItem && openHistoryItem(historyItem)}>
+                          <MapPinned /> Abrir no mapa · 0 CR
+                        </button>
+                        <button type="button" className={isSaved ? "saved" : ""} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {isSaved ? "Salvo" : "Salvar"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <div className="ais-footnote ais-v61-footnote">

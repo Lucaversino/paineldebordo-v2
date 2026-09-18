@@ -161,3 +161,38 @@ create index if not exists idx_ais_history_owner_vessel on public.ais_search_his
 
 alter table public.ais_saved_vessels enable row level security;
 alter table public.ais_search_history enable row level security;
+
+-- V68 — histórico de previsões e previsões salvas por usuário
+create table if not exists public.forecast_history (
+  id serial primary key,
+  owner_id text not null,
+  title text,
+  latitude double precision not null,
+  longitude double precision not null,
+  latitude_raw text,
+  longitude_raw text,
+  position_label text,
+  payload_json text not null,
+  source text,
+  created_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_forecast_history_owner_time on public.forecast_history(owner_id, id desc);
+
+create table if not exists public.saved_forecasts (
+  id serial primary key,
+  owner_id text not null,
+  title text not null,
+  latitude double precision not null,
+  longitude double precision not null,
+  latitude_raw text,
+  longitude_raw text,
+  position_label text,
+  payload_json text not null,
+  source text,
+  created_at text not null default CURRENT_TIMESTAMP::text,
+  updated_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_saved_forecasts_owner_time on public.saved_forecasts(owner_id, id desc);
+
+alter table public.forecast_history enable row level security;
+alter table public.saved_forecasts enable row level security;
