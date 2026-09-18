@@ -5,12 +5,9 @@ import { Crosshair, Minus, Plus } from "lucide-react";
 import Map from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
-import XYZ from "ol/source/XYZ";
+import OSM from "ol/source/OSM";
 import Overlay from "ol/Overlay";
 import { fromLonLat } from "ol/proj";
-
-const OCEAN_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}";
-const SEAMARK_TILES = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
 
 type Props = {
   lat: number;
@@ -40,31 +37,14 @@ export default function NauticalMap({ lat, lon }: Props) {
       center: fromLonLat([lon, lat]),
       zoom: 10,
       minZoom: 3,
-      maxZoom: 16,
+      maxZoom: 18,
       constrainResolution: true,
     });
 
     const map = new Map({
       target: hostRef.current,
       controls: [],
-      layers: [
-        new TileLayer({
-          source: new XYZ({
-            url: OCEAN_TILES,
-            crossOrigin: "anonymous",
-            attributions: "Esri · GEBCO · NOAA e outros provedores",
-          }),
-        }),
-        new TileLayer({
-          opacity: 0.95,
-          source: new XYZ({
-            url: SEAMARK_TILES,
-            crossOrigin: "anonymous",
-            maxZoom: 18,
-            attributions: "OpenSeaMap",
-          }),
-        }),
-      ],
+      layers: [new TileLayer({ source: new OSM() })],
       overlays: [markerOverlay],
       view,
     });
@@ -92,7 +72,7 @@ export default function NauticalMap({ lat, lon }: Props) {
   function changeZoom(delta: number) {
     const view = mapRef.current?.getView();
     if (!view) return;
-    const next = Math.max(3, Math.min(16, (view.getZoom() || 10) + delta));
+    const next = Math.max(3, Math.min(18, (view.getZoom() || 10) + delta));
     view.animate({ zoom: next, duration: 180 });
   }
 
@@ -107,31 +87,26 @@ export default function NauticalMap({ lat, lon }: Props) {
     <article className="position-panel nautical-map-panel">
       <div className="position-panel-title nautical-map-title">
         <div>
-          <small>CARTA NÁUTICA</small>
-          <h3>Posição analisada na carta oceânica</h3>
-          <p>Batimetria, curvas de profundidade e sinais náuticos quando disponíveis na região.</p>
+          <small>MAPA DA POSIÇÃO</small>
+          <h3>Local da análise</h3>
+          <p>Mapa simples e fácil de interpretar, igual ao utilizado na página AIS.</p>
         </div>
         <span>Zoom {zoom}</span>
       </div>
 
       <div className="nautical-map-shell">
-        <div ref={hostRef} className="nautical-map-canvas" aria-label="Carta náutica da posição consultada" />
+        <div ref={hostRef} className="nautical-map-canvas" aria-label="Mapa da posição consultada" />
         <div className="nautical-map-controls" aria-label="Controles do mapa">
           <button type="button" onClick={() => changeZoom(1)} title="Aumentar zoom"><Plus /></button>
           <button type="button" onClick={() => changeZoom(-1)} title="Diminuir zoom"><Minus /></button>
           <button type="button" onClick={centerPosition} title="Centralizar na posição"><Crosshair /></button>
         </div>
         <div className="nautical-map-coordinate">
-          <b>POSIÇÃO</b>
+          <b>POSIÇÃO ANALISADA</b>
           <span>{Math.abs(lat).toFixed(4)}° S · {Math.abs(lon).toFixed(4)}° W</span>
         </div>
       </div>
-
-      <div className="nautical-map-footer">
-        <span><i className="nautical-depth-dot" /> Profundidades/curvas: carta oceânica Esri/GEBCO</span>
-        <span><i className="nautical-seamark-dot" /> Sinais náuticos: OpenSeaMap</span>
-      </div>
-      <small className="nautical-warning">Carta de apoio visual. A cobertura e a precisão variam por região; não usar como única referência para navegação.</small>
+      <small className="nautical-warning">Mapa de apoio operacional. Para navegação, confirme a posição e as condições em equipamentos e cartas oficiais.</small>
     </article>
   );
 }

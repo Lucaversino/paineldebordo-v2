@@ -106,12 +106,13 @@ export default function PositionForecast() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/position-forecast?lat=${lat}&lon=${lon}`, { cache: "no-store" });
+      const response = await fetch(`/api/position-forecast?lat=${lat}&lon=${lon}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível consultar agora.");
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      setError(timedOut ? "A previsão demorou demais para responder. Tente novamente; o painel não ficará travado." : (e instanceof Error ? e.message : "Não foi possível consultar agora."));
     } finally {
       setBusy(false);
     }
@@ -121,18 +122,19 @@ export default function PositionForecast() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/ocean-intelligence", { cache: "no-store" });
+      const response = await fetch("/api/ocean-intelligence", { cache: "no-store", signal: AbortSignal.timeout(10000) });
       const json = await response.json();
       const position = json?.environment?.position;
       if (!position) throw new Error("Ainda não há posição registrada nas largadas.");
       setLatDigits(decimalToDigits(Number(position.lat)));
       setLonDigits(decimalToDigits(Number(position.lon)));
-      const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store" });
+      const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
       const forecastJson = await forecastResponse.json().catch(() => ({}));
       if (!forecastResponse.ok) throw new Error(forecastJson.error || "Falha na consulta.");
       setData(forecastJson);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível carregar a última posição.");
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      setError(timedOut ? "A consulta da última largada demorou demais. Tente novamente." : (e instanceof Error ? e.message : "Não foi possível carregar a última posição."));
     } finally {
       setBusy(false);
     }
@@ -318,7 +320,7 @@ export default function PositionForecast() {
           <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
 
           <div className="position-source-note">
-            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · Carta oceânica Esri/GEBCO · OpenSeaMap
+            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · OpenStreetMap
             <span>{data.disclaimer}</span>
           </div>
         </>

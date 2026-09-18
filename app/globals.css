@@ -1567,3 +1567,10 @@ main.loginpage{
 .app:not(.dark) .ais-saved-folder,.app:not(.dark) .ais-history-panel{background:linear-gradient(145deg,#f8fffd,#edf8f6);border-color:#bad5d1}.app:not(.dark) .ais-library-head b,.app:not(.dark) .ais-saved-main,.app:not(.dark) .ais-history-list>button{color:#173a41}.app:not(.dark) .ais-saved-list article,.app:not(.dark) .ais-history-list>button{background:#fff;border-color:#c3d9d6}
 @media(max-width:1000px){.ais-library-grid{grid-template-columns:1fr}.ais-saved-list,.ais-history-list{max-height:175px}}
 @media(max-width:620px){.ais-v61-page{grid-template-rows:auto auto auto minmax(540px,70dvh) auto auto}.ais-library-grid{gap:7px}.ais-saved-folder,.ais-history-panel{padding:9px}.ais-library-head{align-items:flex-start}.ais-clear-history{height:29px;padding:0 7px;font-size:6px}.ais-result-actions{grid-column:1/-1;width:100%}.ais-result-actions>button{flex:1;justify-content:center}.ais-v64-card-actions{display:grid;grid-template-columns:1fr}.ais-v64-card-actions>button{width:100%!important}.ais-saved-list,.ais-history-list{max-height:165px}.ais-history-list>button{grid-template-columns:28px minmax(0,1fr)}.ais-history-list>button>em{grid-column:2}}
+
+/* v66 — mapa único e correções de estabilidade */
+.ais-single-map-badge{pointer-events:none}
+.ais-single-map-badge>span{height:38px;padding:0 14px;border:1px solid #2b5964;border-radius:10px;background:#071d23e8;color:#dff7f2;display:flex;align-items:center;gap:7px;font-size:10px;font-weight:900;box-shadow:0 7px 20px #00141955;backdrop-filter:blur(8px)}
+.ais-single-map-badge svg{width:15px;height:15px;color:#2bd4aa}
+.ais-dhn-control{display:none!important}
+@media(max-width:760px){.ais-single-map-badge>span{height:34px;padding:0 10px;font-size:9px}}

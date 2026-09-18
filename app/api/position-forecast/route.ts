@@ -23,7 +23,7 @@ function nearestIndex(times: string[], now = Date.now()) {
   return best;
 }
 
-async function fetchJson(url: URL, timeoutMs = 9000) {
+async function fetchJson(url: URL, timeoutMs = 6500) {
   const response = await fetch(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(timeoutMs),
@@ -100,7 +100,7 @@ async function fetchChlorophyllPoint(lat: number, lon: number) {
   try {
     const response = await fetch(endpoint, {
       headers: { accept: "text/csv" },
-      signal: AbortSignal.timeout(6500),
+      signal: AbortSignal.timeout(2800),
       cache: "no-store",
     });
     if (!response.ok) return { lat, lon, mgM3: null, time: null };
@@ -167,12 +167,28 @@ export async function GET(request: Request) {
 
   try {
     const grid = buildGrid(lat, lon);
-    const [weather, marine, windGrid, chlorophyllGrid] = await Promise.all([
+    // Fontes externas podem ficar lentas no mar. Nenhuma fonte opcional deve
+    // travar a página inteira: retornamos os dados disponíveis e marcamos
+    // valores ausentes como null.
+    const [weatherResult, marineResult, windResult, chlorophyllResult] = await Promise.allSettled([
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
       Promise.all(grid.map((point) => fetchChlorophyllPoint(point.lat, point.lon))),
     ]);
+
+    const weather = weatherResult.status === "fulfilled" ? weatherResult.value : null;
+    const marine = marineResult.status === "fulfilled" ? marineResult.value : null;
+    const windGrid = windResult.status === "fulfilled"
+      ? windResult.value
+      : grid.map((point) => ({ ...point, speedKmh: null, directionDeg: null, direction: "—", gustKmh: null }));
+    const chlorophyllGrid = chlorophyllResult.status === "fulfilled"
+      ? chlorophyllResult.value
+      : grid.map((point) => ({ ...point, mgM3: null, time: null }));
+
+    if (!weather && !marine) {
+      return Response.json({ error: "As fontes de vento e mar estão demorando para responder. Tente novamente em alguns segundos." }, { status: 503 });
+    }
 
     const marineTimes: string[] = marine?.hourly?.time || [];
     const weatherTimes: string[] = weather?.hourly?.time || [];
@@ -205,16 +221,19 @@ export async function GET(request: Request) {
     const centralChl = chlorophyllGrid.find((p, i) => grid[i]?.row === 1 && grid[i]?.col === 1) || null;
 
     const forecast: any[] = [];
-    const max = Math.min(weatherTimes.length, 96);
-    for (let i = Math.max(0, weatherIndex); i < max; i += 3) {
-      const time = weatherTimes[i];
+    const baseTimes = weatherTimes.length ? weatherTimes : marineTimes;
+    const startIndex = baseTimes.length ? nearestIndex(baseTimes) : 0;
+    const max = Math.min(baseTimes.length, 96);
+    for (let i = Math.max(0, startIndex); i < max; i += 3) {
+      const time = baseTimes[i];
+      const wi = weatherTimes.length ? nearestIndex(weatherTimes, new Date(time).getTime()) : 0;
       const mi = marineTimes.length ? nearestIndex(marineTimes, new Date(time).getTime()) : 0;
       forecast.push({
         time,
-        windSpeedKmh: weather?.hourly?.wind_speed_10m?.[i] ?? null,
-        windDirectionDeg: weather?.hourly?.wind_direction_10m?.[i] ?? null,
-        windDirection: directionName(weather?.hourly?.wind_direction_10m?.[i]),
-        gustKmh: weather?.hourly?.wind_gusts_10m?.[i] ?? null,
+        windSpeedKmh: weather?.hourly?.wind_speed_10m?.[wi] ?? null,
+        windDirectionDeg: weather?.hourly?.wind_direction_10m?.[wi] ?? null,
+        windDirection: directionName(weather?.hourly?.wind_direction_10m?.[wi]),
+        gustKmh: weather?.hourly?.wind_gusts_10m?.[wi] ?? null,
         waveHeightM: marine?.hourly?.wave_height?.[mi] ?? null,
         waveDirectionDeg: marine?.hourly?.wave_direction?.[mi] ?? null,
         waveDirection: directionName(marine?.hourly?.wave_direction?.[mi]),
@@ -244,9 +263,9 @@ export async function GET(request: Request) {
         chlorophyll: chlorophyllGrid.map((value, index) => ({ ...grid[index], ...value })),
       },
       sources: {
-        weather: "Open-Meteo Forecast",
-        marine: "Open-Meteo Marine",
-        chlorophyll: "NOAA CoastWatch / VIIRS gap-filled daily",
+        weather: weather ? "Open-Meteo Forecast" : "Open-Meteo Forecast (temporariamente indisponível)",
+        marine: marine ? "Open-Meteo Marine" : "Open-Meteo Marine (temporariamente indisponível)",
+        chlorophyll: chlorophyllResult.status === "fulfilled" ? "NOAA CoastWatch / VIIRS gap-filled daily" : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
       },
       disclaimer: "Previsão e dados modelados para apoio operacional. Maré/nível do mar não é referência de navegação costeira. Confirme condições de segurança em fontes marítimas oficiais.",
     });

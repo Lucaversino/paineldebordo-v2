@@ -12,6 +12,7 @@ import {
   List,
   Plus,
   Radio,
+  RefreshCw,
   Settings,
   ShipWheel,
   Ship,
@@ -53,28 +54,32 @@ export default function Home() {
     [offline, setOffline] = useState(false),
     [menu, setMenu] = useState(false),
     [dark, setDark] = useState(true),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    [loadError, setLoadError] = useState("");
   const load = async () => {
+    setLoadError("");
     try {
-      const r = await fetch("/api/dashboard", { cache: "no-store" });
+      const r = await fetch("/api/dashboard", { cache: "no-store", signal: AbortSignal.timeout(12000) });
       if (r.status === 401) {
         window.location.replace("/login");
         return;
       }
-      if (!r.ok) throw Error();
+      if (!r.ok) throw Error("Não foi possível carregar os dados do painel.");
       const j = await r.json();
       setData(j);
       setSetId(String(j.sets?.at(-1)?.id || ""));
       setOffline(false);
-    } catch {
-      setOffline(true);
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+      setLoadError(timedOut ? "A conexão com o painel demorou demais. Tente novamente." : (error instanceof Error ? error.message : "Não foi possível carregar o painel."));
+      setOffline(!navigator.onLine);
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => {
     load();
-  }, [view]);
+  }, []);
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
     window.location.replace("/login");
@@ -314,6 +319,15 @@ export default function Home() {
             {loading ? (
               <div className="emptydash">
                 <h2>Carregando painel...</h2>
+                <p>Aguarde alguns segundos.</p>
+              </div>
+            ) : loadError ? (
+              <div className="emptydash">
+                <Gauge />
+                <small>PAINEL NÃO TRAVOU</small>
+                <h2>Não foi possível carregar agora</h2>
+                <p>{loadError}</p>
+                <div><button className="primary" onClick={() => { setLoading(true); load(); }}><RefreshCw /> Tentar novamente</button></div>
               </div>
             ) : !t ? (
               <div className="emptydash">
