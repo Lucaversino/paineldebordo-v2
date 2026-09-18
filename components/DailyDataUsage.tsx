@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Database, Gauge, Satellite, Wifi } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Database, Gauge, Satellite, Wifi } from "lucide-react";
 
 const STARLINK_PRICE_PER_GB = 12.5;
 const STORAGE_KEY = "painel:data-usage:v1";
@@ -76,6 +76,7 @@ export default function DailyDataUsage() {
   const [todayBytes, setTodayBytes] = useState(0);
   const [sessionBytes, setSessionBytes] = useState(0);
   const [supported, setSupported] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const seen = useRef(new Set<string>());
   const currentDay = useRef(dayKey());
 
@@ -150,50 +151,62 @@ export default function DailyDataUsage() {
   const gbPercent = Math.min(100, (todayBytes / GB_BYTES) * 100);
 
   return (
-    <section className="daily-data-usage" aria-label="Consumo diário de dados do Painel de Bordo">
-      <div className="daily-data-head">
-        <div className="daily-data-title">
-          <span className="daily-data-icon"><Satellite /></span>
-          <div>
-            <small>STARLINK · CONSUMO DO PAINEL</small>
-            <h3>Consumo de dados diário</h3>
-            <p>Estimativa dos dados usados pelo Painel de Bordo neste aparelho.</p>
+    <section className={`daily-data-usage ${expanded ? "expanded" : "collapsed"}`} aria-label="Consumo diário de dados do Painel de Bordo">
+      <button
+        type="button"
+        className="daily-data-summary"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        <span className="daily-data-summary-icon"><Satellite /></span>
+        <span className="daily-data-summary-label">
+          <small>STARLINK</small>
+          <b>Internet hoje</b>
+        </span>
+        <span className="daily-data-summary-metric">
+          <small>DADOS</small>
+          <b>{today.value} <em>{today.unit}</em></b>
+        </span>
+        <span className="daily-data-summary-metric cost">
+          <small>CUSTO</small>
+          <b>{formatBrl(costToday)}</b>
+        </span>
+        <span className="daily-data-summary-rate">R$ 12,50/GB</span>
+        <span className="daily-data-summary-toggle">{expanded ? <ChevronUp /> : <ChevronDown />}</span>
+      </button>
+
+      {expanded && (
+        <div className="daily-data-details">
+          <div className="daily-data-grid">
+            <article className="primary">
+              <Database />
+              <span><small>USADO HOJE</small><b>{today.value} <em>{today.unit}</em></b><i>Acumulado desde 00:00</i></span>
+            </article>
+            <article className="cost">
+              <Activity />
+              <span><small>CUSTO HOJE</small><b>{formatBrl(costToday)}</b><i>Calculado a R$ 12,50/GB</i></span>
+            </article>
+            <article>
+              <Gauge />
+              <span><small>ESTA SESSÃO</small><b>{session.value} <em>{session.unit}</em></b><i>Desde que abriu o painel</i></span>
+            </article>
+            <article>
+              <Wifi />
+              <span><small>CUSTO A CADA 100 MB</small><b>{formatBrl(costPer100Mb)}</b><i>Referência rápida</i></span>
+            </article>
+          </div>
+
+          <div className="daily-data-progress">
+            <div><span style={{ width: `${gbPercent}%` }} /></div>
+            <small>{todayBytes < GB_BYTES ? `${(1000 - todayBytes / MB_BYTES).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB até 1 GB` : `${(todayBytes / GB_BYTES).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} GB usados hoje`}</small>
+          </div>
+
+          <div className="daily-data-note">
+            <span>{supported ? "MEDIÇÃO ATIVA" : "MEDIÇÃO LIMITADA"}</span>
+            <p>Mede somente o tráfego do Painel de Bordo neste aparelho, não o consumo total da Starlink.</p>
           </div>
         </div>
-        <div className="daily-data-rate">
-          <Wifi />
-          <span><small>TARIFA INFORMADA</small><b>R$ 12,50 / GB</b></span>
-        </div>
-      </div>
-
-      <div className="daily-data-grid">
-        <article className="primary">
-          <Database />
-          <span><small>USADO HOJE</small><b>{today.value} <em>{today.unit}</em></b><i>Acumulado desde 00:00</i></span>
-        </article>
-        <article className="cost">
-          <Activity />
-          <span><small>CUSTO HOJE</small><b>{formatBrl(costToday)}</b><i>Calculado a R$ 12,50/GB</i></span>
-        </article>
-        <article>
-          <Gauge />
-          <span><small>ESTA SESSÃO</small><b>{session.value} <em>{session.unit}</em></b><i>Desde que abriu o painel</i></span>
-        </article>
-        <article>
-          <Wifi />
-          <span><small>CUSTO A CADA 100 MB</small><b>{formatBrl(costPer100Mb)}</b><i>Referência rápida</i></span>
-        </article>
-      </div>
-
-      <div className="daily-data-progress">
-        <div><span style={{ width: `${gbPercent}%` }} /></div>
-        <small>{todayBytes < GB_BYTES ? `${(1000 - todayBytes / MB_BYTES).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB até 1 GB` : `${(todayBytes / GB_BYTES).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} GB usados hoje`}</small>
-      </div>
-
-      <div className="daily-data-note">
-        <span>{supported ? "MEDIÇÃO AUTOMÁTICA ATIVA" : "MEDIÇÃO LIMITADA NESTE NAVEGADOR"}</span>
-        <p>Este medidor calcula o tráfego do próprio Painel neste dispositivo. Ele não mede WhatsApp, vídeos, outros celulares ou o consumo total do roteador Starlink.</p>
-      </div>
+      )}
     </section>
   );
 }
