@@ -1,3 +1,9 @@
+# PAINEL DE BORDO — v70
+
+Versão v70: AIS mobile em mapa inteiro, painéis flutuantes recolhíveis, busca individual por barco e busca por área de 50/100 km.
+
+Consulte `SETUP-AIS-V70.md` para custos e funcionamento da busca por área.
+
 
 ## v69 — previsão automática por largada
 

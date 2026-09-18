@@ -28,6 +28,7 @@ import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
+import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 
@@ -41,6 +42,8 @@ type Props = {
 
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
+type SearchMode = "vessel" | "area";
+type MobilePanel = "search" | "saved" | "history" | "recent" | null;
 
 type DhnChart = {
   number: string;
@@ -236,12 +239,24 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const mapRef = useRef<Map | null>(null);
   const vesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
+  const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
   const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
+  const searchModeRef = useRef<SearchMode>("vessel");
+  const areaRadiusRef = useRef<50 | 100>(50);
 
   const [nameQuery, setNameQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
+  const [areaRadius, setAreaRadius] = useState<50 | 100>(50);
+  const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
+  const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
+  const [areaCost, setAreaCost] = useState<number | null>(null);
+
+  useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
+  useEffect(() => { areaRadiusRef.current = areaRadius; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, areaRadius); }, [areaRadius]);
   const [matches, setMatches] = useState<VesselMatch[]>([]);
   const [matchTotal, setMatchTotal] = useState(0);
   const [tracked, setTracked] = useState<Vessel | null>(null);
@@ -308,6 +323,97 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       source?.clear();
       source?.addFeature(new Feature({ geometry: new Point(fromLonLat([lon, lat])) }));
     }
+  }
+
+  function drawAreaSelection(lat: number, lon: number, radiusKm: 50 | 100) {
+    const source = areaSourceRef.current;
+    if (!source) return;
+    source.clear();
+    const center3857 = fromLonLat([lon, lat]);
+    const circle = new Feature({ geometry: new CircleGeom(center3857, radiusKm * 1000) });
+    circle.setStyle(new Style({
+      fill: new Fill({ color: "rgba(43,212,170,.08)" }),
+      stroke: new Stroke({ color: "#2bd4aa", width: 2, lineDash: [10, 8] }),
+    }));
+    const point = new Feature({ geometry: new Point(center3857) });
+    point.setStyle(new Style({
+      image: new CircleStyle({ radius: 7, fill: new Fill({ color: "#2bd4aa" }), stroke: new Stroke({ color: "#ffffff", width: 2 }) }),
+      text: new Text({ text: `${radiusKm} km`, offsetY: -18, font: "800 11px system-ui", fill: new Fill({ color: "#effffb" }), stroke: new Stroke({ color: "#05252b", width: 3 }) }),
+    }));
+    source.addFeatures([circle, point]);
+  }
+
+  function drawAreaVessels(vessels: Vessel[]) {
+    const source = vesselSourceRef.current;
+    if (!source) return;
+    source.clear();
+    vessels.forEach((vessel) => {
+      const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
+      feature.set("vessel", vessel);
+      feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+      source.addFeature(feature);
+    });
+  }
+
+  function chooseAreaCenterFromMap() {
+    const map = mapRef.current;
+    if (!map) return;
+    const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+    setAreaCenter({ lat, lon });
+    drawAreaSelection(lat, lon, areaRadius);
+    setStatusMessage(`Centro da área definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+  }
+
+  async function searchArea() {
+    const selected = areaCenter || center;
+    if (!selected) return;
+    if (areaRadius === 100) {
+      const ok = window.confirm("A pesquisa de 100 km usa 9 consultas de 50 km porque o Data Docked limita cada busca a 50 km. Custo estimado: 90 créditos. Continuar?");
+      if (!ok) return;
+      if (credits != null && credits < 90) {
+        setStatus("error");
+        setStatusMessage(`Saldo insuficiente: 100 km exige cerca de 90 créditos e você tem ${credits}.`);
+        return;
+      }
+    }
+    setStatus("loading");
+    setStatusMessage(`Pesquisando embarcações em ${areaRadius} km...`);
+    drawAreaSelection(selected.lat, selected.lon, areaRadius);
+    try {
+      const response = await fetch(`/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus(response.status === 503 ? "config" : "error");
+        setStatusMessage(data?.error || "Falha na busca AIS por área.");
+        return;
+      }
+      const rows: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
+        mmsi: String(raw?.mmsi || ""), imo: String(raw?.imo || ""), name: raw?.name || "SEM NOME",
+        lat: Number(raw?.lat), lon: Number(raw?.lon), sog: raw?.sog == null ? null : Number(raw.sog),
+        cog: raw?.cog == null ? null : Number(raw.cog), heading: raw?.heading == null ? null : Number(raw.heading),
+        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: raw?.dataSource || "Terrestrial Area",
+        receivedAt: Number(raw?.receivedAt) || Date.now(),
+      })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon));
+      setAreaVessels(rows);
+      setAreaCost(Number(data?.creditCost) || (areaRadius === 100 ? 90 : 10));
+      drawAreaVessels(rows);
+      centerOn(selected.lat, selected.lon, areaRadius === 100 ? 7 : 8);
+      setStatus("ready");
+      setStatusMessage(`${rows.length} barco(s) encontrado(s) em ${areaRadius} km · ${data?.creditCost || (areaRadius === 100 ? 90 : 10)} créditos`);
+      await refreshCredits();
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha de rede na busca AIS por área.");
+    }
+  }
+
+  async function openAreaVessel(vessel: Vessel) {
+    setTracked(vessel);
+    drawAreaVessels(areaVessels);
+    centerOn(vessel.lat, vessel.lon, 12);
+    setStatus("ready");
+    setStatusMessage(`${vessel.name || vessel.mmsi} selecionado da busca por área · 0 crédito adicional`);
+    await recordHistory(vessel);
   }
 
   async function refreshCredits() {
@@ -638,6 +744,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
     const vesselSource = new VectorSource();
     const vesselLayer = new VectorLayer({ source: vesselSource, declutter: true });
+    const areaSource = new VectorSource();
+    const areaLayer = new VectorLayer({ source: areaSource });
     const positionSource = new VectorSource();
     const positionLayer = new VectorLayer({
       source: positionSource,
@@ -649,13 +757,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new Map({
       target: hostRef.current,
       controls: [],
-      layers: [street, vesselLayer, positionLayer],
+      layers: [street, areaLayer, vesselLayer, positionLayer],
       view,
     });
 
     mapRef.current = map;
     vesselSourceRef.current = vesselSource;
     positionSourceRef.current = positionSource;
+    areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
     dhnLayerRef.current = dhn;
 
@@ -669,12 +778,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       });
     };
     map.on("moveend", updateCenter);
+    const selectAreaOnClick = (event: any) => {
+      if (searchModeRef.current !== "area") return;
+      const [lon, lat] = toLonLat(event.coordinate);
+      setAreaCenter({ lat, lon });
+      drawAreaSelection(lat, lon, areaRadiusRef.current);
+      setStatusMessage(`Área selecionada no mapa · ${areaRadiusRef.current} km`);
+    };
+    map.on("singleclick", selectAreaOnClick);
     const ro = new ResizeObserver(() => map.updateSize());
     ro.observe(hostRef.current);
 
     return () => {
       ro.disconnect();
       map.un("moveend", updateCenter);
+      map.un("singleclick", selectAreaOnClick);
       map.setTarget(undefined);
       mapRef.current = null;
     };
@@ -773,52 +891,87 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         </div>
       </div>
 
-      <div className="ais-name-search-card">
-        <div className="ais-name-search-head">
-          <div className="ais-name-title"><Ship /><span><b>LOCALIZAR EMBARCAÇÃO</b><small>1 crédito para procurar o nome + 1 crédito para buscar a posição</small></span></div>
-          <div className="ais-credit-flow"><span>1 CR</span><em>Nome</em><i>→</i><span>1 CR</span><em>Posição</em><strong>= 2 créditos</strong></div>
+      <div className="ais-name-search-card ais-v70-search-card">
+        <div className="ais-v70-search-tabs">
+          <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => { setSearchMode("vessel"); setMobilePanel("search"); }}><Ship /> Barco</button>
+          <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); setMobilePanel("search"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
         </div>
-        <form className="ais-name-form" onSubmit={searchByName}>
-          <label>
-            <span>Nome do barco</span>
-            <div><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Ex.: ASTRO SOL I" autoComplete="off" /></div>
-          </label>
-          <button type="submit" disabled={status === "loading"}>
-            {status === "loading" ? <RefreshCw className="spin" /> : <Search />}
-            {status === "loading" ? "CONSULTANDO..." : "BUSCAR BARCO"}
-          </button>
-        </form>
 
-        {matches.length > 0 && (
-          <div className="ais-name-results">
-            <div className="ais-name-results-head"><span><b>{matchTotal}</b> resultado(s)</span><small>Escolha o barco certo para gastar apenas +1 crédito na posição</small></div>
-            <div className="ais-name-results-grid">
-              {matches.slice(0, 12).map((match, index) => {
-                const id = vesselIdentifier(match) || `${match.name}-${index}`;
-                const key = vesselKeyFrom(match);
-                const isSaved = key ? savedKeys.has(key) : false;
-                const isTracked = Boolean(tracked && ((tracked.mmsi && tracked.mmsi === match.mmsi) || (tracked.imo && tracked.imo === match.imo)));
-                return (
-                  <article key={`${id}-${index}`} className={isTracked ? "active" : ""}>
-                    <span className="ais-result-ship"><Ship /></span>
-                    <div className="ais-result-main">
-                      <b>{match.name || "Sem nome"}</b>
-                      <small>{match.typeSpecific || match.shipType || "Tipo não informado"}{match.country ? ` · ${match.country}` : ""}</small>
-                      <em>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}{match.callsign ? ` · ${match.callsign}` : ""}</em>
-                    </div>
-                    <div className="ais-result-actions">
-                      <button type="button" onClick={() => getVesselPosition(match)} disabled={status === "loading"}>
-                        <MapPinned /> {isTracked ? "NO MAPA" : "VER POSIÇÃO · 1 CR"}
-                      </button>
-                      <button type="button" className={isSaved ? "saved" : ""} onClick={() => isSaved ? removeSavedVessel(key) : saveVessel(match)}>
-                        <Bookmark /> {isSaved ? "SALVO" : "SALVAR"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+        {searchMode === "vessel" ? (
+          <>
+            <div className="ais-name-search-head">
+              <div className="ais-name-title"><Ship /><span><b>LOCALIZAR EMBARCAÇÃO</b><small>Pesquise pelo nome e consulte somente o barco escolhido.</small></span></div>
+              <div className="ais-credit-flow"><span>1 CR</span><em>Nome</em><i>→</i><span>1 CR</span><em>Posição</em><strong>= 2 créditos</strong></div>
             </div>
-            {exactMatch && matches.length > 1 && <small className="ais-exact-hint">Correspondência exata encontrada: <b>{exactMatch.name}</b>.</small>}
+            <form className="ais-name-form" onSubmit={searchByName}>
+              <label>
+                <span>Nome do barco</span>
+                <div><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Ex.: ASTRO SOL I" autoComplete="off" /></div>
+              </label>
+              <button type="submit" disabled={status === "loading"}>
+                {status === "loading" ? <RefreshCw className="spin" /> : <Search />}
+                {status === "loading" ? "CONSULTANDO..." : "BUSCAR BARCO"}
+              </button>
+            </form>
+
+            {matches.length > 0 && (
+              <div className="ais-name-results">
+                <div className="ais-name-results-head"><span><b>{matchTotal}</b> resultado(s)</span><small>Escolha o barco certo para gastar apenas +1 crédito na posição</small></div>
+                <div className="ais-name-results-grid">
+                  {matches.slice(0, 12).map((match, index) => {
+                    const id = vesselIdentifier(match) || `${match.name}-${index}`;
+                    const key = vesselKeyFrom(match);
+                    const isSaved = key ? savedKeys.has(key) : false;
+                    const isTracked = Boolean(tracked && ((tracked.mmsi && tracked.mmsi === match.mmsi) || (tracked.imo && tracked.imo === match.imo)));
+                    return (
+                      <article key={`${id}-${index}`} className={isTracked ? "active" : ""}>
+                        <span className="ais-result-ship"><Ship /></span>
+                        <div className="ais-result-main">
+                          <b>{match.name || "Sem nome"}</b>
+                          <small>{match.typeSpecific || match.shipType || "Tipo não informado"}{match.country ? ` · ${match.country}` : ""}</small>
+                          <em>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}{match.callsign ? ` · ${match.callsign}` : ""}</em>
+                        </div>
+                        <div className="ais-result-actions">
+                          <button type="button" onClick={() => getVesselPosition(match)} disabled={status === "loading"}><MapPinned /> {isTracked ? "NO MAPA" : "VER POSIÇÃO · 1 CR"}</button>
+                          <button type="button" className={isSaved ? "saved" : ""} onClick={() => isSaved ? removeSavedVessel(key) : saveVessel(match)}><Bookmark /> {isSaved ? "SALVO" : "SALVAR"}</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                {exactMatch && matches.length > 1 && <small className="ais-exact-hint">Correspondência exata encontrada: <b>{exactMatch.name}</b>.</small>}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="ais-v70-area-search">
+            <div className="ais-name-search-head">
+              <div className="ais-name-title"><Crosshair /><span><b>PESQUISAR EMBARCAÇÕES NA ÁREA</b><small>Toque no mapa para escolher o centro do círculo.</small></span></div>
+              <div className="ais-v70-area-cost">{areaRadius === 50 ? "10 CR" : "90 CR"}</div>
+            </div>
+            <div className="ais-v70-radius-row">
+              <button type="button" className={areaRadius === 50 ? "active" : ""} onClick={() => setAreaRadius(50)}>50 km <small>10 créditos</small></button>
+              <button type="button" className={areaRadius === 100 ? "active expensive" : "expensive"} onClick={() => setAreaRadius(100)}>100 km <small>90 créditos</small></button>
+              <button type="button" onClick={chooseAreaCenterFromMap}><Crosshair /> Centro do mapa</button>
+              {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, areaRadius); centerOn(devicePosition.lat, devicePosition.lon, areaRadius === 100 ? 7 : 8); }}><LocateFixed /> Meu GPS</button>}
+            </div>
+            <div className="ais-v70-area-position">
+              <span><small>CENTRO</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Toque no mapa para selecionar"}</b></span>
+              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR {areaRadius} KM</button>
+            </div>
+            {areaRadius === 100 && <p className="ais-v70-cost-warning">O Data Docked limita cada busca a 50 km. A opção de 100 km combina 9 consultas e custa aproximadamente 90 créditos.</p>}
+            {areaVessels.length > 0 && (
+              <div className="ais-v70-area-results">
+                <div><b>{areaVessels.length} barcos encontrados</b><span>{areaCost != null ? `${areaCost} créditos usados` : ""}</span></div>
+                <div className="ais-v70-area-list">
+                  {areaVessels.slice(0, 30).map((vessel, index) => (
+                    <button type="button" key={`${vessel.mmsi || vessel.name}-${index}`} onClick={() => openAreaVessel(vessel)}>
+                      <Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{vessel.sog != null ? `${vessel.sog.toFixed(1)} kn` : "—"} · {vessel.cog != null ? `${Math.round(vessel.cog)}°` : "—"}</small></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -887,6 +1040,50 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         <div className="ais-map-header-controls ais-single-map-badge">
           <span><Navigation /> Mapa</span>
         </div>
+
+        <div className="ais-v70-mobile-dock">
+          <button type="button" className={mobilePanel === "search" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "search" ? null : "search")}><Search /><span>Buscar</span></button>
+          <button type="button" className={mobilePanel === "saved" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{savedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "history" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
+          <button type="button" className={mobilePanel === "recent" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "recent" ? null : "recent")}><Ship /><span>Recentes</span><em>{recentCards.length}</em></button>
+        </div>
+
+        {mobilePanel && (
+          <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
+            <div className="ais-v70-mobile-panel-head">
+              <b>{mobilePanel === "search" ? "Pesquisar AIS" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "history" ? "Histórico AIS" : "Barcos recentes"}</b>
+              <button type="button" onClick={() => setMobilePanel(null)}>×</button>
+            </div>
+
+            {mobilePanel === "search" && (
+              <div className="ais-v70-mobile-search">
+                <div className="ais-v70-search-tabs compact">
+                  <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
+                  <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
+                </div>
+                {searchMode === "vessel" ? (
+                  <>
+                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Nome do barco" /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar</button></div>
+                    {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"}</small></span><em>1 CR</em></button>)}</div>}
+                  </>
+                ) : (
+                  <>
+                    <div className="ais-v70-mobile-radius"><button type="button" className={areaRadius === 50 ? "active" : ""} onClick={() => setAreaRadius(50)}>50 km <small>10 CR</small></button><button type="button" className={areaRadius === 100 ? "active expensive" : "expensive"} onClick={() => setAreaRadius(100)}>100 km <small>90 CR</small></button></div>
+                    <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Fechar e tocar no mapa para escolher o centro</button>
+                    <div className="ais-v70-mobile-area-current"><small>Centro selecionado</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
+                    <button type="button" className="ais-v70-area-go" onClick={() => { searchArea(); setMobilePanel(null); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar área de {areaRadius} km</button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {mobilePanel === "saved" && <div className="ais-v70-mobile-list">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <button type="button" key={item.vesselKey} onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>) : <p>Nenhum barco salvo.</p>}</div>}
+
+            {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => <button type="button" key={item.id} onClick={() => { openHistoryItem(item); setMobilePanel(null); }}><History /><span><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></span></button>)}</> : <p>Histórico vazio.</p>}</div>}
+
+            {mobilePanel === "recent" && <div className="ais-v70-mobile-list recent">{recentCards.length ? recentCards.map(({ key, vessel, historyItem, current }) => <button type="button" key={key} onClick={() => { if (current) centerOn(vessel.lat, vessel.lon, 12); else if (historyItem) openHistoryItem(historyItem); setMobilePanel(null); }}><Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{formatCoordMarine(vessel.lat, true)} · {formatCoordMarine(vessel.lon, false)}</small></span></button>) : <p>Nenhuma posição recente.</p>}</div>}
+          </div>
+        )}
 
         {!tracked && (
           <div className="ais-v61-map-empty"><Radio /><b>Nenhum barco selecionado</b><span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span></div>
