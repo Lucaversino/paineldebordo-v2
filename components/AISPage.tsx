@@ -260,6 +260,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [matches, setMatches] = useState<VesselMatch[]>([]);
   const [matchTotal, setMatchTotal] = useState(0);
   const [tracked, setTracked] = useState<Vessel | null>(null);
+  const [showEmptyHint, setShowEmptyHint] = useState(true);
   const [status, setStatus] = useState<AisStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Digite o nome do barco para localizar");
   const [credits, setCredits] = useState<number | null>(null);
@@ -1085,8 +1086,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
         )}
 
-        {!tracked && (
-          <div className="ais-v61-map-empty"><Radio /><b>Nenhum barco selecionado</b><span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span></div>
+        {!tracked && showEmptyHint && (
+          <div className="ais-v61-map-empty">
+            <button
+              type="button"
+              className="ais-v71-empty-close"
+              aria-label="Fechar aviso"
+              title="Fechar aviso"
+              onClick={() => setShowEmptyHint(false)}
+            >
+              ×
+            </button>
+            <Radio />
+            <b>Nenhum barco selecionado</b>
+            <span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span>
+          </div>
         )}
 
         <div className="ais-bottom-status">

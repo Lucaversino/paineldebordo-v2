@@ -1655,3 +1655,10 @@ main.loginpage{
   .content:has(.ais-page){max-width:none!important;width:100%!important;height:calc(100dvh - 72px)!important;margin:0!important;padding:0!important;overflow:hidden!important}
   .content:has(.ais-page)>.ais-page{width:100%!important;max-width:none!important}
 }
+
+/* v71 — aviso do mapa AIS fechável */
+.ais-v61-map-empty{position:absolute}
+.ais-v71-empty-close{position:absolute;top:7px;right:7px;width:28px;height:28px;border:1px solid #35636c;border-radius:8px;background:#09262dcf;color:#b8d8dd;font:800 20px/1 system-ui;display:grid;place-items:center;cursor:pointer;z-index:2}
+.ais-v71-empty-close:hover{border-color:#2bd4aa;color:#e9fff9;background:#0d3437}
+.app:not(.dark) .ais-v71-empty-close{background:#f4fbfae8;color:#315d63;border-color:#b8d2cf}
+@media(max-width:620px){.ais-v71-empty-close{top:6px;right:6px;width:32px;height:32px;font-size:22px}.ais-page .ais-v61-map-empty{padding-top:38px}}

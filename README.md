@@ -1,3 +1,7 @@
+## v71 — AIS mobile
+
+- Aviso “Nenhum barco selecionado” agora possui botão × para fechar e liberar totalmente a visão do mapa.
+
 # PAINEL DE BORDO — v70
 
 Versão v70: AIS mobile em mapa inteiro, painéis flutuantes recolhíveis, busca individual por barco e busca por área de 50/100 km.
