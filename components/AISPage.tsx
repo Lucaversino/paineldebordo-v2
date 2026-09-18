@@ -305,6 +305,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
   const [historyItems, setHistoryItems] = useState<AisHistoryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
 
   function buildVesselStyle(vessel: Vessel, currentZoom: number) {
     const speed = Number(vessel.sog || 0);
@@ -499,21 +500,39 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setStatusMessage("Este barco não possui IMO/MMSI válido para salvar.");
       return;
     }
+    setSavingKeys((current) => {
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+    setStatusMessage(`Salvando ${source.name || "embarcação"}...`);
     try {
       const response = await fetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify({ action: "save", vessel: source }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setStatusMessage(data?.error || "Não foi possível salvar o barco.");
+        setStatusMessage(data?.error || `Não foi possível salvar o barco (${response.status}).`);
         return;
       }
-      await loadAisLibrary();
-      setStatusMessage(`${source.name || "Embarcação"} salva na pasta de barcos`);
-    } catch {
-      setStatusMessage("Falha ao salvar a embarcação.");
+      if (data?.saved) {
+        setSavedVessels((current) => [data.saved, ...current.filter((item) => item.vesselKey !== key)]);
+      } else {
+        await loadAisLibrary();
+      }
+      setStatusMessage(`${source.name || "Embarcação"} salva na pasta de barcos ✓`);
+    } catch (error) {
+      console.error("AIS save vessel error", error);
+      setStatusMessage("Falha de conexão ao salvar a embarcação. Tente novamente.");
+    } finally {
+      setSavingKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
     }
   }
 
@@ -917,7 +936,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [tracked, historyItems]);
 
   return (
-    <section className="ais-page ais-v61-page ais-v62-page">
+    <section className="ais-page ais-v61-page ais-v62-page ais-v75-page">
       <div className="ais-topbar">
         <div>
           <small>MONITORAMENTO MARÍTIMO</small>
@@ -975,7 +994,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                         </div>
                         <div className="ais-result-actions">
                           <button type="button" onClick={() => getVesselPosition(match)} disabled={status === "loading"}><MapPinned /> {isTracked ? "NO MAPA" : "VER POSIÇÃO · 1 CR"}</button>
-                          <button type="button" className={isSaved ? "saved" : ""} onClick={() => isSaved ? removeSavedVessel(key) : saveVessel(match)}><Bookmark /> {isSaved ? "SALVO" : "SALVAR"}</button>
+                          <button type="button" className={isSaved ? "saved" : ""} disabled={savingKeys.has(key)} onClick={() => isSaved ? removeSavedVessel(key) : saveVessel(match)}><Bookmark /> {savingKeys.has(key) ? "SALVANDO..." : isSaved ? "SALVO" : "SALVAR"}</button>
                         </div>
                       </article>
                     );
@@ -1236,8 +1255,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                         }, true)} disabled={status === "loading"}>
                           <RefreshCw /> Atualizar · 1 CR
                         </button>
-                        <button type="button" className={isSaved ? "saved" : ""} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
-                          <Bookmark /> {isSaved ? "Salvo" : "Salvar"}
+                        <button type="button" className={isSaved ? "saved" : ""} disabled={Boolean(vesselKey && savingKeys.has(vesselKey))} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {vesselKey && savingKeys.has(vesselKey) ? "Salvando..." : isSaved ? "Salvo ✓" : "Salvar"}
                         </button>
                       </>
                     ) : (
@@ -1245,8 +1264,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                         <button type="button" className="primary" onClick={() => historyItem && openHistoryItem(historyItem)}>
                           <MapPinned /> Abrir no mapa · 0 CR
                         </button>
-                        <button type="button" className={isSaved ? "saved" : ""} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
-                          <Bookmark /> {isSaved ? "Salvo" : "Salvar"}
+                        <button type="button" className={isSaved ? "saved" : ""} disabled={Boolean(vesselKey && savingKeys.has(vesselKey))} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {vesselKey && savingKeys.has(vesselKey) ? "Salvando..." : isSaved ? "Salvo ✓" : "Salvar"}
                         </button>
                       </>
                     )}

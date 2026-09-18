@@ -1,6 +1,6 @@
 {
   "name": "painel-de-bordo-supabase-vercel",
-  "version": "74.0.0",
+  "version": "75.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0 <23"

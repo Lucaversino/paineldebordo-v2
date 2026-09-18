@@ -271,3 +271,9 @@ O assistente OpenAI agora é global e abre por um botão flutuante no canto infe
 - Painel desktop mais largo e área de conversa mais confortável.
 - No celular, o chat usa até 82% da altura útil e mantém o compositor sempre visível.
 - Conversas da v72 são reaproveitadas automaticamente na primeira abertura.
+
+## v75 — correção do card AIS e salvar barco
+- Corrige o layout 1:1 dos cards AIS no desktop.
+- Página AIS volta a rolar no desktop para não cortar os cards abaixo do mapa.
+- Salvamento de barcos usa upsert atômico e feedback SALVANDO/SALVO.
+- Mantém até 3 cards recentes.

@@ -1791,3 +1791,55 @@ main.loginpage{
 .ais-v74-mobile-location-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.ais-v74-mobile-location-actions button{min-height:40px;border:1px solid #28515a;border-radius:10px;background:#082229;color:#b8d8d3;font:900 8px system-ui;display:flex;align-items:center;justify-content:center;gap:6px}.ais-v74-mobile-location-actions button svg{width:14px}
 .ais-v74-mobile-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:7px}.ais-v74-mobile-coordinates label{display:grid;gap:4px}.ais-v74-mobile-coordinates label span{font-size:7px;font-weight:900;color:#7ea9a5}.ais-v74-mobile-coordinates input{min-width:0;width:100%;height:44px;border:1px solid #2b5961;border-radius:9px;background:#06191f;color:#f0fffc;padding:0 9px;font:900 12px ui-monospace,monospace;outline:none}.ais-v74-mobile-coordinates>button{grid-column:1/-1;height:42px;border:1px solid #2bd4aa;border-radius:9px;background:#103b35;color:#dffcf5;font:950 9px system-ui;display:flex;align-items:center;justify-content:center;gap:6px}.ais-v74-mobile-coordinates>button svg{width:15px}.ais-v74-coordinate-error.mobile{font-size:8px}
 @media(max-width:900px){.ais-v74-manual-coords{grid-template-columns:1fr 1fr}.ais-v74-manual-coords>button{grid-column:1/-1}.ais-v74-coordinate-field input{font-size:12px}.ais-v70-radius-row button.expensive{display:none}}
+
+
+/* ======================================================================
+   v75 — card AIS 1:1 corrigido + página desktop rolável + salvar robusto
+   ====================================================================== */
+@media (min-width: 761px){
+  .ais-page.ais-v75-page{
+    height:auto!important;
+    min-height:calc(100vh - 74px);
+    overflow:visible!important;
+    grid-template-rows:auto auto auto minmax(500px,62vh) auto auto!important;
+    align-content:start;
+  }
+  .ais-v75-page .ais-shell.ais-v61-shell{
+    height:min(62vh,660px);
+    min-height:500px;
+  }
+  .ais-v75-page .ais-v67-recent-section{
+    padding:2px 0 10px;
+  }
+  .ais-v75-page .ais-v67-recent-grid{
+    width:min(1080px,100%);
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:14px;
+  }
+  .ais-v75-page .ais-v67-square-card{
+    box-sizing:border-box;
+    width:100%;
+    max-width:350px;
+    aspect-ratio:1/1;
+    min-height:0;
+    overflow:hidden;
+    padding:14px;
+    gap:9px;
+  }
+  .ais-v75-page .ais-v67-card-name small{font-size:7px}
+  .ais-v75-page .ais-v67-card-name h3{font-size:15px}
+  .ais-v75-page .ais-v67-card-name em{font-size:7px}
+  .ais-v75-page .ais-v67-position{padding:10px 11px}
+  .ais-v75-page .ais-v67-position>small{font-size:7px}
+  .ais-v75-page .ais-v67-position>strong{font-size:21px}
+  .ais-v75-page .ais-v67-position>span{font-size:6.5px}
+  .ais-v75-page .ais-v67-time small{font-size:6.5px}
+  .ais-v75-page .ais-v67-time b{font-size:9px}
+  .ais-v75-page .ais-v67-time>strong{font-size:6px}
+  .ais-v75-page .ais-v67-mini-grid small{font-size:6px}
+  .ais-v75-page .ais-v67-mini-grid b{font-size:8px}
+  .ais-v75-page .ais-v67-card-actions button{height:36px;font-size:8px}
+}
+@media (min-width:761px) and (max-width:1180px){
+  .ais-v75-page .ais-v67-recent-grid{grid-template-columns:repeat(2,minmax(0,340px))}
+}

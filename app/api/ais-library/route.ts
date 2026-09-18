@@ -135,15 +135,13 @@ export async function POST(request: NextRequest) {
       updatedAt: now,
     };
 
-    const [existing] = await db.select({ id: aisSavedVessels.id }).from(aisSavedVessels)
-      .where(and(eq(aisSavedVessels.ownerId, user.id), eq(aisSavedVessels.vesselKey, key))).limit(1);
-    let row;
-    if (existing) {
-      [row] = await db.update(aisSavedVessels).set(values)
-        .where(and(eq(aisSavedVessels.id, existing.id), eq(aisSavedVessels.ownerId, user.id))).returning();
-    } else {
-      [row] = await db.insert(aisSavedVessels).values({ ...values, savedAt: now }).returning();
-    }
+    const [row] = await db.insert(aisSavedVessels)
+      .values({ ...values, savedAt: now })
+      .onConflictDoUpdate({
+        target: [aisSavedVessels.ownerId, aisSavedVessels.vesselKey],
+        set: values,
+      })
+      .returning();
     return NextResponse.json({ saved: row });
   }
 
