@@ -1,11 +1,23 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, LoaderCircle, PlusCircle, Power, PowerOff, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
+import { Activity, BarChart3, BrainCircuit, CheckCircle2, CircleDollarSign, Coins, ExternalLink, LoaderCircle, PlusCircle, Power, PowerOff, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 function brl(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+}
+function usd(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(value || 0);
+}
+function integer(value: number) {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(value || 0);
+}
+function shortDate(value: string) {
+  if (!value) return "—";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
 
 export default function AdminBillingPage() {
@@ -16,6 +28,9 @@ export default function AdminBillingPage() {
   const [usersError, setUsersError] = useState("");
   const [health, setHealth] = useState<any>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [openAiReport, setOpenAiReport] = useState<any>(null);
+  const [openAiLoading, setOpenAiLoading] = useState(false);
+  const [openAiError, setOpenAiError] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
@@ -68,6 +83,22 @@ export default function AdminBillingPage() {
     }
   };
 
+  const loadOpenAiReport = async () => {
+    setOpenAiLoading(true);
+    setOpenAiError("");
+    try {
+      const response = await adminFetch("/api/billing/admin/openai");
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.replace("/login"); return; }
+      if (!response.ok) throw new Error(result?.error || "Não foi possível carregar o relatório OpenAI.");
+      setOpenAiReport(result);
+    } catch (cause) {
+      setOpenAiError(cause instanceof Error ? cause.message : "Falha ao carregar o relatório OpenAI.");
+    } finally {
+      setOpenAiLoading(false);
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     setError("");
@@ -78,6 +109,7 @@ export default function AdminBillingPage() {
       if (!response.ok) throw new Error(result?.error || "Acesso administrativo indisponível.");
       setData({ settings: result.settings, stats: result.stats, users: [] });
       void loadUsers();
+      void loadOpenAiReport();
     } catch (cause) {
       const message = cause instanceof DOMException && cause.name === "TimeoutError"
         ? "O painel administrativo demorou mais de 15 segundos para responder. A conexão com o banco/API foi interrompida para não ficar carregando infinito."
@@ -224,6 +256,80 @@ export default function AdminBillingPage() {
       <article><h3>Diagnóstico das APIs</h3><p>Teste a conexão real da Data Docked, OpenAI e banco usados pelo sistema.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin" /> : <Activity />} Testar APIs agora</button></article>
       {health && <><article><h3>Data Docked</h3><p>Status: <b>{health.datadocked?.ok ? "ONLINE" : "ERRO"}</b></p><p>Créditos do provedor: <b>{health.datadocked?.ok ? health.datadocked.credits : "—"}</b></p>{!health.datadocked?.ok && <p>{health.datadocked?.error}</p>}</article><article><h3>OpenAI</h3><p>Status: <b>{health.openai?.ok ? "CHAVE/MODELO OK" : "ERRO"}</b></p><p>Modelo: <b>{health.openai?.model || "—"}</b></p>{!health.openai?.ok && <p>{health.openai?.error}</p>}</article><article><h3>Banco</h3><p>Status: <b>{health.database?.ok ? "ONLINE" : "ERRO"}</b></p>{!health.database?.ok && <p>{health.database?.error}</p>}</article></>}
     </div>
+
+    <section className="admin-openai-report">
+      <div className="admin-openai-head">
+        <div><small>OPENAI API · RELATÓRIO FINANCEIRO</small><h3>Consumo, tokens e custos</h3><p>Resumo do uso da FISH IA e, com Admin API Key, valores oficiais da organização OpenAI.</p></div>
+        <button type="button" onClick={() => void loadOpenAiReport()} disabled={openAiLoading}>{openAiLoading ? <LoaderCircle className="spin" /> : <RefreshCw />} Atualizar OpenAI</button>
+      </div>
+
+      {openAiError && <div className="credits-error">{openAiError}</div>}
+      {openAiLoading && !openAiReport ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando consumo da OpenAI...</div> : openAiReport && (() => {
+        const live = openAiReport.live || {};
+        const local = openAiReport.local || {};
+        const ls = local.summary || {};
+        const hasLive = Boolean(live.configured && live.ok);
+        const todayCost = hasLive ? usd(live.todayCostUsd) : brl(ls.todayCostBrl);
+        const monthCost = hasLive ? usd(live.monthCostUsd) : brl(ls.monthCostBrl);
+        const todayTokens = hasLive ? live.todayTokens : ls.todayTokens;
+        const monthTokens = hasLive ? live.monthTokens : ls.monthTokens;
+        return <>
+          <div className={`admin-openai-status ${hasLive ? "live" : "local"}`}>
+            <BrainCircuit />
+            <div><b>{hasLive ? "DADOS OFICIAIS OPENAI CONECTADOS" : "MODO LOCAL DO PAINEL"}</b><span>{hasLive ? "Custos oficiais em USD · dados da OpenAI em UTC." : (live.error || "Custo calculado pelos registros internos da FISH IA.")}</span></div>
+          </div>
+
+          <div className="admin-openai-kpis">
+            <article className="today"><CircleDollarSign /><span><small>GASTO HOJE</small><b>{todayCost}</b><em>{hasLive ? "Oficial OpenAI · UTC" : "Estimativa interna · Brasil"}</em></span></article>
+            <article><BarChart3 /><span><small>GASTO NO MÊS</small><b>{monthCost}</b><em>{hasLive ? "Organização OpenAI" : "Registros da FISH IA"}</em></span></article>
+            <article className="remaining"><Coins /><span><small>DISPONÍVEL ATÉ O LIMITE</small><b>{hasLive && live.remainingToLimitUsd != null ? usd(live.remainingToLimitUsd) : "—"}</b><em>{hasLive && live.spendLimitUsd != null ? `Limite mensal: ${usd(live.spendLimitUsd)}` : "Nenhum limite mensal legível pela API"}</em></span></article>
+            <article><Activity /><span><small>TOKENS HOJE</small><b>{integer(todayTokens)}</b><em>Mês: {integer(monthTokens)}</em></span></article>
+          </div>
+
+          <div className="admin-openai-secondary">
+            <article><small>REQUISIÇÕES HOJE</small><b>{integer(hasLive ? live.todayRequests : ls.todayRequests)}</b><span>Erros locais hoje: {integer(ls.todayErrors)}</span></article>
+            <article><small>ENTRADA HOJE</small><b>{integer(hasLive ? live.todayInputTokens : ls.todayInputTokens)}</b><span>tokens</span></article>
+            <article><small>SAÍDA HOJE</small><b>{integer(hasLive ? live.todayOutputTokens : ls.todayOutputTokens)}</b><span>tokens</span></article>
+            <article><small>ÚLTIMOS 7 DIAS</small><b>{hasLive ? usd(live.weekCostUsd) : brl(ls.weekCostBrl)}</b><span>{integer(ls.weekRequests)} chamadas registradas</span></article>
+          </div>
+
+          <div className="admin-openai-columns">
+            <article className="admin-openai-table-card">
+              <div className="admin-openai-card-head"><div><small>HISTÓRICO LOCAL</small><h4>Últimos dias da FISH IA</h4></div><span>Horário do Brasil</span></div>
+              <div className="admin-openai-table">
+                <div className="head"><span>Dia</span><span>Chamadas</span><span>Tokens</span><span>Custo est.</span></div>
+                {(local.daily || []).slice(0, 10).map((item: any) => <div key={item.day}><span>{shortDate(item.day)}</span><span>{integer(item.requests)}</span><span>{integer(item.totalTokens)}</span><span>{brl(item.costBrl)}</span></div>)}
+                {!(local.daily || []).length && <p>Nenhum uso registrado ainda.</p>}
+              </div>
+            </article>
+
+            <article className="admin-openai-table-card">
+              <div className="admin-openai-card-head"><div><small>MODELOS</small><h4>Consumo por modelo</h4></div><span>{hasLive ? "OpenAI · mês atual" : "Painel · 30 dias"}</span></div>
+              <div className="admin-openai-models">
+                {(hasLive ? live.models : local.models || []).slice(0, 8).map((item: any) => <div key={item.model}><span><b>{item.model}</b><small>{integer(item.requests)} requisições</small></span><strong>{integer(item.totalTokens)} tokens</strong></div>)}
+                {!(hasLive ? live.models : local.models || []).length && <p>Nenhum modelo registrado.</p>}
+              </div>
+            </article>
+          </div>
+
+          {hasLive && (live.lineItems || []).length > 0 && <article className="admin-openai-lineitems">
+            <div className="admin-openai-card-head"><div><small>FATURAMENTO OPENAI</small><h4>Custos do mês por categoria</h4></div><span>USD</span></div>
+            <div>{live.lineItems.slice(0, 10).map((item: any) => <p key={item.name}><span>{item.name}</span><b>{usd(item.costUsd)}</b></p>)}</div>
+          </article>}
+
+          <div className="admin-openai-credit-note">
+            <Coins />
+            <div><b>SALDO PRÉ-PAGO DA OPENAI</b><p>{openAiReport.prepaidBalance?.message}</p></div>
+            <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer">Abrir Billing OpenAI <ExternalLink /></a>
+          </div>
+
+          {!live.configured && <div className="admin-openai-admin-key">
+            <b>Para ativar os valores oficiais:</b>
+            <span>adicione <code>OPENAI_ADMIN_KEY</code> nas variáveis de ambiente da Vercel. A chave comum <code>OPENAI_API_KEY</code> continua sendo usada normalmente pela FISH IA.</span>
+          </div>}
+        </>;
+      })()}
+    </section>
 
     <div className="admin-kpis">
       <article><small>Créditos vendidos</small><b>{x.creditsSold}</b></article>

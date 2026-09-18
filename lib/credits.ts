@@ -792,3 +792,127 @@ export async function getAdminBillingStats(user: PanelUser) {
     estimatedMarginPct: revenue > 0 ? ((revenue - totalCost) / revenue) * 100 : null,
   };
 }
+
+
+export async function getAdminOpenAiLocalReport(user: PanelUser) {
+  if (!isSuperAdmin(user)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
+  await ensureBillingSchema();
+  const db = getDb();
+
+  const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+    with base as (
+      select
+        (created_at::timestamptz at time zone 'America/Sao_Paulo') as local_time,
+        coalesce(nullif(model, ''), 'não informado') as model,
+        coalesce(input_tokens, 0)::bigint as input_tokens,
+        coalesce(output_tokens, 0)::bigint as output_tokens,
+        coalesce(total_tokens, 0)::bigint as total_tokens,
+        coalesce(estimated_api_cost_brl, 0)::float8 as cost_brl,
+        status
+      from public.ai_usage
+    ),
+    summary as (
+      select
+        count(*) filter (where status = 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date)::int as today_requests,
+        count(*) filter (where status <> 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date)::int as today_errors,
+        coalesce(sum(input_tokens) filter (where status = 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date), 0)::bigint as today_input_tokens,
+        coalesce(sum(output_tokens) filter (where status = 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date), 0)::bigint as today_output_tokens,
+        coalesce(sum(total_tokens) filter (where status = 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date), 0)::bigint as today_tokens,
+        coalesce(sum(cost_brl) filter (where status = 'success' and local_time::date = (now() at time zone 'America/Sao_Paulo')::date), 0)::float8 as today_cost_brl,
+        count(*) filter (where status = 'success' and local_time >= (now() at time zone 'America/Sao_Paulo') - interval '7 days')::int as week_requests,
+        coalesce(sum(total_tokens) filter (where status = 'success' and local_time >= (now() at time zone 'America/Sao_Paulo') - interval '7 days'), 0)::bigint as week_tokens,
+        coalesce(sum(cost_brl) filter (where status = 'success' and local_time >= (now() at time zone 'America/Sao_Paulo') - interval '7 days'), 0)::float8 as week_cost_brl,
+        count(*) filter (where status = 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo'))::int as month_requests,
+        count(*) filter (where status <> 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo'))::int as month_errors,
+        coalesce(sum(input_tokens) filter (where status = 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo')), 0)::bigint as month_input_tokens,
+        coalesce(sum(output_tokens) filter (where status = 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo')), 0)::bigint as month_output_tokens,
+        coalesce(sum(total_tokens) filter (where status = 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo')), 0)::bigint as month_tokens,
+        coalesce(sum(cost_brl) filter (where status = 'success' and date_trunc('month', local_time) = date_trunc('month', now() at time zone 'America/Sao_Paulo')), 0)::float8 as month_cost_brl,
+        count(*) filter (where status = 'success')::int as total_requests,
+        coalesce(sum(total_tokens) filter (where status = 'success'), 0)::bigint as total_tokens,
+        coalesce(sum(cost_brl) filter (where status = 'success'), 0)::float8 as total_cost_brl
+      from base
+    )
+    select
+      (select to_jsonb(summary) from summary) as summary,
+      (
+        select coalesce(jsonb_agg(to_jsonb(d) order by d.day desc), '[]'::jsonb)
+        from (
+          select
+            local_time::date::text as day,
+            count(*) filter (where status = 'success')::int as requests,
+            count(*) filter (where status <> 'success')::int as errors,
+            coalesce(sum(input_tokens) filter (where status = 'success'), 0)::bigint as input_tokens,
+            coalesce(sum(output_tokens) filter (where status = 'success'), 0)::bigint as output_tokens,
+            coalesce(sum(total_tokens) filter (where status = 'success'), 0)::bigint as total_tokens,
+            coalesce(sum(cost_brl) filter (where status = 'success'), 0)::float8 as cost_brl
+          from base
+          where local_time >= (now() at time zone 'America/Sao_Paulo') - interval '30 days'
+          group by local_time::date
+          order by local_time::date desc
+          limit 30
+        ) d
+      ) as daily,
+      (
+        select coalesce(jsonb_agg(to_jsonb(m) order by m.cost_brl desc, m.total_tokens desc), '[]'::jsonb)
+        from (
+          select
+            model,
+            count(*) filter (where status = 'success')::int as requests,
+            coalesce(sum(input_tokens) filter (where status = 'success'), 0)::bigint as input_tokens,
+            coalesce(sum(output_tokens) filter (where status = 'success'), 0)::bigint as output_tokens,
+            coalesce(sum(total_tokens) filter (where status = 'success'), 0)::bigint as total_tokens,
+            coalesce(sum(cost_brl) filter (where status = 'success'), 0)::float8 as cost_brl
+          from base
+          where local_time >= (now() at time zone 'America/Sao_Paulo') - interval '30 days'
+          group by model
+        ) m
+      ) as models
+  `), 1));
+
+  const row = rows[0] || {};
+  const summary = row.summary && typeof row.summary === "object" ? row.summary : {};
+  const daily = Array.isArray(row.daily) ? row.daily : [];
+  const models = Array.isArray(row.models) ? row.models : [];
+
+  return {
+    timezone: "America/Sao_Paulo",
+    summary: {
+      todayRequests: asNumber(summary.today_requests, 0),
+      todayErrors: asNumber(summary.today_errors, 0),
+      todayInputTokens: asNumber(summary.today_input_tokens, 0),
+      todayOutputTokens: asNumber(summary.today_output_tokens, 0),
+      todayTokens: asNumber(summary.today_tokens, 0),
+      todayCostBrl: asNumber(summary.today_cost_brl, 0),
+      weekRequests: asNumber(summary.week_requests, 0),
+      weekTokens: asNumber(summary.week_tokens, 0),
+      weekCostBrl: asNumber(summary.week_cost_brl, 0),
+      monthRequests: asNumber(summary.month_requests, 0),
+      monthErrors: asNumber(summary.month_errors, 0),
+      monthInputTokens: asNumber(summary.month_input_tokens, 0),
+      monthOutputTokens: asNumber(summary.month_output_tokens, 0),
+      monthTokens: asNumber(summary.month_tokens, 0),
+      monthCostBrl: asNumber(summary.month_cost_brl, 0),
+      totalRequests: asNumber(summary.total_requests, 0),
+      totalTokens: asNumber(summary.total_tokens, 0),
+      totalCostBrl: asNumber(summary.total_cost_brl, 0),
+    },
+    daily: daily.map((item: any) => ({
+      day: String(item.day || ""),
+      requests: asNumber(item.requests, 0),
+      errors: asNumber(item.errors, 0),
+      inputTokens: asNumber(item.input_tokens, 0),
+      outputTokens: asNumber(item.output_tokens, 0),
+      totalTokens: asNumber(item.total_tokens, 0),
+      costBrl: asNumber(item.cost_brl, 0),
+    })),
+    models: models.map((item: any) => ({
+      model: String(item.model || "não informado"),
+      requests: asNumber(item.requests, 0),
+      inputTokens: asNumber(item.input_tokens, 0),
+      outputTokens: asNumber(item.output_tokens, 0),
+      totalTokens: asNumber(item.total_tokens, 0),
+      costBrl: asNumber(item.cost_brl, 0),
+    })),
+  };
+}
