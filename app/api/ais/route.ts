@@ -1,4 +1,15 @@
+import { sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { getDb } from "../../../db";
+import {
+  assertCanUse,
+  debitCreditsAfterSuccess,
+  ensureBillingSchema,
+  ensureWallet,
+  getBillingSettings,
+  logAisUsage,
+  priceForCredits,
+} from "../../../lib/credits";
 import { getPanelUser } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
@@ -16,234 +27,237 @@ function textOrEmpty(value: unknown) {
   return value == null ? "" : String(value).trim();
 }
 
+function normalizeName(value: string) {
+  return value.toUpperCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 async function callDataDocked(path: string, apiKey: string) {
   const response = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      accept: "application/json",
-      "x-api-key": apiKey,
-    },
+    headers: { accept: "application/json", "x-api-key": apiKey },
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   });
-
-  let body: any = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = { detail: `Resposta inválida do provedor AIS (${response.status}).` };
-  }
-
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof body?.detail === "string"
-      ? body.detail
-      : typeof body?.error === "string"
-        ? body.error
-        : `Erro Data Docked (${response.status}).`;
+    const message = typeof body?.detail === "string" ? body.detail : typeof body?.error === "string" ? body.error : `Erro Data Docked (${response.status}).`;
     throw Object.assign(new Error(message), { status: response.status });
   }
-
   return body;
 }
 
-function normalizeNameResult(raw: any) {
+function pickIdentifier(raw: any) {
   const mmsi = textOrEmpty(raw?.mmsi).replace(/\D/g, "");
   const imo = textOrEmpty(raw?.imo).replace(/\D/g, "");
-  return {
-    name: textOrEmpty(raw?.name),
-    mmsi,
-    imo,
-    country: textOrEmpty(raw?.country),
-    countryIso: textOrEmpty(raw?.countryIso),
-    shipType: textOrEmpty(raw?.shipType),
-    typeSpecific: textOrEmpty(raw?.typeSpecific),
-    callsign: textOrEmpty(raw?.callsign),
-  };
+  return mmsi || imo;
 }
 
-function normalizeSingleVessel(raw: any) {
+function normalizePosition(raw: any, fallbackName = "") {
   const lat = numberOrNull(raw?.latitude);
   const lon = numberOrNull(raw?.longitude);
   if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   return {
-    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
-    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
-    name: textOrEmpty(raw?.name),
+    name: textOrEmpty(raw?.name) || fallbackName,
     lat,
     lon,
-    sog: numberOrNull(raw?.speed),
-    cog: numberOrNull(raw?.course),
-    heading: numberOrNull(raw?.heading),
-    draught: textOrEmpty(raw?.draught),
-    destination: textOrEmpty(raw?.destination),
-    lastPort: textOrEmpty(raw?.lastPort),
-    callsign: textOrEmpty(raw?.callsign),
-    vesselType: textOrEmpty(raw?.typeSpecific),
-    navStatusText: textOrEmpty(raw?.navigationalStatus),
-    dataSource: textOrEmpty(raw?.dataSource),
     positionReceived: textOrEmpty(raw?.positionReceived),
     updateTime: textOrEmpty(raw?.updateTime),
-    receivedAt: Date.now(),
-    provider: "Data Docked",
+    dataSource: textOrEmpty(raw?.dataSource),
+    vesselRef: pickIdentifier(raw),
   };
 }
 
-export async function GET(request: NextRequest) {
+async function ensureAisHistoryColumns() {
+  const db = getDb();
+  await db.execute(sql`
+    create table if not exists public.ais_search_history (
+      id serial primary key,
+      owner_id text not null,
+      vessel_key text not null,
+      name text not null,
+      mmsi text,
+      imo text,
+      latitude double precision not null,
+      longitude double precision not null,
+      sog double precision,
+      cog double precision,
+      heading double precision,
+      destination text,
+      nav_status text,
+      data_source text,
+      position_received text,
+      update_time text,
+      credits_used integer not null default 0,
+      queried_at text not null default CURRENT_TIMESTAMP::text
+    )
+  `);
+  await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
+  await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
+}
+
+async function saveHistory(userId: string, vessel: { name: string; lat: number; lon: number; positionReceived: string; updateTime: string; dataSource: string; vesselRef: string }, creditsUsed: number) {
+  await ensureAisHistoryColumns();
+  const db = getDb();
+  await db.execute(sql`
+    insert into public.ais_search_history
+      (owner_id, vessel_key, name, mmsi, imo, latitude, longitude, data_source, position_received, update_time, credits_used)
+    values
+      (${userId}, ${vessel.vesselRef || vessel.name}, ${vessel.name || "EMBARCAÇÃO"}, ${vessel.vesselRef || null}, null, ${vessel.lat}, ${vessel.lon}, ${vessel.dataSource || null}, ${vessel.positionReceived || null}, ${vessel.updateTime || null}, ${creditsUsed})
+  `);
+  await db.execute(sql`
+    update public.ais_saved_vessels
+    set last_latitude = ${vessel.lat}, last_longitude = ${vessel.lon},
+        last_data_source = ${vessel.dataSource || null}, last_position_received = ${vessel.positionReceived || null},
+        last_update_time = ${vessel.updateTime || null}, updated_at = CURRENT_TIMESTAMP::text
+    where owner_id = ${userId} and (mmsi = ${vessel.vesselRef} or imo = ${vessel.vesselRef} or vessel_key = ${vessel.vesselRef})
+  `).catch(() => null);
+}
+
+export async function GET() {
   const user = await getPanelUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  await ensureBillingSchema();
+  const [wallet, settings] = await Promise.all([ensureWallet(user), getBillingSettings()]);
+  return NextResponse.json({
+    configured: Boolean(process.env.DATADOCKED_API_KEY?.trim()),
+    wallet,
+    pricing: {
+      locateCredits: wallet.freeAisAccess ? 0 : settings.AIS_SINGLE_QUERY_CREDITS,
+      updateCredits: wallet.freeAisAccess ? 0 : settings.AIS_UPDATE_CREDITS,
+      locateBrl: wallet.freeAisAccess ? 0 : priceForCredits(settings, settings.AIS_SINGLE_QUERY_CREDITS),
+      updateBrl: wallet.freeAisAccess ? 0 : priceForCredits(settings, settings.AIS_UPDATE_CREDITS),
+      adminFree: wallet.freeAisAccess,
+    },
+  });
+}
 
+export async function POST(request: NextRequest) {
+  const user = await getPanelUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const apiKey = process.env.DATADOCKED_API_KEY?.trim();
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "DATADOCKED_API_KEY não configurada na Vercel.", configured: false },
-      { status: 503 },
-    );
-  }
+  if (!apiKey) return NextResponse.json({ error: "DATADOCKED_API_KEY não configurada na Vercel." }, { status: 503 });
 
-  const { searchParams } = new URL(request.url);
-  const action = searchParams.get("action") || "credits";
+  const body = await request.json().catch(() => ({}));
+  const action = String(body?.action || "locate");
+  const isUpdate = action === "update";
+  const mode = isUpdate ? "ais_update" as const : "ais_single" as const;
+  let vesselName = String(body?.name || "").trim();
+  const vesselRef = String(body?.vesselRef || "").replace(/\D/g, "");
+  let providerCalls = 0;
 
   try {
-    if (action === "credits") {
-      const data = await callDataDocked("/my-credits", apiKey);
-      const credits = numberOrNull(data?.detail?.credits ?? data?.credits);
-      return NextResponse.json({ configured: true, provider: "Data Docked", credits });
-    }
+    const access = await assertCanUse(user, mode);
+    let targetId = vesselRef;
 
-    if (action === "name") {
-      const rawName = (searchParams.get("name") || "").trim();
-      if (rawName.length < 2) {
-        return NextResponse.json({ error: "Digite pelo menos 2 caracteres do nome do barco." }, { status: 400 });
-      }
-
-      const pageNumber = Math.max(1, Math.min(10, Math.round(numberOrNull(searchParams.get("page")) ?? 1)));
-      const providerName = rawName.replace(/\s+/g, "_");
-      const params = new URLSearchParams({ name: providerName, page_number: String(pageNumber) });
-      const data = await callDataDocked(`/vessels-by-vessel-name?${params.toString()}`, apiKey);
-      const items = Array.isArray(data?.items) ? data.items.map(normalizeNameResult) : [];
-
-      return NextResponse.json({
-        configured: true,
-        provider: "Data Docked",
-        query: rawName,
-        total: Number(data?.total) || items.length,
-        page: pageNumber,
-        items,
-        creditCost: 1,
-      });
-    }
-
-    if (action === "vessel") {
-      const id = (searchParams.get("id") || "").replace(/[^0-9]/g, "");
-      if (!id) return NextResponse.json({ error: "Informe IMO ou MMSI." }, { status: 400 });
-      const data = await callDataDocked(`/get-vessel-location?imo_or_mmsi=${encodeURIComponent(id)}`, apiKey);
-      const vessel = normalizeSingleVessel(data);
-      if (!vessel) return NextResponse.json({ error: "O provedor não retornou uma posição válida para esta embarcação." }, { status: 404 });
-      return NextResponse.json({ configured: true, provider: "Data Docked", vessel, creditCost: 1 });
-    }
-
-    if (action === "area") {
-      const latitude = numberOrNull(searchParams.get("latitude"));
-      const longitude = numberOrNull(searchParams.get("longitude"));
-      const requestedRadius = Math.round(numberOrNull(searchParams.get("radius")) ?? 50);
-
-      if (latitude == null || longitude == null || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-        return NextResponse.json({ error: "Latitude/longitude inválidas para a busca por área." }, { status: 400 });
-      }
-      if (![50, 100].includes(requestedRadius)) {
-        return NextResponse.json({ error: "Use raio de 50 km ou 100 km." }, { status: 400 });
-      }
-
-      const roundProvider = (value: number) => Math.round(value * 10) / 10;
-      const normalizeAreaVessel = (raw: any) => {
-        const lat = numberOrNull(raw?.latitude);
-        const lon = numberOrNull(raw?.longitude);
-        if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-        const speedRaw = numberOrNull(raw?.speed);
-        return {
-          mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
-          imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
-          name: textOrEmpty(raw?.name) || "SEM NOME",
-          lat,
-          lon,
-          sog: speedRaw == null ? null : speedRaw / 10,
-          cog: numberOrNull(raw?.course),
-          heading: numberOrNull(raw?.heading),
-          vesselType: textOrEmpty(raw?.typeSpecific),
-          navStatusText: textOrEmpty(raw?.navigationalStatus),
-          dataSource: "Terrestrial Area",
-          receivedAt: Date.now(),
+    if (!isUpdate && access.settings.AIS_CACHE_MINUTES > 0 && vesselName.length >= 2) {
+      await ensureAisHistoryColumns();
+      const cacheKey = normalizeName(vesselName).replace(/[^A-Z0-9]/g, "");
+      const cachedRows = await getDb().execute(sql`
+        select name, latitude, longitude, position_received, update_time, data_source, vessel_key
+        from public.ais_search_history
+        where owner_id = ${user.id}
+          and regexp_replace(upper(name), '[^A-Z0-9]', '', 'g') = ${cacheKey}
+          and queried_at::timestamptz >= now() - make_interval(mins => ${access.settings.AIS_CACHE_MINUTES})
+        order by id desc limit 1
+      `);
+      const cached = Array.isArray(cachedRows) ? cachedRows[0] : null;
+      if (cached) {
+        const vessel = {
+          name: String(cached.name || vesselName),
+          lat: Number(cached.latitude),
+          lon: Number(cached.longitude),
+          positionReceived: String(cached.position_received || ""),
+          updateTime: String(cached.update_time || ""),
+          dataSource: String(cached.data_source || "CACHE"),
+          vesselRef: String(cached.vessel_key || ""),
         };
-      };
-
-      const fetchArea = async (lat: number, lon: number) => {
-        const params = new URLSearchParams({
-          latitude: String(roundProvider(lat)),
-          longitude: String(roundProvider(lon)),
-          circle_radius: "50",
-        });
-        const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, apiKey);
-        return (Array.isArray(data?.vessels) ? data.vessels : [])
-          .map(normalizeAreaVessel)
-          .filter(Boolean);
-      };
-
-      let vessels: any[] = [];
-      let creditCost = 10;
-      let providerQueries = 1;
-
-      if (requestedRadius === 50) {
-        vessels = await fetchArea(latitude, longitude);
-      } else {
-        // O provedor limita cada consulta a 50 km. Para visualizar ~100 km,
-        // cobrimos o disco com uma grade 3x3 de consultas de 50 km.
-        // Isso consome 9 consultas (90 créditos), por isso a UI exige confirmação.
-        const kmLat = 1 / 111.32;
-        const kmLon = 1 / (111.32 * Math.max(0.2, Math.cos((latitude * Math.PI) / 180)));
-        const offsetsKm = [-50, 0, 50];
-        const centers: Array<[number, number]> = [];
-        for (const dy of offsetsKm) {
-          for (const dx of offsetsKm) {
-            centers.push([latitude + dy * kmLat, longitude + dx * kmLon]);
-          }
-        }
-        const groups = await Promise.all(centers.map(([lat, lon]) => fetchArea(lat, lon)));
-        const dedup = new Map<string, any>();
-        for (const vessel of groups.flat()) {
-          const key = vessel.mmsi || `${vessel.name}:${vessel.lat.toFixed(5)}:${vessel.lon.toFixed(5)}`;
-          if (!dedup.has(key)) dedup.set(key, vessel);
-        }
-        vessels = [...dedup.values()].filter((vessel) => {
-          const rad = Math.PI / 180;
-          const dLat = (vessel.lat - latitude) * rad;
-          const dLon = (vessel.lon - longitude) * rad;
-          const a = Math.sin(dLat / 2) ** 2 + Math.cos(latitude * rad) * Math.cos(vessel.lat * rad) * Math.sin(dLon / 2) ** 2;
-          const km = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          return km <= 100;
-        });
-        creditCost = 90;
-        providerQueries = 9;
+        const debit = await debitCreditsAfterSuccess({ user, mode, description: `Localizar barco — ${vessel.name}`, reference: vessel.vesselRef, metadata: { cacheHit: true, name: vessel.name, lat: vessel.lat, lon: vessel.lon } });
+        await Promise.allSettled([
+          saveHistory(user.id, vessel, debit.charged),
+          logAisUsage({ userId: user.id, action: "locate", vesselName: vessel.name, providerCalls: 0, cacheHit: true, creditsCharged: debit.charged, estimatedApiCostBrl: 0, status: "success" }),
+        ]);
+        return NextResponse.json({ vessel, cacheHit: true, billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free, label: debit.free ? "GRÁTIS — ADMIN" : `${debit.charged} crédito(s)` } });
       }
-
-      return NextResponse.json({
-        configured: true,
-        provider: "Data Docked",
-        center: { latitude, longitude },
-        radiusKm: requestedRadius,
-        vessels,
-        total: vessels.length,
-        creditCost,
-        providerQueries,
-        note: requestedRadius === 100
-          ? "Raio de 100 km composto por 9 consultas de 50 km, limite máximo do provedor."
-          : "Busca por área de 50 km.",
-      });
     }
 
-    return NextResponse.json({ error: "Ação AIS inválida." }, { status: 400 });
+    if (!isUpdate) {
+      if (vesselName.length < 2) return NextResponse.json({ error: "Digite o nome da embarcação." }, { status: 400 });
+      const providerName = vesselName.replace(/\s+/g, "_");
+      const params = new URLSearchParams({ name: providerName, page_number: "1" });
+      const names = await callDataDocked(`/vessels-by-vessel-name?${params.toString()}`, apiKey);
+      providerCalls += 1;
+      const items = Array.isArray(names?.items) ? names.items : [];
+      if (!items.length) {
+        await logAisUsage({ userId: user.id, action: "locate", vesselName, providerCalls, creditsCharged: 0, estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL * providerCalls, status: "not_found" });
+        return NextResponse.json({ error: "Embarcação não encontrada. Nenhum crédito foi descontado." }, { status: 404 });
+      }
+      const normalizedQuery = normalizeName(vesselName);
+      const chosen = items.find((item: any) => normalizeName(textOrEmpty(item?.name)) === normalizedQuery) || items[0];
+      targetId = pickIdentifier(chosen);
+      vesselName = textOrEmpty(chosen?.name) || vesselName;
+      if (!targetId) {
+        await logAisUsage({ userId: user.id, action: "locate", vesselName, providerCalls, creditsCharged: 0, estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL * providerCalls, status: "invalid_result" });
+        return NextResponse.json({ error: "Embarcação encontrada sem identificador válido. Nenhum crédito foi descontado." }, { status: 404 });
+      }
+    } else if (!targetId) {
+      return NextResponse.json({ error: "Não foi possível identificar o barco para atualizar." }, { status: 400 });
+    }
+
+    const locationRaw = await callDataDocked(`/get-vessel-location?imo_or_mmsi=${encodeURIComponent(targetId)}`, apiKey);
+    providerCalls += 1;
+    const vessel = normalizePosition(locationRaw, vesselName);
+    if (!vessel) {
+      await logAisUsage({ userId: user.id, action: isUpdate ? "update" : "locate", vesselName, providerCalls, creditsCharged: 0, estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL * providerCalls, status: "no_position" });
+      return NextResponse.json({ error: "Não foi possível consultar a posição neste momento. Nenhum crédito foi descontado." }, { status: 404 });
+    }
+    vessel.vesselRef = vessel.vesselRef || targetId;
+
+    const debit = await debitCreditsAfterSuccess({
+      user,
+      mode,
+      description: `${isUpdate ? "Atualizar posição" : "Localizar barco"} — ${vessel.name || vesselName}`,
+      reference: vessel.vesselRef,
+      metadata: { name: vessel.name, lat: vessel.lat, lon: vessel.lon },
+    });
+    await Promise.allSettled([
+      saveHistory(user.id, vessel, debit.charged),
+      logAisUsage({
+        userId: user.id,
+        action: isUpdate ? "update" : "locate",
+        vesselName: vessel.name,
+        providerCalls,
+        creditsCharged: debit.charged,
+        estimatedApiCostBrl: debit.settings.AIS_PROVIDER_COST_PER_QUERY_BRL * providerCalls,
+        status: "success",
+      }),
+    ]);
+
+    return NextResponse.json({
+      vessel,
+      billing: {
+        chargedCredits: debit.charged,
+        balance: debit.balance,
+        free: debit.free,
+        label: debit.free ? "GRÁTIS — ADMIN" : `${debit.charged} crédito(s)`,
+      },
+    });
   } catch (error: any) {
     const status = Number(error?.status) || 502;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Falha ao consultar Data Docked." },
-      { status },
-    );
+    if (providerCalls > 0) {
+      const settings = await getBillingSettings().catch(() => null);
+      await logAisUsage({
+        userId: user.id,
+        action: isUpdate ? "update" : "locate",
+        vesselName,
+        providerCalls,
+        creditsCharged: 0,
+        estimatedApiCostBrl: (settings?.AIS_PROVIDER_COST_PER_QUERY_BRL || 0) * providerCalls,
+        status: "error",
+        errorText: error?.message || "Falha AIS",
+      }).catch(() => null);
+    }
+    if (status === 402) {
+      return NextResponse.json({ error: error?.message, code: "insufficient_credits", balance: error?.balance, required: error?.required }, { status: 402 });
+    }
+    return NextResponse.json({ error: "Não foi possível consultar a posição neste momento. Nenhum crédito foi descontado." }, { status });
   }
 }

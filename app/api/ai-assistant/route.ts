@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { getEnvironmentalSnapshots } from "../../../lib/environmentalSnapshots";
+import { assertCanUse, debitCreditsAfterSuccess, getBillingSettings, logAiUsage, priceForCredits } from "../../../lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -241,17 +242,64 @@ async function buildFishingContext(ownerId: string) {
 export async function GET() {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
-  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const settings = await getBillingSettings();
+  const access = await assertCanUse(auth.user!, "ai_basic");
+  const model = settings.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
   return Response.json({
     configured: Boolean(process.env.OPENAI_API_KEY),
     model,
     reasoningEffort: process.env.OPENAI_REASONING_EFFORT || "high",
+    wallet: access.wallet,
+    pricing: {
+      basicCredits: access.wallet.freeAiAccess ? 0 : settings.AI_BASIC_QUERY_CREDITS,
+      fullCredits: access.wallet.freeAiAccess ? 0 : settings.AI_FULL_ANALYSIS_CREDITS,
+      advancedCredits: access.wallet.freeAiAccess ? 0 : settings.AI_ADVANCED_ANALYSIS_CREDITS,
+      basicBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_BASIC_QUERY_CREDITS),
+      fullBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_FULL_ANALYSIS_CREDITS),
+      advancedBrl: access.wallet.freeAiAccess ? 0 : priceForCredits(settings, settings.AI_ADVANCED_ANALYSIS_CREDITS),
+      adminFree: access.wallet.freeAiAccess,
+    },
   });
+}
+
+function compactContextByMode(context: any, mode: "basic" | "full" | "advanced") {
+  if (mode === "advanced") return context;
+  if (mode === "full") {
+    return {
+      generatedAt: context.generatedAt,
+      currentTrip: context.currentTrip,
+      tripHistory: context.tripHistory,
+      finishedTripCount: context.finishedTripCount,
+      totalSets: context.totalSets,
+      topSets: context.topSets?.slice(0, 10) || [],
+      recentSetDetails: context.recentSetDetails?.slice(-50) || [],
+    };
+  }
+  return {
+    generatedAt: context.generatedAt,
+    currentTrip: context.currentTrip,
+    totalSets: context.totalSets,
+    topSets: context.topSets?.slice(0, 6) || [],
+    recentSetDetails: context.recentSetDetails?.slice(-16).map((set: any) => ({
+      id: set.id,
+      tripId: set.tripId,
+      setNumber: set.setNumber,
+      startedAt: set.startedAt,
+      finishedAt: set.finishedAt,
+      depthMeters: set.depthMeters,
+      primaryKg: set.primaryKg,
+      mixtureKg: set.mixtureKg,
+      discardKg: set.discardKg,
+      retainedKg: set.retainedKg,
+      catches: set.catches,
+    })) || [],
+  };
 }
 
 export async function POST(request: Request) {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
+  const user = auth.user!;
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -264,12 +312,27 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const question = String(body?.question || "").trim().slice(0, 2000);
   if (!question) return Response.json({ error: "Escreva uma pergunta para o assistente." }, { status: 400 });
+  const mode = body?.mode === "advanced" ? "advanced" : body?.mode === "full" ? "full" : "basic";
+  const creditMode = mode === "advanced" ? "ai_advanced" as const : mode === "full" ? "ai_full" as const : "ai_basic" as const;
 
-  const fishingContext = await buildFishingContext(auth.user!.id);
-  const environment = compactExternalContext(body?.environment);
-  const statisticalAnalysis = compactExternalContext(body?.statisticalAnalysis);
+  let access;
+  try {
+    access = await assertCanUse(user, creditMode);
+  } catch (error: any) {
+    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
+  }
+
+  const settings = access.settings;
+  const allContext = await buildFishingContext(user.id);
+  const fishingContext = compactContextByMode(allContext, mode);
+  const environment = mode === "basic" ? null : compactExternalContext(body?.environment);
+  const statisticalAnalysis = mode === "basic" ? null : compactExternalContext(body?.statisticalAnalysis);
   const conversation = normalizeConversation(body?.conversation);
-  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const model = mode === "advanced"
+    ? (settings.AI_ADVANCED_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
+    : mode === "full"
+      ? (settings.AI_FULL_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
+      : (settings.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL);
   const configuredEffort = process.env.OPENAI_REASONING_EFFORT || "high";
   const reasoningEffort = ALLOWED_EFFORTS.has(configuredEffort) ? configuredEffort : "high";
 
@@ -281,21 +344,14 @@ REGRAS DE QUALIDADE:
 2. Diferencie claramente: FATO OBSERVADO, PADRÃO ESTATÍSTICO e HIPÓTESE OPERACIONAL.
 3. Correlação não é causalidade. Se a amostra for pequena, diga isso de forma objetiva.
 4. Compare viagem atual com viagens anteriores quando houver histórico suficiente.
-5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila quando esses dados estiverem disponíveis.
-5A. Prefira o campo environment preservado dentro de cada largada para correlações históricas. Não use o ambiente atual do dashboard como se fosse a condição de uma largada passada.
-6. Não trate previsão de pesca como garantia. Expresse janelas e condições como hipóteses operacionais baseadas no histórico.
+5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria e, quando o modo permitir, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila.
+6. Não trate previsão de pesca como garantia.
 7. Dados de maré/modelos oceânicos não substituem carta náutica, avisos oficiais, decisão do comandante nem procedimentos de segurança.
-8. Seja direto, técnico e compreensível para uso a bordo. Evite texto genérico.
-9. Quando a pergunta pedir uma decisão, entregue uma recomendação operacional condicionada às evidências, acompanhada do grau de confiança.
-10. Responda em português do Brasil.
+8. Seja direto, técnico e compreensível para uso a bordo.
+9. Responda em português do Brasil.
 
-FORMATO PREFERIDO:
-- RESUMO: 2 a 4 linhas.
-- EVIDÊNCIAS: números e comparações concretas do painel.
-- LEITURA OPERACIONAL: o que os padrões podem indicar.
-- O QUE OBSERVAR NA PRÓXIMA LARGADA: checklist curto.
-- CONFIANÇA: alta, média, baixa ou insuficiente, com motivo.
-Use texto simples e listas curtas; não use tabelas extensas.`;
+MODO DA SOLICITAÇÃO: ${mode.toUpperCase()}.
+Use apenas o contexto necessário e não peça dados que já estejam disponíveis no painel.`;
 
   const payload = {
     pergunta: question,
@@ -309,45 +365,73 @@ Use texto simples e listas curtas; não use tabelas extensas.`;
   try {
     openAIResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
         instructions,
         input: `Analise o contexto operacional abaixo e responda à pergunta do usuário.\n\n${JSON.stringify(payload)}`,
         reasoning: { effort: reasoningEffort },
-        max_output_tokens: 1800,
+        max_output_tokens: mode === "basic" ? 900 : mode === "full" ? 1500 : 1900,
         store: false,
       }),
       cache: "no-store",
     });
-  } catch {
-    return Response.json({ error: "Não foi possível conectar à OpenAI agora. Verifique a internet/serviço e tente novamente." }, { status: 502 });
+  } catch (error) {
+    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: "network" }).catch(() => null);
+    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
   }
 
   const result = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
-    const code = result?.error?.code || result?.error?.type || "openai_error";
     const detail = result?.error?.message || "A OpenAI não conseguiu processar esta análise.";
-    return Response.json({ error: detail, code }, { status: openAIResponse.status });
+    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
+    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido.", detail }, { status: openAIResponse.status });
   }
 
   const answer = extractOutputText(result);
-  if (!answer) return Response.json({ error: "A IA concluiu a solicitação sem retornar texto. Tente novamente." }, { status: 502 });
+  if (!answer) {
+    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
+    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
+  }
+
+  const usage = result?.usage ? {
+    inputTokens: Number(result.usage.input_tokens || 0),
+    outputTokens: Number(result.usage.output_tokens || 0),
+    totalTokens: Number(result.usage.total_tokens || 0),
+  } : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+  let debit;
+  try {
+    debit = await debitCreditsAfterSuccess({
+      user,
+      mode: creditMode,
+      description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
+      reference: result?.id || null,
+      metadata: { model: result?.model || model, mode },
+    });
+  } catch (error: any) {
+    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
+  }
+
+  const estimatedApiCostBrl = ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M);
+  await logAiUsage({
+    userId: user.id,
+    requestType: mode,
+    model: result?.model || model,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    creditsCharged: debit.charged,
+    estimatedApiCostBrl,
+    status: "success",
+  }).catch(() => null);
 
   return Response.json({
     answer,
     model: result?.model || model,
     responseId: result?.id || null,
-    usage: result?.usage
-      ? {
-          inputTokens: result.usage.input_tokens ?? null,
-          outputTokens: result.usage.output_tokens ?? null,
-          totalTokens: result.usage.total_tokens ?? null,
-        }
-      : null,
+    usage,
+    billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free },
     generatedAt: new Date().toISOString(),
   });
 }

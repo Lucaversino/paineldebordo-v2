@@ -18,6 +18,8 @@ import {
   Ship,
   Waves,
   Wind,
+  WalletCards,
+  ShieldCheck,
   X,
   LogOut,
 } from "lucide-react";
@@ -37,6 +39,8 @@ import OceanIntelligence from "../components/OceanIntelligence";
 import PositionForecast from "../components/PositionForecast";
 import AISPage from "../components/AISPage";
 import FloatingPanelAssistant from "../components/FloatingPanelAssistant";
+import CreditsPage from "../components/CreditsPage";
+import AdminBillingPage from "../components/AdminBillingPage";
 const fmt = (n: number, d = 0) =>
   new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: d,
@@ -56,7 +60,8 @@ export default function Home() {
     [menu, setMenu] = useState(false),
     [dark, setDark] = useState(true),
     [loading, setLoading] = useState(true),
-    [loadError, setLoadError] = useState("");
+    [loadError, setLoadError] = useState(""),
+    [billing, setBilling] = useState<any>(null);
   const load = async () => {
     setLoadError("");
     try {
@@ -80,6 +85,14 @@ export default function Home() {
   };
   useEffect(() => {
     load();
+    fetch("/api/session", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((result) => result?.billing && setBilling(result.billing))
+      .catch(() => null);
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("view") === "credits") setView("Meus créditos");
+    } catch {}
   }, []);
 
   // v69: preenche gradualmente o histórico ambiental das largadas antigas sem
@@ -114,6 +127,14 @@ export default function Home() {
     await fetch("/api/session", { method: "DELETE" });
     window.location.replace("/login");
   }
+  useEffect(() => {
+    const onBilling = (event: Event) => {
+      const balance = Number((event as CustomEvent)?.detail?.balance);
+      if (Number.isFinite(balance)) setBilling((current: any) => current ? { ...current, balance } : current);
+    };
+    window.addEventListener("painel-billing-changed", onBilling);
+    return () => window.removeEventListener("painel-billing-changed", onBilling);
+  }, []);
   useEffect(() => {
     const f = () => {
       setOffline(!navigator.onLine);
@@ -240,6 +261,7 @@ export default function Home() {
       [Gauge, "Dashboard"],
       [Wind, "Ventos e Mar"],
       [Ship, "AIS"],
+      [WalletCards, "Meus créditos"],
       [Radio, "Viagem atual"],
       [Waves, "Largadas"],
       [Fish, "Capturas"],
@@ -249,6 +271,7 @@ export default function Home() {
       [Fish, "Espécies"],
       [BarChart3, "Relatórios"],
       [Settings, "Configurações"],
+      ...(billing?.isSuperAdmin ? [[ShieldCheck, "Admin — AIS, IA e Créditos"]] as const : []),
     ] as const,
     t = data.trip;
   let elapsed = 0,
@@ -556,6 +579,10 @@ export default function Home() {
             defaultLat={Number(data.sets?.at(-1)?.endLatitude ?? data.sets?.at(-1)?.startLatitude ?? -27.15)}
             defaultLon={Number(data.sets?.at(-1)?.endLongitude ?? data.sets?.at(-1)?.startLongitude ?? -48.55)}
           />
+        ) : view === "Meus créditos" ? (
+          <CreditsPage />
+        ) : view === "Admin — AIS, IA e Créditos" ? (
+          <AdminBillingPage />
         ) : (
           <Operations view={view} onDashboard={() => setView("Dashboard")} />
         )}

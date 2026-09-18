@@ -74,6 +74,7 @@ async function ensureTables(db: ReturnType<typeof getDb>) {
       queried_at text not null default CURRENT_TIMESTAMP::text
     )
   `);
+  await db.execute(sql`alter table public.ais_search_history add column if not exists credits_used integer not null default 0`);
   await db.execute(sql`create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at)`);
   await db.execute(sql`create index if not exists idx_ais_history_owner_vessel on public.ais_search_history(owner_id, vessel_key)`);
   await db.execute(sql`alter table public.ais_saved_vessels enable row level security`);

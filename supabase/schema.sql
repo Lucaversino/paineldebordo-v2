@@ -196,3 +196,105 @@ create index if not exists idx_saved_forecasts_owner_time on public.saved_foreca
 
 alter table public.forecast_history enable row level security;
 alter table public.saved_forecasts enable row level security;
+
+-- V76 — carteira única de créditos, AIS, IA e Mercado Pago
+alter table public.ais_search_history add column if not exists credits_used integer not null default 0;
+
+create table if not exists public.billing_settings (
+  key text primary key,
+  value text not null,
+  updated_at text not null default CURRENT_TIMESTAMP::text
+);
+create table if not exists public.credit_wallets (
+  user_id text primary key,
+  email text,
+  role text not null default 'user',
+  balance integer not null default 0,
+  free_ais_access boolean not null default false,
+  free_ai_access boolean not null default false,
+  created_at text not null default CURRENT_TIMESTAMP::text,
+  updated_at text not null default CURRENT_TIMESTAMP::text
+);
+create table if not exists public.credit_transactions (
+  id bigserial primary key,
+  user_id text not null,
+  delta integer not null,
+  balance_after integer not null,
+  kind text not null,
+  description text not null,
+  amount_brl double precision,
+  reference text,
+  metadata_json text,
+  created_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_credit_transactions_user_time on public.credit_transactions(user_id, id desc);
+
+create table if not exists public.ai_usage (
+  id bigserial primary key,
+  user_id text not null,
+  request_type text not null,
+  model text,
+  input_tokens integer,
+  output_tokens integer,
+  total_tokens integer,
+  credits_charged integer not null default 0,
+  estimated_api_cost_brl double precision not null default 0,
+  status text not null,
+  error_text text,
+  created_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_ai_usage_user_time on public.ai_usage(user_id, id desc);
+
+create table if not exists public.ais_usage (
+  id bigserial primary key,
+  user_id text not null,
+  action text not null,
+  vessel_name text,
+  provider_calls integer not null default 0,
+  cache_hit boolean not null default false,
+  credits_charged integer not null default 0,
+  estimated_api_cost_brl double precision not null default 0,
+  status text not null,
+  error_text text,
+  created_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_ais_usage_user_time on public.ais_usage(user_id, id desc);
+
+create table if not exists public.payment_orders (
+  id bigserial primary key,
+  external_reference text not null unique,
+  preference_id text,
+  payment_id text unique,
+  user_id text not null,
+  user_email text,
+  credits integer not null,
+  amount_brl double precision not null,
+  status text not null default 'pending',
+  created_at text not null default CURRENT_TIMESTAMP::text,
+  updated_at text not null default CURRENT_TIMESTAMP::text,
+  approved_at text
+);
+create index if not exists idx_payment_orders_user_time on public.payment_orders(user_id, id desc);
+
+alter table public.billing_settings enable row level security;
+alter table public.credit_wallets enable row level security;
+alter table public.credit_transactions enable row level security;
+alter table public.ai_usage enable row level security;
+alter table public.ais_usage enable row level security;
+alter table public.payment_orders enable row level security;
+
+insert into public.billing_settings(key,value) values
+('CREDIT_UNIT_PRICE','1.00'),
+('AIS_SINGLE_QUERY_CREDITS','2'),
+('AIS_UPDATE_CREDITS','2'),
+('AI_BASIC_QUERY_CREDITS','1'),
+('AI_FULL_ANALYSIS_CREDITS','2'),
+('AI_ADVANCED_ANALYSIS_CREDITS','3'),
+('AIS_CACHE_MINUTES','0'),
+('AIS_PROVIDER_COST_PER_QUERY_BRL','0'),
+('OPENAI_INPUT_COST_PER_1M','0'),
+('OPENAI_OUTPUT_COST_PER_1M','0'),
+('AI_BASIC_MODEL',''),
+('AI_FULL_MODEL',''),
+('AI_ADVANCED_MODEL','')
+on conflict (key) do nothing;

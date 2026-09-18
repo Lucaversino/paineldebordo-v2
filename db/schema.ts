@@ -154,6 +154,7 @@ export const aisSearchHistory = pgTable("ais_search_history", {
   dataSource: text("data_source"),
   positionReceived: text("position_received"),
   updateTime: text("update_time"),
+  creditsUsed: integer("credits_used").notNull().default(0),
   queriedAt: text("queried_at").notNull().default(nowText),
 }, (t) => [
   index("idx_ais_history_owner_time").on(t.ownerId, t.queriedAt),
@@ -192,4 +193,83 @@ export const savedForecasts = pgTable("saved_forecasts", {
   updatedAt: text("updated_at").notNull().default(nowText),
 }, (t) => [
   index("idx_saved_forecasts_owner_time").on(t.ownerId, t.id),
+]);
+
+
+export const billingSettings = pgTable("billing_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull().default(nowText),
+});
+
+export const creditWallets = pgTable("credit_wallets", {
+  userId: text("user_id").primaryKey(),
+  email: text("email"),
+  role: text("role").notNull().default("user"),
+  balance: integer("balance").notNull().default(0),
+  freeAisAccess: boolean("free_ais_access").notNull().default(false),
+  freeAiAccess: boolean("free_ai_access").notNull().default(false),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+});
+
+export const creditTransactions = pgTable("credit_transactions", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  delta: integer("delta").notNull(),
+  balanceAfter: integer("balance_after").notNull(),
+  kind: text("kind").notNull(),
+  description: text("description").notNull(),
+  amountBrl: doublePrecision("amount_brl"),
+  reference: text("reference"),
+  metadataJson: text("metadata_json"),
+  createdAt: text("created_at").notNull().default(nowText),
+}, (t) => [index("idx_credit_transactions_user_time").on(t.userId, t.id)]);
+
+export const aiUsage = pgTable("ai_usage", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  requestType: text("request_type").notNull(),
+  model: text("model"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  creditsCharged: integer("credits_charged").notNull().default(0),
+  estimatedApiCostBrl: doublePrecision("estimated_api_cost_brl").notNull().default(0),
+  status: text("status").notNull(),
+  errorText: text("error_text"),
+  createdAt: text("created_at").notNull().default(nowText),
+}, (t) => [index("idx_ai_usage_user_time").on(t.userId, t.id)]);
+
+export const aisUsage = pgTable("ais_usage", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  action: text("action").notNull(),
+  vesselName: text("vessel_name"),
+  providerCalls: integer("provider_calls").notNull().default(0),
+  cacheHit: boolean("cache_hit").notNull().default(false),
+  creditsCharged: integer("credits_charged").notNull().default(0),
+  estimatedApiCostBrl: doublePrecision("estimated_api_cost_brl").notNull().default(0),
+  status: text("status").notNull(),
+  errorText: text("error_text"),
+  createdAt: text("created_at").notNull().default(nowText),
+}, (t) => [index("idx_ais_usage_user_time").on(t.userId, t.id)]);
+
+export const paymentOrders = pgTable("payment_orders", {
+  id: serial("id").primaryKey(),
+  externalReference: text("external_reference").notNull(),
+  preferenceId: text("preference_id"),
+  paymentId: text("payment_id"),
+  userId: text("user_id").notNull(),
+  userEmail: text("user_email"),
+  credits: integer("credits").notNull(),
+  amountBrl: doublePrecision("amount_brl").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+  approvedAt: text("approved_at"),
+}, (t) => [
+  uniqueIndex("idx_payment_external_reference").on(t.externalReference),
+  uniqueIndex("idx_payment_payment_id").on(t.paymentId),
+  index("idx_payment_orders_user_time").on(t.userId, t.id),
 ]);

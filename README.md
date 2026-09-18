@@ -277,3 +277,17 @@ O assistente OpenAI agora é global e abre por um botão flutuante no canto infe
 - Página AIS volta a rolar no desktop para não cortar os cards abaixo do mapa.
 - Salvamento de barcos usa upsert atômico e feedback SALVANDO/SALVO.
 - Mantém até 3 cards recentes.
+
+## v76 — monetização AIS + Painel IA com carteira única
+
+- Carteira única de créditos por usuário.
+- 1 crédito = R$ 1,00 por padrão, configurável no backend/Admin.
+- AIS simples: localizar barco e atualizar posição usam valores oficiais do backend.
+- Painel IA com modos simples, completo e avançado e cobrança somente após resposta válida.
+- Super Admin autenticado por e-mail com AIS/IA grátis.
+- Extrato de créditos.
+- Compra de pacotes via Mercado Pago Checkout Pro com webhook e crédito somente após confirmação real do pagamento.
+- Painel Admin com receita, consumo, tokens, custo estimado e margem.
+- Configuração de modelos OpenAI e custos estimados por token.
+
+Consulte `SETUP-V76-CREDITOS-MERCADOPAGO.md` antes de publicar.
