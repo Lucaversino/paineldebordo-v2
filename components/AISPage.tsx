@@ -791,8 +791,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }, `${item.name} aberto da pasta de salvos — 0 créditos`);
   }
 
-  function openHistoryItem(item: AisHistoryItem) {
-    showVesselFromLibrary({
+  function historyItemToVessel(item: AisHistoryItem): Vessel {
+    return {
       mmsi: item.mmsi || "",
       imo: item.imo || "",
       name: item.name,
@@ -807,7 +807,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       positionReceived: item.positionReceived || "",
       updateTime: item.updateTime || "",
       receivedAt: new Date(item.queriedAt).getTime() || Date.now(),
-    }, `${item.name} aberto do histórico — 0 créditos`);
+    };
+  }
+
+  function openHistoryItem(item: AisHistoryItem) {
+    showVesselFromLibrary(historyItemToVessel(item), `${item.name} aberto do histórico — 0 créditos`);
   }
 
   async function getVesselPosition(match: VesselMatch, force = false) {
@@ -1308,13 +1312,31 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
           {historyItems.length ? (
             <div className="ais-history-list">
-              {historyItems.slice(0, 14).map((item) => (
-                <button type="button" key={item.id} onClick={() => openHistoryItem(item)}>
-                  <span className="ais-history-icon"><History /></span>
-                  <div><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></div>
-                  <em>{formatLocalDateTime(new Date(item.queriedAt))}</em>
-                </button>
-              ))}
+              {historyItems.slice(0, 14).map((item) => {
+                const historyVessel = historyItemToVessel(item);
+                const historyKey = vesselKeyFrom(historyVessel);
+                const historySaved = Boolean(historyKey && savedKeys.has(historyKey));
+                const historySaving = Boolean(historyKey && savingKeys.has(historyKey));
+                return (
+                  <article className="ais-history-row" key={item.id}>
+                    <button type="button" className="ais-history-main" onClick={() => openHistoryItem(item)}>
+                      <span className="ais-history-icon"><History /></span>
+                      <div><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></div>
+                      <em>{formatLocalDateTime(new Date(item.queriedAt))}</em>
+                    </button>
+                    <button
+                      type="button"
+                      className={`ais-history-save ${historySaved ? "saved" : ""}`}
+                      onClick={() => { if (!historySaved) void saveVessel(historyVessel); }}
+                      disabled={historySaving || historySaved}
+                      title={historySaved ? "Barco já salvo" : "Salvar barco"}
+                    >
+                      <Bookmark />
+                      <span>{historySaving ? "SALVANDO..." : historySaved ? "SALVO" : "SALVAR"}</span>
+                    </button>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="ais-library-empty"><History /><span>As posições consultadas aparecerão aqui automaticamente. O histórico não consome créditos para abrir.</span></div>
@@ -1399,7 +1421,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
             {mobilePanel === "saved" && <div className="ais-v70-mobile-list">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <button type="button" key={item.vesselKey} onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>) : <p>Nenhum barco salvo.</p>}</div>}
 
-            {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => <button type="button" key={item.id} onClick={() => { openHistoryItem(item); setMobilePanel(null); }}><History /><span><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></span></button>)}</> : <p>Histórico vazio.</p>}</div>}
+            {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => {
+              const historyVessel = historyItemToVessel(item);
+              const historyKey = vesselKeyFrom(historyVessel);
+              const historySaved = Boolean(historyKey && savedKeys.has(historyKey));
+              const historySaving = Boolean(historyKey && savingKeys.has(historyKey));
+              return <article className="ais-mobile-history-row" key={item.id}>
+                <button type="button" className="ais-mobile-history-main" onClick={() => { openHistoryItem(item); setMobilePanel(null); }}><History /><span><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></span></button>
+                <button type="button" className={`ais-mobile-history-save ${historySaved ? "saved" : ""}`} onClick={() => { if (!historySaved) void saveVessel(historyVessel); }} disabled={historySaving || historySaved}><Bookmark /><span>{historySaving ? "SALVANDO" : historySaved ? "SALVO" : "SALVAR"}</span></button>
+              </article>;
+            })}</> : <p>Histórico vazio.</p>}</div>}
 
             {mobilePanel === "recent" && <div className="ais-v70-mobile-list recent">{recentCards.length ? recentCards.map(({ key, vessel, historyItem, current }) => <button type="button" key={key} onClick={() => { if (current) centerOn(vessel.lat, vessel.lon, 12); else if (historyItem) openHistoryItem(historyItem); setMobilePanel(null); }}><Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{formatCoordMarine(vessel.lat, true)} · {formatCoordMarine(vessel.lon, false)}</small></span></button>) : <p>Nenhuma posição recente.</p>}</div>}
           </div>
