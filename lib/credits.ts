@@ -2,12 +2,13 @@ import { sql } from "drizzle-orm";
 import { getDb } from "../db";
 import type { PanelUser } from "./panelAuth";
 
-export type ServiceMode = "ais_single" | "ais_update" | "ai_basic" | "ai_full" | "ai_advanced";
+export type ServiceMode = "ais_single" | "ais_update" | "ais_area" | "ai_basic" | "ai_full" | "ai_advanced";
 
 export type BillingSettings = {
   CREDIT_UNIT_PRICE: number;
   AIS_SINGLE_QUERY_CREDITS: number;
   AIS_UPDATE_CREDITS: number;
+  AIS_AREA_QUERY_CREDITS: number;
   AI_BASIC_QUERY_CREDITS: number;
   AI_FULL_ANALYSIS_CREDITS: number;
   AI_ADVANCED_ANALYSIS_CREDITS: number;
@@ -23,7 +24,8 @@ export type BillingSettings = {
 const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
   CREDIT_UNIT_PRICE: "1.00",
   AIS_SINGLE_QUERY_CREDITS: "2",
-  AIS_UPDATE_CREDITS: "2",
+  AIS_UPDATE_CREDITS: "1",
+  AIS_AREA_QUERY_CREDITS: "10",
   AI_BASIC_QUERY_CREDITS: "1",
   AI_FULL_ANALYSIS_CREDITS: "2",
   AI_ADVANCED_ANALYSIS_CREDITS: "3",
@@ -211,7 +213,8 @@ export async function getBillingSettings(): Promise<BillingSettings> {
   return {
     CREDIT_UNIT_PRICE: Math.max(0.01, asNumber(get("CREDIT_UNIT_PRICE"), 1)),
     AIS_SINGLE_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_SINGLE_QUERY_CREDITS"), 2))),
-    AIS_UPDATE_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_UPDATE_CREDITS"), 2))),
+    AIS_UPDATE_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_UPDATE_CREDITS"), 1))),
+    AIS_AREA_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_AREA_QUERY_CREDITS"), 10))),
     AI_BASIC_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AI_BASIC_QUERY_CREDITS"), 1))),
     AI_FULL_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_FULL_ANALYSIS_CREDITS"), 2))),
     AI_ADVANCED_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_ADVANCED_ANALYSIS_CREDITS"), 3))),
@@ -259,6 +262,7 @@ export function creditsForMode(settings: BillingSettings, mode: ServiceMode) {
   switch (mode) {
     case "ais_single": return settings.AIS_SINGLE_QUERY_CREDITS;
     case "ais_update": return settings.AIS_UPDATE_CREDITS;
+    case "ais_area": return settings.AIS_AREA_QUERY_CREDITS;
     case "ai_basic": return settings.AI_BASIC_QUERY_CREDITS;
     case "ai_full": return settings.AI_FULL_ANALYSIS_CREDITS;
     case "ai_advanced": return settings.AI_ADVANCED_ANALYSIS_CREDITS;

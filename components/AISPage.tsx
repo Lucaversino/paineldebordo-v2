@@ -1,352 +1,1294 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, Crosshair, History, MapPinned, Minus, Plus, RefreshCw, Search, Ship, Trash2, X } from "lucide-react";
+import {
+  Anchor,
+  Bookmark,
+  Crosshair,
+  FolderHeart,
+  History,
+  LocateFixed,
+  MapPinned,
+  Minus,
+  Navigation,
+  Plus,
+  Radio,
+  RefreshCw,
+  Search,
+  Ship,
+  Trash2,
+} from "lucide-react";
 import Map from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
+import XYZ from "ol/source/XYZ";
+import TileWMS from "ol/source/TileWMS";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
-import LineString from "ol/geom/LineString";
-import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
-import { fromLonLat } from "ol/proj";
+import CircleGeom from "ol/geom/Circle";
+import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
+import { fromLonLat, toLonLat } from "ol/proj";
 
-type Props = { defaultLat?: number | null; defaultLon?: number | null };
-type Position = {
+const DHN_WMS_URL = "https://idem.dhn.mar.mil.br/geoserver/wms";
+const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
+
+type Props = {
+  defaultLat?: number | null;
+  defaultLon?: number | null;
+};
+
+type BaseMode = "dhn" | "map";
+type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
+type SearchMode = "vessel" | "area";
+type MobilePanel = "search" | "saved" | "history" | "recent" | null;
+
+type DhnChart = {
+  number: string;
+  title: string;
+  groups?: string[];
+  scale?: number | null;
+  bounds?: [number, number, number, number] | null;
+  files?: string[];
+  layerName?: string;
+  source?: "wms" | "local";
+};
+
+type VesselMatch = {
   name: string;
+  mmsi: string;
+  imo: string;
+  country: string;
+  countryIso: string;
+  shipType: string;
+  typeSpecific: string;
+  callsign: string;
+};
+
+type Vessel = {
+  mmsi: string;
+  imo?: string;
+  name?: string;
   lat: number;
   lon: number;
+  sog?: number | null;
+  cog?: number | null;
+  heading?: number | null;
+  draught?: string;
+  destination?: string;
+  lastPort?: string;
+  callsign?: string;
+  vesselType?: string;
+  navStatusText?: string;
+  dataSource?: string;
   positionReceived?: string;
   updateTime?: string;
-  dataSource?: string;
-  vesselRef: string;
+  receivedAt: number;
 };
-type Pricing = { locateCredits: number; updateCredits: number; locateBrl: number; updateBrl: number; adminFree: boolean };
-type Wallet = { balance: number; freeAisAccess?: boolean; isSuperAdmin?: boolean };
-type HistoryItem = {
-  id: number;
-  vesselKey: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  positionReceived?: string | null;
-  updateTime?: string | null;
-  queriedAt: string;
-};
-type SavedItem = {
+
+type SavedVessel = {
   id: number;
   vesselKey: string;
   name: string;
   mmsi?: string | null;
   imo?: string | null;
+  country?: string | null;
+  vesselType?: string | null;
+  callsign?: string | null;
   lastLatitude?: number | null;
   lastLongitude?: number | null;
+  lastSog?: number | null;
+  lastCog?: number | null;
+  lastHeading?: number | null;
+  lastDestination?: string | null;
+  lastStatus?: string | null;
+  lastDataSource?: string | null;
   lastPositionReceived?: string | null;
   lastUpdateTime?: string | null;
+  savedAt: string;
+  updatedAt: string;
 };
-type Pending = { type: "locate" | "update"; name: string; vesselRef?: string } | null;
 
-function brl(value: number) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+type AisHistoryItem = {
+  id: number;
+  vesselKey: string;
+  name: string;
+  mmsi?: string | null;
+  imo?: string | null;
+  latitude: number;
+  longitude: number;
+  sog?: number | null;
+  cog?: number | null;
+  heading?: number | null;
+  destination?: string | null;
+  navStatus?: string | null;
+  dataSource?: string | null;
+  positionReceived?: string | null;
+  updateTime?: string | null;
+  queriedAt: string;
+};
+
+function chartContains(chart: DhnChart, lon: number, lat: number) {
+  if (!chart.bounds || chart.bounds.length !== 4) return false;
+  const [west, south, east, north] = chart.bounds;
+  return lon >= west && lon <= east && lat >= south && lat <= north;
 }
 
-function marineCoord(value: number, latitude: boolean) {
-  const dir = latitude ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
+function idealScaleForZoom(zoom: number) {
+  if (zoom <= 6) return 2500000;
+  if (zoom <= 7) return 1500000;
+  if (zoom <= 8) return 750000;
+  if (zoom <= 9) return 350000;
+  if (zoom <= 10) return 180000;
+  if (zoom <= 11) return 90000;
+  if (zoom <= 12) return 45000;
+  if (zoom <= 13) return 25000;
+  return 12000;
+}
+
+function chooseDhnChart(charts: DhnChart[], lon: number, lat: number, zoom: number) {
+  const covering = charts.filter((chart) => chartContains(chart, lon, lat));
+  if (!covering.length) return null;
+  const ideal = idealScaleForZoom(zoom);
+  return [...covering].sort((a, b) => {
+    const as = Number(a.scale || 9999999);
+    const bs = Number(b.scale || 9999999);
+    return Math.abs(Math.log(as / ideal)) - Math.abs(Math.log(bs / ideal));
+  })[0];
+}
+
+function validCoordinate(value: unknown, max: number) {
+  const n = Number(value);
+  return Number.isFinite(n) && Math.abs(n) <= max ? n : null;
+}
+
+function relativeTime(ts: number) {
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seconds < 10) return "agora";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  return `${Math.round(seconds / 3600)} h`;
+}
+
+function vesselIdentifier(match: VesselMatch) {
+  if (match.imo && match.imo !== "0") return match.imo;
+  return match.mmsi;
+}
+
+function formatCoord(value: number, latitude = true) {
+  const letter = latitude ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
+  return `${Math.abs(value).toFixed(5)}° ${letter}`;
+}
+
+function formatCoordMarine(value: number, latitude = true) {
+  const hemisphere = latitude ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
   const absolute = Math.abs(value);
-  const degrees = Math.floor(absolute);
-  const minutes = (absolute - degrees) * 60;
-  return `${degrees}°${minutes.toFixed(3).padStart(6, "0")}'${dir}`;
+  let degrees = Math.floor(absolute);
+  let minutes = (absolute - degrees) * 60;
+  // Evita exibir 60.00' por arredondamento.
+  if (Number(minutes.toFixed(2)) >= 60) {
+    degrees += 1;
+    minutes = 0;
+  }
+  const degreeText = latitude ? String(degrees).padStart(2, "0") : String(degrees).padStart(3, "0");
+  const minuteText = minutes.toFixed(2).padStart(5, "0");
+  return `${degreeText}º ${minuteText}' ${hemisphere}`;
 }
 
-function parseDate(value?: string | null) {
+function coordinateDigitsToDecimal(raw: string, latitude: boolean) {
+  const digits = raw.replace(/\D/g, "").slice(0, 6);
+  if (digits.length < 4) return null;
+  const degreeDigits = latitude ? 2 : (digits.length >= 7 ? 3 : 2);
+  const degrees = Number(digits.slice(0, degreeDigits));
+  const minuteDigits = digits.slice(degreeDigits);
+  if (!minuteDigits) return null;
+  const wholeMinutes = Number(minuteDigits.slice(0, 2));
+  const decimalMinutes = minuteDigits.slice(2) ? Number(`0.${minuteDigits.slice(2)}`) : 0;
+  const minutes = wholeMinutes + decimalMinutes;
+  if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || minutes >= 60) return null;
+  const max = latitude ? 90 : 180;
+  const value = degrees + minutes / 60;
+  if (value > max) return null;
+  return -value; // Painel operacional usa Sul/Oeste automaticamente.
+}
+
+function coordinateDigitsDisplay(raw: string, direction: "S" | "W") {
+  const digits = raw.replace(/\D/g, "").slice(0, 6);
+  if (!digits) return "";
+  const degrees = digits.slice(0, 2);
+  const minutes = digits.slice(2);
+  return `${degrees}${minutes ? "º" : ""}${minutes}${digits ? ` ${direction}` : ""}`;
+}
+
+function parseProviderTime(value?: string) {
   if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const normalized = /UTC$/i.test(value.trim()) ? value.trim().replace(/ UTC$/i, " GMT") : value.trim();
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function datePart(position: Position | HistoryItem | SavedItem) {
-  const source = "positionReceived" in position ? position.positionReceived : position.lastPositionReceived;
-  const fallback = "updateTime" in position ? position.updateTime : position.lastUpdateTime;
-  const d = parseDate(source || fallback || null);
-  return d ? d.toLocaleDateString("pt-BR") : "—";
+function formatLocalDateTime(date: Date) {
+  const sameDay = date.toDateString() === new Date().toDateString();
+  const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
+  const day = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return sameDay ? `Hoje · ${time}` : `${day} · ${time}`;
 }
 
-function timePart(position: Position | HistoryItem | SavedItem) {
-  const source = "positionReceived" in position ? position.positionReceived : position.lastPositionReceived;
-  const fallback = "updateTime" in position ? position.updateTime : position.lastUpdateTime;
-  const d = parseDate(source || fallback || null);
-  return d ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+function positionAgeLabel(value?: string) {
+  const date = parseProviderTime(value);
+  if (!date) return { label: "HORÁRIO NÃO INFORMADO", className: "unknown" };
+  const ageMinutes = Math.max(0, (Date.now() - date.getTime()) / 60000);
+  if (ageMinutes <= 10) return { label: "POSIÇÃO MUITO RECENTE", className: "fresh" };
+  if (ageMinutes <= 60) return { label: `POSIÇÃO DE ${Math.round(ageMinutes)} MIN ATRÁS`, className: "fresh" };
+  if (ageMinutes <= 24 * 60) return { label: `POSIÇÃO DE ${Math.round(ageMinutes / 60)} H ATRÁS`, className: "warning" };
+  return { label: `POSIÇÃO DE ${Math.max(1, Math.round(ageMinutes / 1440))} DIA(S) ATRÁS`, className: "stale" };
+}
+
+function sourceInfo(dataSource?: string) {
+  const source = (dataSource || "").trim();
+  if (/satellite|s-ais/i.test(source)) {
+    return { title: "AIS POR SATÉLITE", short: "S-AIS", className: "satellite" };
+  }
+  if (/terrestrial|t-ais/i.test(source)) {
+    return { title: "AIS TERRESTRE", short: "T-AIS", className: "terrestrial" };
+  }
+  return { title: source ? `AIS · ${source}` : "FONTE AIS", short: "AIS", className: "unknown" };
 }
 
 export default function AISPage({ defaultLat, defaultLon }: Props) {
-  const mapElement = useRef<HTMLDivElement | null>(null);
+  const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
+  const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
-  const markerSourceRef = useRef<VectorSource | null>(null);
-  const trailSourceRef = useRef<VectorSource | null>(null);
-  const [query, setQuery] = useState("");
-  const [tracked, setTracked] = useState<Position | null>(null);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [pricing, setPricing] = useState<Pricing | null>(null);
-  const [status, setStatus] = useState("Digite o nome do barco para localizar");
-  const [loading, setLoading] = useState(false);
-  const [pending, setPending] = useState<Pending>(null);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [saved, setSaved] = useState<SavedItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
+  const vesselSourceRef = useRef<VectorSource | null>(null);
+  const positionSourceRef = useRef<VectorSource | null>(null);
+  const areaSourceRef = useRef<VectorSource | null>(null);
+  const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
+  const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
+  const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
+  const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
+  const searchModeRef = useRef<SearchMode>("vessel");
+  const areaRadiusRef = useRef<50>(50);
 
-  const loadBilling = async () => {
-    const response = await fetch("/api/ais", { cache: "no-store" });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok) {
-      if (data.wallet) setWallet(data.wallet);
-      if (data.pricing) setPricing(data.pricing);
-    }
-  };
+  const [nameQuery, setNameQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
+  const [areaRadius] = useState<50>(50);
+  const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
+  const [manualLatDigits, setManualLatDigits] = useState("");
+  const [manualLonDigits, setManualLonDigits] = useState("");
+  const [manualCoordError, setManualCoordError] = useState("");
+  const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
+  const [areaCost, setAreaCost] = useState<number | null>(null);
 
-  const loadLibrary = async () => {
-    const response = await fetch("/api/ais-library", { cache: "no-store" });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok) {
-      setHistory(Array.isArray(data.history) ? data.history : []);
-      setSaved(Array.isArray(data.saved) ? data.saved : []);
-    }
-  };
+  useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
+  useEffect(() => { areaRadiusRef.current = 50; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, 50); }, [areaCenter]);
+  const [matches, setMatches] = useState<VesselMatch[]>([]);
+  const [matchTotal, setMatchTotal] = useState(0);
+  const [tracked, setTracked] = useState<Vessel | null>(null);
+  const [showEmptyHint, setShowEmptyHint] = useState(true);
+  const [status, setStatus] = useState<AisStatus>("idle");
+  const [statusMessage, setStatusMessage] = useState("Digite o nome do barco para localizar");
+  const [credits, setCredits] = useState<number | null>(null);
+  const [adminFree, setAdminFree] = useState(false);
+  const [aisPricing, setAisPricing] = useState({ locateCredits: 2, updateCredits: 1, areaCredits: 10 });
+  const [lastFetch, setLastFetch] = useState<number | null>(null);
+  const [center, setCenter] = useState({ lat: fallbackLat, lon: fallbackLon });
+  const [devicePosition, setDevicePosition] = useState<{ lat: number; lon: number } | null>(null);
+  const [zoom, setZoom] = useState(10);
+  const [baseMode, setBaseMode] = useState<BaseMode>("map");
+  const [dhnCharts, setDhnCharts] = useState<DhnChart[]>([]);
+  const [dhnAuto, setDhnAuto] = useState(true);
+  const [selectedDhnChart, setSelectedDhnChart] = useState("");
+  const [dhnLoadMessage, setDhnLoadMessage] = useState("Conectando ao serviço oficial IDEM-DHN...");
+  const [clockNow, setClockNow] = useState(() => new Date());
+  const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
+  const [historyItems, setHistoryItems] = useState<AisHistoryItem[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
 
-  useEffect(() => { void Promise.all([loadBilling(), loadLibrary()]); }, []);
-
-  useEffect(() => {
-    if (!mapElement.current || mapRef.current) return;
-    const markerSource = new VectorSource();
-    const trailSource = new VectorSource();
-    markerSourceRef.current = markerSource;
-    trailSourceRef.current = trailSource;
-    const map = new Map({
-      target: mapElement.current,
-      layers: [
-        new TileLayer({ source: new OSM() }),
-        new VectorLayer({ source: trailSource }),
-        new VectorLayer({ source: markerSource }),
-      ],
-      view: new View({ center: fromLonLat([Number(defaultLon ?? -48.55), Number(defaultLat ?? -27.15)]), zoom: 8 }),
-      controls: [],
+  function buildVesselStyle(vessel: Vessel, currentZoom: number) {
+    const speed = Number(vessel.sog || 0);
+    const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511
+      ? Number(vessel.heading)
+      : Number(vessel.cog || 0);
+    return new Style({
+      image: new RegularShape({
+        points: 3,
+        radius: 12,
+        angle: 0,
+        rotation: (angle * Math.PI) / 180,
+        rotateWithView: true,
+        fill: new Fill({ color: speed >= 0.5 ? "#25d4aa" : "#f0c65b" }),
+        stroke: new Stroke({ color: "#05252b", width: 2.4 }),
+      }),
+      text: currentZoom >= 8
+        ? new Text({
+            text: (vessel.name || vessel.mmsi).slice(0, 26),
+            offsetY: 20,
+            font: "800 11px system-ui",
+            fill: new Fill({ color: "#f4ffff" }),
+            stroke: new Stroke({ color: "#062027", width: 3 }),
+          })
+        : undefined,
     });
-    mapRef.current = map;
-    return () => { map.setTarget(undefined); mapRef.current = null; };
-  }, [defaultLat, defaultLon]);
+  }
 
-  const matchingHistory = useMemo(() => {
-    if (!tracked) return [];
-    const name = tracked.name.toUpperCase();
-    return history.filter((item) => item.name.toUpperCase() === name || item.vesselKey === tracked.vesselRef).slice().reverse();
-  }, [history, tracked]);
+  function drawVessel(vessel: Vessel) {
+    const source = vesselSourceRef.current;
+    if (!source) return;
+    source.clear();
+    const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
+    feature.set("vessel", vessel);
+    feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+    source.addFeature(feature);
+  }
 
-  function draw(position: Position, withTrail = true) {
-    const markerSource = markerSourceRef.current;
-    const trailSource = trailSourceRef.current;
-    if (!markerSource || !trailSource) return;
-    markerSource.clear();
-    trailSource.clear();
-    const feature = new Feature({ geometry: new Point(fromLonLat([position.lon, position.lat])) });
-    feature.setStyle(new Style({
-      image: new CircleStyle({ radius: 10, fill: new Fill({ color: "#20d8ad" }), stroke: new Stroke({ color: "#062c31", width: 4 }) }),
-      text: new Text({ text: position.name, offsetY: -22, font: "700 13px sans-serif", fill: new Fill({ color: "#ffffff" }), stroke: new Stroke({ color: "#062026", width: 4 }) }),
+  function centerOn(lat: number, lon: number, targetZoom = 11, mark = false) {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getView().animate({ center: fromLonLat([lon, lat]), zoom: targetZoom, duration: 350 });
+    if (mark) {
+      const source = positionSourceRef.current;
+      source?.clear();
+      source?.addFeature(new Feature({ geometry: new Point(fromLonLat([lon, lat])) }));
+    }
+  }
+
+  function drawAreaSelection(lat: number, lon: number, radiusKm: 50 = 50) {
+    const source = areaSourceRef.current;
+    if (!source) return;
+    source.clear();
+    const center3857 = fromLonLat([lon, lat]);
+    const circle = new Feature({ geometry: new CircleGeom(center3857, radiusKm * 1000) });
+    circle.setStyle(new Style({
+      fill: new Fill({ color: "rgba(43,212,170,.08)" }),
+      stroke: new Stroke({ color: "#2bd4aa", width: 2, lineDash: [10, 8] }),
     }));
-    markerSource.addFeature(feature);
+    const point = new Feature({ geometry: new Point(center3857) });
+    point.setStyle(new Style({
+      image: new CircleStyle({ radius: 7, fill: new Fill({ color: "#2bd4aa" }), stroke: new Stroke({ color: "#ffffff", width: 2 }) }),
+      text: new Text({ text: `${radiusKm} km`, offsetY: -18, font: "800 11px system-ui", fill: new Fill({ color: "#effffb" }), stroke: new Stroke({ color: "#05252b", width: 3 }) }),
+    }));
+    source.addFeatures([circle, point]);
+  }
 
-    if (withTrail) {
-      const points = [...matchingHistory.map((item) => fromLonLat([Number(item.longitude), Number(item.latitude)])), fromLonLat([position.lon, position.lat])];
-      if (points.length >= 2) {
-        const line = new Feature({ geometry: new LineString(points) });
-        line.setStyle(new Style({ stroke: new Stroke({ color: "#20d8ad", width: 3, lineDash: [8, 6] }) }));
-        trailSource.addFeature(line);
-      }
+  function drawAreaVessels(vessels: Vessel[]) {
+    const source = vesselSourceRef.current;
+    if (!source) return;
+    source.clear();
+    vessels.forEach((vessel) => {
+      const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
+      feature.set("vessel", vessel);
+      feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+      source.addFeature(feature);
+    });
+  }
+
+  function chooseAreaCenterFromMap() {
+    const map = mapRef.current;
+    if (!map) return;
+    const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+    setAreaCenter({ lat, lon });
+    drawAreaSelection(lat, lon, areaRadius);
+    setStatusMessage(`Centro da área definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+  }
+
+  function applyManualAreaCoordinates(closeMobilePanel = false) {
+    const lat = coordinateDigitsToDecimal(manualLatDigits, true);
+    const lon = coordinateDigitsToDecimal(manualLonDigits, false);
+    if (lat == null || lon == null) {
+      setManualCoordError("Confira latitude e longitude. Ex.: 254530 / 462550.");
+      return;
     }
-    mapRef.current?.getView().animate({ center: fromLonLat([position.lon, position.lat]), zoom: 12, duration: 450 });
+    setManualCoordError("");
+    const coords = { lat, lon };
+    setAreaCenter(coords);
+    drawAreaSelection(lat, lon, 50);
+    centerOn(lat, lon, 8, true);
+    setStatusMessage(`Centro manual definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+    if (closeMobilePanel) setMobilePanel(null);
   }
 
-  useEffect(() => { if (tracked) draw(tracked); }, [tracked, matchingHistory.length]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!pricing || !wallet) { setNotice("Aguarde o sistema carregar o valor oficial da consulta."); return; }
-    const name = query.trim();
-    if (name.length < 2) { setNotice("Digite o nome da embarcação."); return; }
-    setNotice("");
-    setPending({ type: "locate", name });
-  }
-
-  async function executePending() {
-    if (!pending || loading) return;
-    const action = pending;
-    setPending(null);
-    setLoading(true);
-    setNotice("");
-    setStatus(action.type === "update" ? "Atualizando posição..." : "Localizando embarcação...");
+  async function searchArea() {
+    const selected = areaCenter || center;
+    if (!selected) return;
+    setStatus("loading");
+    setStatusMessage(`Pesquisando embarcações em ${areaRadius} km...`);
+    drawAreaSelection(selected.lat, selected.lon, areaRadius);
     try {
-      const response = await fetch("/api/ais", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: action.type, name: action.name, vesselRef: action.vesselRef }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.status === 401) { window.location.replace("/login"); return; }
-      if (!response.ok) throw new Error(data?.error || "Não foi possível consultar a posição.");
-      const vessel = data.vessel as Position;
-      setTracked(vessel);
-      setQuery(vessel.name || action.name);
-      const nextBalance = Number(data?.billing?.balance ?? wallet?.balance ?? 0);
-      setWallet((current) => ({ ...(current || { balance: 0 }), balance: nextBalance }));
-      window.dispatchEvent(new CustomEvent("painel-billing-changed", { detail: { balance: nextBalance } }));
-      setStatus(data?.billing?.free ? "GRÁTIS — ADMIN" : `${vessel.name} localizado`);
-      await loadLibrary();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Falha ao consultar o AIS.");
-      setStatus("Consulta não concluída");
-    } finally {
-      setLoading(false);
+      const response = await fetch(`/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        setStatus(response.status === 503 ? "config" : "error");
+        setStatusMessage(data?.error || "Falha na busca AIS por área.");
+        return;
+      }
+      const rows: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
+        mmsi: String(raw?.mmsi || ""), imo: String(raw?.imo || ""), name: raw?.name || "SEM NOME",
+        lat: Number(raw?.lat), lon: Number(raw?.lon), sog: raw?.sog == null ? null : Number(raw.sog),
+        cog: raw?.cog == null ? null : Number(raw.cog), heading: raw?.heading == null ? null : Number(raw.heading),
+        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: raw?.dataSource || "Terrestrial Area",
+        receivedAt: Number(raw?.receivedAt) || Date.now(),
+      })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon));
+      setAreaVessels(rows);
+      setAreaCost(Number(data?.creditCost) || 10);
+      drawAreaVessels(rows);
+      centerOn(selected.lat, selected.lon, 8);
+      setStatus("ready");
+      setStatusMessage(`${rows.length} barco(s) encontrado(s) em 50 km · ${adminFree ? "GRÁTIS — ADMIN" : `${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s)`}`);
+      await refreshCredits();
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha de rede na busca AIS por área.");
     }
   }
 
-  async function saveCurrent() {
-    if (!tracked || saving) return;
-    setSaving(true);
-    setNotice("");
+  async function openAreaVessel(vessel: Vessel) {
+    setTracked(vessel);
+    drawAreaVessels(areaVessels);
+    centerOn(vessel.lat, vessel.lon, 12);
+    setStatus("ready");
+    setStatusMessage(`${vessel.name || vessel.mmsi} selecionado da busca por área · 0 crédito adicional`);
+    await recordHistory(vessel);
+  }
+
+  async function refreshCredits() {
+    try {
+      const response = await fetch("/api/ais?action=credits", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) {
+          setStatus("config");
+          setStatusMessage(data?.error || "Configure DATADOCKED_API_KEY na Vercel.");
+        }
+        return;
+      }
+      if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
+      setAdminFree(Boolean(data?.adminFree));
+      if (data?.pricing) setAisPricing({
+        locateCredits: Number.isFinite(Number(data.pricing.locateCredits)) ? Number(data.pricing.locateCredits) : 2,
+        updateCredits: Number.isFinite(Number(data.pricing.updateCredits)) ? Number(data.pricing.updateCredits) : 1,
+        areaCredits: Number.isFinite(Number(data.pricing.areaCredits)) ? Number(data.pricing.areaCredits) : 10,
+      });
+      if (status === "config") setStatus("idle");
+    } catch {
+      // Saldo é informativo e não deve bloquear o mapa.
+    }
+  }
+
+  function vesselKeyFrom(source: { imo?: string | null; mmsi?: string | null }) {
+    const imo = String(source?.imo || "").replace(/\D/g, "");
+    const mmsi = String(source?.mmsi || "").replace(/\D/g, "");
+    if (imo && imo !== "0") return `imo:${imo}`;
+    if (mmsi) return `mmsi:${mmsi}`;
+    return "";
+  }
+
+  async function loadAisLibrary() {
+    setLibraryLoading(true);
+    try {
+      const response = await fetch("/api/ais-library", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) return;
+      setSavedVessels(Array.isArray(data?.saved) ? data.saved : []);
+      setHistoryItems(Array.isArray(data?.history) ? data.history : []);
+    } catch {
+      // A biblioteca AIS é auxiliar e não bloqueia as consultas ao provedor.
+    } finally {
+      setLibraryLoading(false);
+    }
+  }
+
+  async function saveVessel(source: VesselMatch | Vessel) {
+    const key = vesselKeyFrom(source);
+    if (!key) {
+      setStatusMessage("Este barco não possui IMO/MMSI válido para salvar.");
+      return;
+    }
+    setSavingKeys((current) => {
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+    setStatusMessage(`Salvando ${source.name || "embarcação"}...`);
     try {
       const response = await fetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "save",
-          vessel: {
-            name: tracked.name,
-            mmsi: tracked.vesselRef,
-            lat: tracked.lat,
-            lon: tracked.lon,
-            positionReceived: tracked.positionReceived,
-            updateTime: tracked.updateTime,
-          },
-        }),
+        cache: "no-store",
+        body: JSON.stringify({ action: "save", vessel: source }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || "Não foi possível salvar o barco.");
-      setNotice("Barco salvo na sua pasta.");
-      await loadLibrary();
+      if (!response.ok) {
+        setStatusMessage(data?.error || `Não foi possível salvar o barco (${response.status}).`);
+        return;
+      }
+      if (data?.saved) {
+        setSavedVessels((current) => [data.saved, ...current.filter((item) => item.vesselKey !== key)]);
+      } else {
+        await loadAisLibrary();
+      }
+      setStatusMessage(`${source.name || "Embarcação"} salva na pasta de barcos ✓`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Não foi possível salvar o barco.");
-    } finally { setSaving(false); }
+      console.error("AIS save vessel error", error);
+      setStatusMessage("Falha de conexão ao salvar a embarcação. Tente novamente.");
+    } finally {
+      setSavingKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
   }
 
-  function openHistory(item: HistoryItem) {
-    const p: Position = {
-      name: item.name,
-      lat: Number(item.latitude),
-      lon: Number(item.longitude),
-      positionReceived: item.positionReceived || undefined,
-      updateTime: item.updateTime || undefined,
-      vesselRef: item.vesselKey || item.name,
-    };
-    setTracked(p);
-    setQuery(item.name);
-    setStatus("Posição aberta do histórico — 0 créditos");
+  async function removeSavedVessel(key: string) {
+    try {
+      const response = await fetch(`/api/ais-library?type=saved&key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!response.ok) return;
+      setSavedVessels((current) => current.filter((item) => item.vesselKey !== key));
+      setStatusMessage("Barco removido da pasta de salvos.");
+    } catch {
+      setStatusMessage("Não foi possível remover o barco salvo.");
+    }
   }
 
-  function openSaved(item: SavedItem) {
-    if (item.lastLatitude == null || item.lastLongitude == null) return;
-    const ref = String(item.mmsi || item.imo || item.vesselKey).replace(/\D/g, "");
-    setTracked({
+  async function clearAisHistory() {
+    if (!window.confirm("Limpar todo o histórico de consultas AIS desta conta?")) return;
+    try {
+      const response = await fetch("/api/ais-library?type=history", { method: "DELETE" });
+      if (!response.ok) return;
+      setHistoryItems([]);
+      setStatusMessage("Histórico AIS limpo.");
+    } catch {
+      setStatusMessage("Não foi possível limpar o histórico AIS.");
+    }
+  }
+
+  async function recordHistory(vessel: Vessel) {
+    try {
+      await fetch("/api/ais-library", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "history", vessel }),
+      });
+      await loadAisLibrary();
+    } catch {
+      // O histórico não pode impedir a exibição da posição já obtida.
+    }
+  }
+
+  function showVesselFromLibrary(vessel: Vessel, message: string) {
+    const id = vessel.imo && vessel.imo !== "0" ? vessel.imo : vessel.mmsi;
+    if (id) positionCacheRef.current.set(id, vessel);
+    setTracked(vessel);
+    drawVessel(vessel);
+    centerOn(vessel.lat, vessel.lon, 12);
+    setStatus("ready");
+    setStatusMessage(message);
+  }
+
+  function openSavedVessel(item: SavedVessel) {
+    if (item.lastLatitude == null || item.lastLongitude == null) {
+      setNameQuery(item.name);
+      setStatusMessage("Barco salvo sem posição armazenada. Use ATUALIZAR para consultar a posição.");
+      return;
+    }
+    showVesselFromLibrary({
+      mmsi: item.mmsi || "",
+      imo: item.imo || "",
       name: item.name,
       lat: Number(item.lastLatitude),
       lon: Number(item.lastLongitude),
-      positionReceived: item.lastPositionReceived || undefined,
-      updateTime: item.lastUpdateTime || undefined,
-      vesselRef: ref,
+      sog: item.lastSog,
+      cog: item.lastCog,
+      heading: item.lastHeading,
+      destination: item.lastDestination || "",
+      callsign: item.callsign || "",
+      vesselType: item.vesselType || "",
+      navStatusText: item.lastStatus || "",
+      dataSource: item.lastDataSource || "",
+      positionReceived: item.lastPositionReceived || "",
+      updateTime: item.lastUpdateTime || "",
+      receivedAt: Date.now(),
+    }, `${item.name} aberto da pasta de salvos — 0 créditos`);
+  }
+
+  function openHistoryItem(item: AisHistoryItem) {
+    showVesselFromLibrary({
+      mmsi: item.mmsi || "",
+      imo: item.imo || "",
+      name: item.name,
+      lat: Number(item.latitude),
+      lon: Number(item.longitude),
+      sog: item.sog,
+      cog: item.cog,
+      heading: item.heading,
+      destination: item.destination || "",
+      navStatusText: item.navStatus || "",
+      dataSource: item.dataSource || "",
+      positionReceived: item.positionReceived || "",
+      updateTime: item.updateTime || "",
+      receivedAt: new Date(item.queriedAt).getTime() || Date.now(),
+    }, `${item.name} aberto do histórico — 0 créditos`);
+  }
+
+  async function getVesselPosition(match: VesselMatch, force = false) {
+    const id = vesselIdentifier(match);
+    if (!id) {
+      setStatus("error");
+      setStatusMessage("Este resultado não possui IMO ou MMSI válido.");
+      return;
+    }
+
+    const cached = positionCacheRef.current.get(id);
+    if (cached && !force) {
+      setTracked(cached);
+      drawVessel(cached);
+      centerOn(cached.lat, cached.lon, 12);
+      setStatus("ready");
+      setStatusMessage(`${cached.name || "Embarcação"} localizada do cache — 0 créditos`);
+      return;
+    }
+
+    setStatus("loading");
+    setStatusMessage(force ? `Atualizando posição — ${adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.updateCredits} crédito(s)`}...` : `Consultando posição — ${adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.locateCredits} crédito(s)`}...`);
+    try {
+      const response = await fetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) setStatus("config");
+        else setStatus("error");
+        setStatusMessage(data?.error || "Não foi possível localizar a embarcação.");
+        return;
+      }
+      const raw = data?.vessel;
+      const vessel: Vessel = {
+        mmsi: String(raw?.mmsi || match.mmsi || ""),
+        imo: String(raw?.imo || match.imo || ""),
+        name: raw?.name || match.name,
+        lat: Number(raw?.lat),
+        lon: Number(raw?.lon),
+        sog: raw?.sog == null ? null : Number(raw.sog),
+        cog: raw?.cog == null ? null : Number(raw.cog),
+        heading: raw?.heading == null ? null : Number(raw.heading),
+        draught: raw?.draught || "",
+        destination: raw?.destination || "",
+        lastPort: raw?.lastPort || "",
+        callsign: raw?.callsign || match.callsign || "",
+        vesselType: raw?.vesselType || match.typeSpecific || match.shipType || "",
+        navStatusText: raw?.navStatusText || "",
+        dataSource: raw?.dataSource || "",
+        positionReceived: raw?.positionReceived || "",
+        updateTime: raw?.updateTime || "",
+        receivedAt: Number(raw?.receivedAt) || Date.now(),
+      };
+      if (!Number.isFinite(vessel.lat) || !Number.isFinite(vessel.lon)) {
+        setStatus("error");
+        setStatusMessage("A API retornou o barco sem uma posição válida.");
+        return;
+      }
+      positionCacheRef.current.set(id, vessel);
+      setTracked(vessel);
+      drawVessel(vessel);
+      centerOn(vessel.lat, vessel.lon, 12);
+      setLastFetch(Date.now());
+      setStatus("ready");
+      setStatusMessage(`${vessel.name || "Embarcação"} localizada`);
+      await Promise.all([refreshCredits(), recordHistory(vessel)]);
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha de rede ao consultar a posição AIS.");
+    }
+  }
+
+  async function searchByName(event?: FormEvent) {
+    event?.preventDefault();
+    const cleanName = nameQuery.trim();
+    if (cleanName.length < 2) {
+      setStatus("error");
+      setStatusMessage("Digite pelo menos 2 caracteres do nome do barco.");
+      return;
+    }
+
+    const cacheKey = cleanName.toLowerCase().replace(/\s+/g, " ");
+    const cached = nameCacheRef.current.get(cacheKey);
+    if (cached) {
+      setMatches(cached);
+      setMatchTotal(cached.length);
+      setStatus("ready");
+      setStatusMessage(`${cached.length} resultado(s) do cache — 0 créditos`);
+      if (cached.length === 1) await getVesselPosition(cached[0]);
+      return;
+    }
+
+    setStatus("loading");
+    setStatusMessage("Buscando embarcações pelo nome — a cobrança só acontece quando a posição for obtida...");
+    setMatches([]);
+    setMatchTotal(0);
+    try {
+      const response = await fetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 503) setStatus("config");
+        else setStatus("error");
+        setStatusMessage(data?.error || "Falha ao buscar embarcação pelo nome.");
+        return;
+      }
+
+      const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
+      nameCacheRef.current.set(cacheKey, rows);
+      setMatches(rows);
+      setMatchTotal(Number(data?.total) || rows.length);
+      await refreshCredits();
+
+      if (!rows.length) {
+        setStatus("ready");
+        setStatusMessage("Nenhuma embarcação encontrada com esse nome.");
+        return;
+      }
+
+      if (rows.length === 1) {
+        setStatusMessage(`1 barco encontrado — consultando posição (${adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.locateCredits} crédito(s)`})...`);
+        await getVesselPosition(rows[0]);
+        return;
+      }
+
+      setStatus("ready");
+      setStatusMessage(`${rows.length} resultados — escolha o barco certo para consultar a posição${adminFree ? " — GRÁTIS — ADMIN" : ` — ${aisPricing.locateCredits} crédito(s)`}`);
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha de rede ao consultar o Data Docked.");
+    }
+  }
+
+  function locateDevice() {
+    if (!navigator.geolocation) {
+      setStatusMessage("GPS não disponível. Digite latitude e longitude manualmente na busca por área.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
+        setDevicePosition(coords);
+        centerOn(coords.lat, coords.lon, searchModeRef.current === "area" ? 8 : 12, true);
+        if (searchModeRef.current === "area") {
+          setAreaCenter(coords);
+          drawAreaSelection(coords.lat, coords.lon, 50);
+          setStatusMessage(`GPS localizado e definido como centro da busca · ${formatCoordMarine(coords.lat, true)} · ${formatCoordMarine(coords.lon, false)}`);
+        } else {
+          setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
+        }
+      },
+      () => setStatusMessage("GPS não autorizado ou indisponível. Use os campos de latitude e longitude."),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+    );
+  }
+
+  function zoomBy(delta: number) {
+    const view = mapRef.current?.getView();
+    if (!view) return;
+    view.animate({ zoom: Math.max(3, Math.min(18, (view.getZoom() || 10) + delta)), duration: 170 });
+  }
+
+  function setMapMode(mode: BaseMode) {
+    setBaseMode(mode);
+    streetLayerRef.current?.setVisible(mode === "map" || mode === "dhn");
+    dhnLayerRef.current?.setVisible(mode === "dhn" && Boolean(selectedDhnChart));
+  }
+
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const street = new TileLayer({ visible: true, source: new OSM() });
+    const dhn = new TileLayer({
+      visible: false,
+      opacity: 1,
+      source: new XYZ({
+        url: `${DHN_TILE_BASE}/__nenhuma__/{z}/{x}/{y}.png`,
+        attributions: "Carta Raster DHN/CHM",
+        crossOrigin: "anonymous",
+      }),
     });
-    setQuery(item.name);
-    setStatus("Barco salvo aberto — 0 créditos");
-  }
+    const vesselSource = new VectorSource();
+    const vesselLayer = new VectorLayer({ source: vesselSource, declutter: true });
+    const areaSource = new VectorSource();
+    const areaLayer = new VectorLayer({ source: areaSource });
+    const positionSource = new VectorSource();
+    const positionLayer = new VectorLayer({
+      source: positionSource,
+      style: new Style({
+        image: new CircleStyle({ radius: 8, fill: new Fill({ color: "#2a92ff" }), stroke: new Stroke({ color: "#ffffff", width: 3 }) }),
+      }),
+    });
+    const view = new View({ center: fromLonLat([fallbackLon, fallbackLat]), zoom: 10.5, minZoom: 3, maxZoom: 18 });
+    const map = new Map({
+      target: hostRef.current,
+      controls: [],
+      layers: [street, areaLayer, vesselLayer, positionLayer],
+      view,
+    });
 
-  async function clearHistory() {
-    if (!confirm("Limpar todo o seu histórico AIS?")) return;
-    await fetch("/api/ais-library?type=history", { method: "DELETE" });
-    setHistory([]);
-    setShowHistory(false);
-    trailSourceRef.current?.clear();
-  }
+    mapRef.current = map;
+    vesselSourceRef.current = vesselSource;
+    positionSourceRef.current = positionSource;
+    areaSourceRef.current = areaSource;
+    streetLayerRef.current = street;
+    dhnLayerRef.current = dhn;
 
-  const currentCost = pricing ? (pending?.type === "update" ? pricing.updateCredits : pricing.locateCredits) : 0;
-  const currentBrl = pricing ? (pending?.type === "update" ? pricing.updateBrl : pricing.locateBrl) : 0;
-  const afterBalance = Math.max(0, (wallet?.balance || 0) - currentCost);
+    const updateCenter = () => {
+      const [lon, lat] = toLonLat(view.getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+      setCenter({ lat, lon });
+      setZoom(Math.round(view.getZoom() || 10));
+      vesselSource.getFeatures().forEach((feature) => {
+        const vessel = feature.get("vessel") as Vessel | undefined;
+        if (vessel) feature.setStyle(() => buildVesselStyle(vessel, view.getZoom() || 10));
+      });
+    };
+    map.on("moveend", updateCenter);
+    const selectAreaOnClick = (event: any) => {
+      if (searchModeRef.current !== "area") return;
+      const [lon, lat] = toLonLat(event.coordinate);
+      setAreaCenter({ lat, lon });
+      drawAreaSelection(lat, lon, areaRadiusRef.current);
+      setStatusMessage(`Área selecionada no mapa · ${areaRadiusRef.current} km`);
+    };
+    map.on("singleclick", selectAreaOnClick);
+    const ro = new ResizeObserver(() => map.updateSize());
+    ro.observe(hostRef.current);
+
+    return () => {
+      ro.disconnect();
+      map.un("moveend", updateCenter);
+      map.un("singleclick", selectAreaOnClick);
+      map.setTarget(undefined);
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    refreshCredits();
+    loadAisLibrary();
+  }, []);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    const mobile = window.matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    if (!mobile) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
+        setDevicePosition(coords);
+        centerOn(coords.lat, coords.lon, 11, true);
+      },
+      () => undefined,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  }, []);
+
+  const exactMatch = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    return matches.find((m) => m.name.toLowerCase() === q) || null;
+  }, [matches, nameQuery]);
+
+  const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
+  const trackedAge = tracked ? positionAgeLabel(tracked.positionReceived || tracked.updateTime) : null;
+  const trackedProviderDate = tracked ? parseProviderTime(tracked.positionReceived || tracked.updateTime) : null;
+  const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
+  const trackedKey = tracked ? vesselKeyFrom(tracked) : "";
+  const recentCards = useMemo(() => {
+    const rows: Array<{ key: string; vessel: Vessel; historyItem?: AisHistoryItem; current: boolean }> = [];
+    const seen = new Set<string>();
+
+    if (tracked) {
+      const key = vesselKeyFrom(tracked) || `tracked:${tracked.name || "barco"}:${tracked.lat}:${tracked.lon}`;
+      rows.push({ key, vessel: tracked, current: true });
+      seen.add(key);
+    }
+
+    for (const item of historyItems) {
+      if (rows.length >= 3) break;
+      const key = item.vesselKey || (item.imo && item.imo !== "0" ? `imo:${item.imo}` : `mmsi:${item.mmsi || item.id}`);
+      if (seen.has(key)) continue;
+      rows.push({
+        key,
+        historyItem: item,
+        current: false,
+        vessel: {
+          mmsi: item.mmsi || "",
+          imo: item.imo || "",
+          name: item.name,
+          lat: Number(item.latitude),
+          lon: Number(item.longitude),
+          sog: item.sog,
+          cog: item.cog,
+          heading: item.heading,
+          destination: item.destination || "",
+          navStatusText: item.navStatus || "",
+          dataSource: item.dataSource || "",
+          positionReceived: item.positionReceived || "",
+          updateTime: item.updateTime || "",
+          receivedAt: new Date(item.queriedAt).getTime() || Date.now(),
+        },
+      });
+      seen.add(key);
+    }
+
+    return rows.slice(0, 3);
+  }, [tracked, historyItems]);
 
   return (
-    <section className="ais76-page">
-      <div className="ais76-head">
-        <div><small>MONITORAMENTO MARÍTIMO</small><h2>AIS — consulta simples</h2><p>Nome do barco, posição, data e hora. Sem atualização automática.</p></div>
-        <button className="ais76-wallet" type="button"><span>MEUS CRÉDITOS</span><b>{!wallet ? "Carregando..." : wallet.freeAisAccess ? "GRÁTIS — ADMIN" : `${wallet.balance} créditos`}</b></button>
-      </div>
-
-      <form className="ais76-search" onSubmit={submit}>
-        <label><span>NOME DO BARCO</span><div><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite o nome da embarcação" autoComplete="off" /></div></label>
-        <button type="submit" disabled={loading || !pricing}>{loading ? <RefreshCw className="spin" /> : <MapPinned />} {!pricing ? "CARREGANDO VALOR..." : pricing.adminFree ? "LOCALIZAR BARCO — GRÁTIS" : `LOCALIZAR BARCO — ${pricing.locateCredits} CRÉDITOS`}</button>
-        {pricing && !pricing.adminFree && <small>{pricing.locateCredits} créditos = {brl(pricing.locateBrl)}</small>}
-      </form>
-
-      {notice && <div className="ais76-notice">{notice}</div>}
-      <div className="ais76-status">{status}</div>
-
-      <div className="ais76-folders">
-        <details>
-          <summary><Bookmark /> Barcos salvos <em>{saved.length}</em></summary>
-          <div className="ais76-mini-list">{saved.length ? saved.slice(0, 12).map((item) => <button key={item.id} type="button" onClick={() => openSaved(item)}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude == null ? "Sem posição salva" : `${marineCoord(Number(item.lastLatitude), true)} · ${marineCoord(Number(item.lastLongitude), false)}`}</small></span></button>) : <p>Nenhum barco salvo.</p>}</div>
-        </details>
-        <details open={showHistory} onToggle={(e) => setShowHistory((e.currentTarget as HTMLDetailsElement).open)}>
-          <summary><History /> Meu histórico AIS <em>{history.length}</em></summary>
-          <div className="ais76-history-actions"><button type="button" onClick={clearHistory}><Trash2 /> Limpar histórico</button></div>
-          <div className="ais76-mini-list">{history.length ? history.slice(0, 20).map((item) => <button key={item.id} type="button" onClick={() => openHistory(item)}><History /><span><b>{item.name}</b><small>{marineCoord(Number(item.latitude), true)} · {marineCoord(Number(item.longitude), false)} · {datePart(item)} {timePart(item)}</small></span></button>) : <p>Histórico vazio.</p>}</div>
-        </details>
-      </div>
-
-      <div className="ais76-map-wrap">
-        <div ref={mapElement} className="ais76-map" />
-        <div className="ais76-map-controls">
-          <button type="button" onClick={() => mapRef.current?.getView().setZoom((mapRef.current.getView().getZoom() || 8) + 1)}><Plus /></button>
-          <button type="button" onClick={() => mapRef.current?.getView().setZoom((mapRef.current.getView().getZoom() || 8) - 1)}><Minus /></button>
-          {tracked && <button type="button" onClick={() => draw(tracked)}><Crosshair /></button>}
+    <section className="ais-page ais-v61-page ais-v62-page ais-v75-page">
+      <div className="ais-topbar">
+        <div>
+          <small>MONITORAMENTO MARÍTIMO</small>
+          <h2>AIS — posição do barco</h2>
+          <p>Busca pelo nome e posição AIS individual, com horário e origem do sinal bem destacados.</p>
         </div>
-      </div>
-
-      {tracked && (
-        <article className="ais76-result">
-          <div className="ais76-result-title"><Ship /><div><small>EMBARCAÇÃO LOCALIZADA</small><h3>{tracked.name}</h3></div></div>
-          <div className="ais76-position"><span>📍 POSIÇÃO</span><b>{marineCoord(tracked.lat, true)}</b><b>{marineCoord(tracked.lon, false)}</b></div>
-          <div className="ais76-date-row"><div><span>📅 DATA</span><b>{datePart(tracked)}</b></div><div><span>🕒 HORA</span><b>{timePart(tracked)}</b></div></div>
-          <div className="ais76-result-actions">
-            <button type="button" onClick={() => draw(tracked)}><MapPinned /> VER NO MAPA</button>
-            <button type="button" disabled={!pricing} onClick={() => setPending({ type: "update", name: tracked.name, vesselRef: tracked.vesselRef })}><RefreshCw /> {!pricing ? "CARREGANDO VALOR..." : pricing.adminFree ? "ATUALIZAR — GRÁTIS" : `ATUALIZAR POSIÇÃO — ${pricing.updateCredits} CRÉDITOS`}</button>
-            <button type="button" onClick={() => setShowHistory(true)}><History /> VER HISTÓRICO</button>
-            <button type="button" onClick={saveCurrent} disabled={saving}><Bookmark /> {saving ? "SALVANDO..." : "SALVAR BARCO"}</button>
+        <div className="ais-live-box">
+          <span className={`ais-live-dot ${status === "ready" ? "connected" : status === "loading" ? "connecting" : status}`} />
+          <div>
+            <b>{statusMessage}</b>
+            <small>{adminFree ? "GRÁTIS — ADMIN" : credits != null ? `${credits} créditos restantes` : "Saldo não carregado"}{lastFetch ? ` · atualizado ${relativeTime(lastFetch)}` : ""}</small>
           </div>
-        </article>
+        </div>
+      </div>
+
+      <div className="ais-name-search-card ais-v70-search-card">
+        <div className="ais-v70-search-tabs">
+          <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => { setSearchMode("vessel"); setMobilePanel("search"); }}><Ship /> Barco</button>
+          <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); setMobilePanel("search"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
+        </div>
+
+        {searchMode === "vessel" ? (
+          <>
+            <div className="ais-name-search-head">
+              <div className="ais-name-title"><Ship /><span><b>LOCALIZAR EMBARCAÇÃO</b><small>Pesquise pelo nome e consulte somente o barco escolhido.</small></span></div>
+              <div className="ais-credit-flow"><span>{adminFree ? "0 CR" : `${aisPricing.locateCredits} CR`}</span><em>Consulta completa</em><i>→</i><strong>{adminFree ? "GRÁTIS — ADMIN" : "cobra somente com posição válida"}</strong></div>
+            </div>
+            <form className="ais-name-form" onSubmit={searchByName}>
+              <label>
+                <span>Nome do barco</span>
+                <div><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Ex.: ASTRO SOL I" autoComplete="off" /></div>
+              </label>
+              <button type="submit" disabled={status === "loading"}>
+                {status === "loading" ? <RefreshCw className="spin" /> : <Search />}
+                {status === "loading" ? "CONSULTANDO..." : "BUSCAR BARCO"}
+              </button>
+            </form>
+
+            {matches.length > 0 && (
+              <div className="ais-name-results">
+                <div className="ais-name-results-head"><span><b>{matchTotal}</b> resultado(s)</span><small>Escolha o barco certo. A cobrança ocorre somente quando a posição válida for retornada.</small></div>
+                <div className="ais-name-results-grid">
+                  {matches.slice(0, 12).map((match, index) => {
+                    const id = vesselIdentifier(match) || `${match.name}-${index}`;
+                    const key = vesselKeyFrom(match);
+                    const isSaved = key ? savedKeys.has(key) : false;
+                    const isTracked = Boolean(tracked && ((tracked.mmsi && tracked.mmsi === match.mmsi) || (tracked.imo && tracked.imo === match.imo)));
+                    return (
+                      <article key={`${id}-${index}`} className={isTracked ? "active" : ""}>
+                        <span className="ais-result-ship"><Ship /></span>
+                        <div className="ais-result-main">
+                          <b>{match.name || "Sem nome"}</b>
+                          <small>{match.typeSpecific || match.shipType || "Tipo não informado"}{match.country ? ` · ${match.country}` : ""}</small>
+                          <em>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}{match.callsign ? ` · ${match.callsign}` : ""}</em>
+                        </div>
+                        <div className="ais-result-actions">
+                          <button type="button" onClick={() => getVesselPosition(match)} disabled={status === "loading"}><MapPinned /> {isTracked ? "NO MAPA" : `VER POSIÇÃO · ${adminFree ? "GRÁTIS" : `${aisPricing.locateCredits} CR`}`}</button>
+                          <button type="button" className={isSaved ? "saved" : ""} disabled={savingKeys.has(key)} onClick={() => isSaved ? removeSavedVessel(key) : saveVessel(match)}><Bookmark /> {savingKeys.has(key) ? "SALVANDO..." : isSaved ? "SALVO" : "SALVAR"}</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                {exactMatch && matches.length > 1 && <small className="ais-exact-hint">Correspondência exata encontrada: <b>{exactMatch.name}</b>.</small>}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="ais-v70-area-search">
+            <div className="ais-name-search-head">
+              <div className="ais-name-title"><Crosshair /><span><b>PESQUISAR EMBARCAÇÕES NA ÁREA</b><small>Área fixa de 50 km. Use GPS, toque no mapa ou digite a posição.</small></span></div>
+              <div className="ais-v70-area-cost">{adminFree ? "GRÁTIS" : `${aisPricing.areaCredits} CR`}</div>
+            </div>
+            <div className="ais-v70-radius-row">
+              <button type="button" className="active">50 km <small>{adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.areaCredits} créditos`}</small></button>
+              <button type="button" onClick={chooseAreaCenterFromMap}><Crosshair /> Centro do mapa</button>
+              <button type="button" onClick={locateDevice}><LocateFixed /> Usar GPS</button>
+              {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Aplicar meu GPS</button>}
+            </div>
+            <div className="ais-v74-manual-coords">
+              <div className="ais-v74-coordinate-field"><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></div>
+              <div className="ais-v74-coordinate-field"><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></div>
+              <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> USAR LAT/LONG</button>
+            </div>
+            {manualCoordError && <p className="ais-v74-coordinate-error">{manualCoordError}</p>}
+            <div className="ais-v70-area-position">
+              <span><small>CENTRO DA BUSCA · 50 KM</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Escolha pelo mapa, GPS ou latitude/longitude"}</b></span>
+              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR 50 KM</button>
+            </div>
+            {areaVessels.length > 0 && (
+              <div className="ais-v70-area-results">
+                <div><b>{areaVessels.length} barcos encontrados</b><span>{areaCost != null ? `${areaCost} créditos usados` : ""}</span></div>
+                <div className="ais-v70-area-list">
+                  {areaVessels.slice(0, 30).map((vessel, index) => (
+                    <button type="button" key={`${vessel.mmsi || vessel.name}-${index}`} onClick={() => openAreaVessel(vessel)}>
+                      <Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{vessel.sog != null ? `${vessel.sog.toFixed(1)} kn` : "—"} · {vessel.cog != null ? `${Math.round(vessel.cog)}°` : "—"}</small></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="ais-library-grid">
+        <section className="ais-saved-folder">
+          <div className="ais-library-head">
+            <div><FolderHeart /><span><small>PASTA</small><b>Barcos salvos</b><em>{savedVessels.length} embarcação(ões)</em></span></div>
+            {libraryLoading && <RefreshCw className="spin" />}
+          </div>
+          {savedVessels.length ? (
+            <div className="ais-saved-list">
+              {savedVessels.slice(0, 12).map((item) => {
+                const hasPosition = item.lastLatitude != null && item.lastLongitude != null;
+                return (
+                  <article key={item.vesselKey}>
+                    <button className="ais-saved-main" type="button" onClick={() => openSavedVessel(item)} disabled={!hasPosition}>
+                      <span><Ship /></span>
+                      <div><b>{item.name}</b><small>MMSI {item.mmsi || "—"} · IMO {item.imo || "—"}</small><em>{item.lastPositionReceived || item.lastUpdateTime || "Posição ainda não consultada"}</em></div>
+                    </button>
+                    <div className="ais-saved-actions">
+                      <button type="button" title={`Atualizar posição · ${adminFree ? "GRÁTIS" : `${aisPricing.updateCredits} crédito(s)`}`} onClick={() => getVesselPosition({ name: item.name, mmsi: item.mmsi || "", imo: item.imo || "", country: item.country || "", countryIso: "", shipType: item.vesselType || "", typeSpecific: item.vesselType || "", callsign: item.callsign || "" }, true)}><RefreshCw /></button>
+                      <button type="button" className="danger" title="Remover dos salvos" onClick={() => removeSavedVessel(item.vesselKey)}><Trash2 /></button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="ais-library-empty"><Bookmark /><span>Salve os barcos que você consulta com frequência. Abrir um barco salvo não gasta créditos.</span></div>
+          )}
+        </section>
+
+        <section className="ais-history-panel">
+          <div className="ais-library-head">
+            <div><History /><span><small>CONSULTAS</small><b>Histórico AIS</b><em>{historyItems.length} posição(ões) registradas</em></span></div>
+            <button type="button" className="ais-clear-history" onClick={clearAisHistory} disabled={!historyItems.length}><Trash2 /> Limpar histórico</button>
+          </div>
+          {historyItems.length ? (
+            <div className="ais-history-list">
+              {historyItems.slice(0, 14).map((item) => (
+                <button type="button" key={item.id} onClick={() => openHistoryItem(item)}>
+                  <span className="ais-history-icon"><History /></span>
+                  <div><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></div>
+                  <em>{formatLocalDateTime(new Date(item.queriedAt))}</em>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="ais-library-empty"><History /><span>As posições consultadas aparecerão aqui automaticamente. O histórico não consome créditos para abrir.</span></div>
+          )}
+        </section>
+      </div>
+
+      <div className="ais-shell ais-v61-shell">
+        <div ref={hostRef} className="ais-map" aria-label="Mapa da posição AIS da embarcação" />
+
+        <div className="ais-map-tools ais-left-tools">
+          <button type="button" onClick={() => zoomBy(1)} title="Aumentar zoom"><Plus /></button>
+          <button type="button" onClick={() => zoomBy(-1)} title="Diminuir zoom"><Minus /></button>
+          <button type="button" onClick={locateDevice} title="Minha localização"><LocateFixed /></button>
+          <button type="button" onClick={() => centerOn(fallbackLat, fallbackLon, 11)} title="Voltar para a última largada"><Crosshair /></button>
+          {tracked && <button type="button" onClick={() => centerOn(tracked.lat, tracked.lon, 12)} title="Centralizar no barco"><Ship /></button>}
+        </div>
+
+        <div className="ais-map-header-controls ais-single-map-badge">
+          <span><Navigation /> Mapa</span>
+        </div>
+
+        <div className="ais-v70-mobile-dock">
+          <button type="button" className={mobilePanel === "search" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "search" ? null : "search")}><Search /><span>Buscar</span></button>
+          <button type="button" className={mobilePanel === "saved" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{savedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "history" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
+          <button type="button" className={mobilePanel === "recent" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "recent" ? null : "recent")}><Ship /><span>Recentes</span><em>{recentCards.length}</em></button>
+        </div>
+
+        {mobilePanel && (
+          <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
+            <div className="ais-v70-mobile-panel-head">
+              <b>{mobilePanel === "search" ? "Pesquisar AIS" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "history" ? "Histórico AIS" : "Barcos recentes"}</b>
+              <button type="button" onClick={() => setMobilePanel(null)}>×</button>
+            </div>
+
+            {mobilePanel === "search" && (
+              <div className="ais-v70-mobile-search">
+                <div className="ais-v70-search-tabs compact">
+                  <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
+                  <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
+                </div>
+                {searchMode === "vessel" ? (
+                  <>
+                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Nome do barco" /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar</button></div>
+                    {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"}</small></span><em>{adminFree ? "GRÁTIS" : `${aisPricing.locateCredits} CR`}</em></button>)}</div>}
+                  </>
+                ) : (
+                  <>
+                    <div className="ais-v70-mobile-radius single"><button type="button" className="active">50 km <small>{adminFree ? "GRÁTIS" : `${aisPricing.areaCredits} CR`}</small></button></div>
+                    <div className="ais-v74-mobile-location-actions">
+                      <button type="button" onClick={locateDevice}><LocateFixed /> GPS do celular</button>
+                      {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Usar GPS encontrado</button>}
+                    </div>
+                    <div className="ais-v74-mobile-coordinates">
+                      <label><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></label>
+                      <label><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></label>
+                      <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar lat/long</button>
+                    </div>
+                    {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
+                    <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Usar centro atual do mapa</button>
+                    <div className="ais-v70-mobile-area-current"><small>Centro selecionado · raio 50 km</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
+                    <button type="button" className="ais-v70-area-go" onClick={() => { searchArea(); setMobilePanel(null); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar área de 50 km</button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {mobilePanel === "saved" && <div className="ais-v70-mobile-list">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <button type="button" key={item.vesselKey} onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>) : <p>Nenhum barco salvo.</p>}</div>}
+
+            {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => <button type="button" key={item.id} onClick={() => { openHistoryItem(item); setMobilePanel(null); }}><History /><span><b>{item.name}</b><small>{formatCoordMarine(Number(item.latitude), true)} · {formatCoordMarine(Number(item.longitude), false)}</small></span></button>)}</> : <p>Histórico vazio.</p>}</div>}
+
+            {mobilePanel === "recent" && <div className="ais-v70-mobile-list recent">{recentCards.length ? recentCards.map(({ key, vessel, historyItem, current }) => <button type="button" key={key} onClick={() => { if (current) centerOn(vessel.lat, vessel.lon, 12); else if (historyItem) openHistoryItem(historyItem); setMobilePanel(null); }}><Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{formatCoordMarine(vessel.lat, true)} · {formatCoordMarine(vessel.lon, false)}</small></span></button>) : <p>Nenhuma posição recente.</p>}</div>}
+          </div>
+        )}
+
+        {!tracked && showEmptyHint && (
+          <div className="ais-v61-map-empty">
+            <button
+              type="button"
+              className="ais-v71-empty-close"
+              aria-label="Fechar aviso"
+              title="Fechar aviso"
+              onClick={() => setShowEmptyHint(false)}
+            >
+              ×
+            </button>
+            <Radio />
+            <b>Nenhum barco selecionado</b>
+            <span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span>
+          </div>
+        )}
+
+        <div className="ais-bottom-status">
+          <span><Anchor /> Zoom {zoom}</span>
+          <span>{formatCoord(center.lat, true)} · {formatCoord(center.lon, false)}</span>
+          {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS ativo</span>}
+        </div>
+      </div>
+
+      {recentCards.length > 0 && (
+        <section className="ais-v67-recent-section">
+          <div className="ais-v67-recent-head">
+            <div>
+              <small>POSIÇÕES RECENTES</small>
+              <b>Últimos barcos consultados</b>
+            </div>
+            <span>até 3 cards · abrir histórico não gasta créditos</span>
+          </div>
+
+          <div className="ais-v67-recent-grid">
+            {recentCards.map(({ key, vessel, historyItem, current }) => {
+              const source = sourceInfo(vessel.dataSource);
+              const age = positionAgeLabel(vessel.positionReceived || vessel.updateTime);
+              const providerDate = parseProviderTime(vessel.positionReceived || vessel.updateTime);
+              const vesselKey = vesselKeyFrom(vessel);
+              const isSaved = vesselKey ? savedKeys.has(vesselKey) : false;
+              return (
+                <article key={`${key}-${historyItem?.id || "current"}`} className={`ais-v67-square-card ${current ? "current" : "history"}`}>
+                  <div className="ais-v67-card-top">
+                    <div className="ais-v67-card-name">
+                      <small>{current ? "EMBARCAÇÃO LOCALIZADA" : "HISTÓRICO AIS"}</small>
+                      <h3>{vessel.name || `MMSI ${vessel.mmsi}`}</h3>
+                      <em>MMSI {vessel.mmsi || "—"}{vessel.imo ? ` · IMO ${vessel.imo}` : ""}</em>
+                    </div>
+                    <div className={`ais-v67-source ${source.className}`}>
+                      <Radio />
+                      <span>{source.short}</span>
+                    </div>
+                  </div>
+
+                  <div className="ais-v67-position">
+                    <small>POSIÇÃO AIS</small>
+                    <strong>{formatCoordMarine(vessel.lat, true)}</strong>
+                    <strong>{formatCoordMarine(vessel.lon, false)}</strong>
+                    <span>WGS84 · graus e minutos decimais</span>
+                  </div>
+
+                  <div className="ais-v67-time">
+                    <div>
+                      <small>HORÁRIO DA POSIÇÃO</small>
+                      <b>{providerDate ? formatLocalDateTime(providerDate) : (vessel.positionReceived || "Não informado")}</b>
+                    </div>
+                    <strong className={age.className}>{age.label}</strong>
+                  </div>
+
+                  <div className="ais-v67-mini-grid">
+                    <span><small>VELOCIDADE</small><b>{vessel.sog != null ? `${Number(vessel.sog).toFixed(1)} kn` : "—"}</b></span>
+                    <span><small>RUMO</small><b>{vessel.cog != null ? `${Math.round(vessel.cog)}°` : "—"}</b></span>
+                    <span><small>PROA</small><b>{vessel.heading != null && vessel.heading < 511 ? `${Math.round(vessel.heading)}°` : "—"}</b></span>
+                    <span><small>STATUS</small><b>{vessel.navStatusText || "Não informado"}</b></span>
+                    <span className="wide"><small>DESTINO</small><b>{vessel.destination || "—"}</b></span>
+                    <span><small>FONTE</small><b>{source.title}</b></span>
+                  </div>
+
+                  <div className="ais-v67-card-actions">
+                    {current ? (
+                      <>
+                        <button type="button" className="primary" onClick={() => getVesselPosition({
+                          name: vessel.name || "",
+                          mmsi: vessel.mmsi,
+                          imo: vessel.imo || "",
+                          country: "",
+                          countryIso: "",
+                          shipType: "",
+                          typeSpecific: vessel.vesselType || "",
+                          callsign: vessel.callsign || "",
+                        }, true)} disabled={status === "loading"}>
+                          <RefreshCw /> Atualizar · {adminFree ? "GRÁTIS" : `${aisPricing.updateCredits} CR`}
+                        </button>
+                        <button type="button" className={isSaved ? "saved" : ""} disabled={Boolean(vesselKey && savingKeys.has(vesselKey))} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {vesselKey && savingKeys.has(vesselKey) ? "Salvando..." : isSaved ? "Salvo ✓" : "Salvar"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" className="primary" onClick={() => historyItem && openHistoryItem(historyItem)}>
+                          <MapPinned /> Abrir no mapa · 0 CR
+                        </button>
+                        <button type="button" className={isSaved ? "saved" : ""} disabled={Boolean(vesselKey && savingKeys.has(vesselKey))} onClick={() => vesselKey && isSaved ? removeSavedVessel(vesselKey) : saveVessel(vessel)}>
+                          <Bookmark /> {vesselKey && savingKeys.has(vesselKey) ? "Salvando..." : isSaved ? "Salvo ✓" : "Salvar"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
 
-      {pending && (
-        <div className="ais76-confirm-overlay" onMouseDown={() => setPending(null)}>
-          <section onMouseDown={(e) => e.stopPropagation()}>
-            <button className="x" type="button" onClick={() => setPending(null)}><X /></button>
-            <small>{pending.type === "update" ? "NOVA CONSULTA AIS" : "LOCALIZAR EMBARCAÇÃO"}</small>
-            <h3>{pending.name}</h3>
-            {pricing?.adminFree ? <div className="ais76-free">GRÁTIS — ADMIN</div> : <>
-              <div className="ais76-confirm-cost"><span>Custo</span><b>{currentCost} créditos</b><em>{brl(currentBrl)}</em></div>
-              <div className="ais76-balance-preview"><span>Saldo atual <b>{wallet?.balance ?? "—"}</b></span><span>Saldo após consulta <b>{wallet ? afterBalance : "—"}</b></span></div>
-            </>}
-            <div className="ais76-confirm-actions"><button type="button" className="secondary" onClick={() => setPending(null)}>CANCELAR</button><button type="button" className="primary" onClick={executePending}>LOCALIZAR</button></div>
-          </section>
-        </div>
-      )}
+      <div className="ais-footnote ais-v61-footnote">
+        <b>Data Docked: Vessel by Name + Vessel Location</b>
+        <span>Busca por nome, seleção do barco, posição individual e pesquisa por área de 50 km restauradas. A cobrança interna acontece somente após uma posição/área válida; administradores autorizados não têm desconto de créditos. A chave da API permanece protegida no servidor.</span>
+      </div>
     </section>
   );
 }

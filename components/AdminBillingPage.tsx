@@ -36,7 +36,8 @@ export default function AdminBillingPage() {
       <div className="admin-settings-grid">
         <label>Valor de 1 crédito (R$)<input name="CREDIT_UNIT_PRICE" type="number" min="0.01" step="0.01" defaultValue={s.CREDIT_UNIT_PRICE}/></label>
         <label>Consulta AIS (créditos)<input name="AIS_SINGLE_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_SINGLE_QUERY_CREDITS}/></label>
-        <label>Atualizar AIS (créditos)<input name="AIS_UPDATE_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_UPDATE_CREDITS}/></label>
+        <label>Atualizar posição AIS (créditos)<input name="AIS_UPDATE_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_UPDATE_CREDITS}/></label>
+        <label>Busca AIS por área 50 km (créditos)<input name="AIS_AREA_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_AREA_QUERY_CREDITS}/></label>
         <label>Pergunta IA (créditos)<input name="AI_BASIC_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AI_BASIC_QUERY_CREDITS}/></label>
         <label>Análise completa (créditos)<input name="AI_FULL_ANALYSIS_CREDITS" type="number" min="0" step="1" defaultValue={s.AI_FULL_ANALYSIS_CREDITS}/></label>
         <label>Análise avançada (créditos)<input name="AI_ADVANCED_ANALYSIS_CREDITS" type="number" min="0" step="1" defaultValue={s.AI_ADVANCED_ANALYSIS_CREDITS}/></label>

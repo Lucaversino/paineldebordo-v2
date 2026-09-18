@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
         creditUnitPrice: settings.CREDIT_UNIT_PRICE,
         aisSingleCredits: settings.AIS_SINGLE_QUERY_CREDITS,
         aisUpdateCredits: settings.AIS_UPDATE_CREDITS,
+        aisAreaCredits: settings.AIS_AREA_QUERY_CREDITS,
         aiBasicCredits: settings.AI_BASIC_QUERY_CREDITS,
         aiFullCredits: settings.AI_FULL_ANALYSIS_CREDITS,
         aiAdvancedCredits: settings.AI_ADVANCED_ANALYSIS_CREDITS,
