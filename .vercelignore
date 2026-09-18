@@ -5,3 +5,5 @@ scripts/
 tests/
 vendor/
 *.zip
+
+app/api/ais-stream/

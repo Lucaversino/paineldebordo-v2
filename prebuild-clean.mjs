@@ -11,10 +11,14 @@ const legacyPaths = [
   ".sites-runtime",
   "tests",
   "vendor",
+  // Legacy AISStream WebSocket route from v56/v57. The current AIS uses Data Docked HTTP API.
+  // GitHub web uploads can leave this old tracked route behind and break Turbopack
+  // when its old dependencies (@vercel/functions and ws) are no longer installed.
+  "app/api/ais-stream",
 ];
 
 for (const path of legacyPaths) {
   await rm(path, { recursive: true, force: true });
 }
 
-console.log("Legacy Vinext/Cloudflare D1 files removed before build.");
+console.log("Legacy files (including obsolete AISStream WebSocket route) removed before build.");
