@@ -38,10 +38,10 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
   AIS_SINGLE_QUERY_CREDITS: "2",
   AIS_UPDATE_CREDITS: "1",
   AIS_AREA_QUERY_CREDITS: "10",
-  AI_BASIC_QUERY_CREDITS: "1",
-  AI_FULL_ANALYSIS_CREDITS: "2",
-  AI_ADVANCED_ANALYSIS_CREDITS: "3",
-  AI_WELCOME_BONUS_BRL: "2.00",
+  AI_BASIC_QUERY_CREDITS: "0",
+  AI_FULL_ANALYSIS_CREDITS: "0",
+  AI_ADVANCED_ANALYSIS_CREDITS: "0",
+  AI_WELCOME_BONUS_BRL: "0",
   AIS_CACHE_MINUTES: "0",
   AIS_PROVIDER_COST_PER_QUERY_BRL: "0",
   OPENAI_INPUT_COST_PER_1M: "0",
@@ -53,7 +53,7 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
 const SETTINGS_CACHE_MS = 60_000;
-const BILLING_SCHEMA_VERSION = "84";
+const BILLING_SCHEMA_VERSION = "85";
 const ADMIN_INITIAL_CREDITS = Math.max(0, Math.round(Number(process.env.ADMIN_INITIAL_CREDITS || 80) || 80));
 
 let schemaPromise: Promise<void> | null = null;
@@ -211,23 +211,29 @@ async function migrateBillingSchemaIfNeeded() {
   `), 1));
   if (String(versionRows[0]?.value || "") === BILLING_SCHEMA_VERSION) return;
 
-  // Existing users do NOT receive the launch bonus retroactively. Only wallets created after V80 do.
+  // V85: Painel IA fica livre para todos. Créditos continuam sendo usados somente pelo AIS.
   await db.execute(sql`
     alter table public.credit_wallets
       add column if not exists ai_bonus_brl double precision not null default 0,
-      add column if not exists ai_bonus_granted boolean not null default false
-  `);
-  await db.execute(sql`update public.credit_wallets set ai_bonus_granted = true where ai_bonus_granted = false`);
-  await db.execute(sql`
-    insert into public.billing_settings (key, value)
-    values ('AI_WELCOME_BONUS_BRL', '2.00')
-    on conflict (key) do nothing
+      add column if not exists ai_bonus_granted boolean not null default false,
+      add column if not exists free_ai_access boolean not null default true
   `);
   await db.execute(sql`
     update public.credit_wallets
-    set free_ais_access = false, free_ai_access = false, updated_at = CURRENT_TIMESTAMP::text
-    where free_ais_access = true or free_ai_access = true
+    set ai_bonus_brl = 0, ai_bonus_granted = true, free_ai_access = true, free_ais_access = false, updated_at = CURRENT_TIMESTAMP::text
   `);
+  for (const [key, value] of Object.entries({
+    AI_BASIC_QUERY_CREDITS: '0',
+    AI_FULL_ANALYSIS_CREDITS: '0',
+    AI_ADVANCED_ANALYSIS_CREDITS: '0',
+    AI_WELCOME_BONUS_BRL: '0',
+  })) {
+    await db.execute(sql`
+      insert into public.billing_settings (key, value, updated_at)
+      values (${key}, ${value}, CURRENT_TIMESTAMP::text)
+      on conflict (key) do update set value = excluded.value, updated_at = CURRENT_TIMESTAMP::text
+    `);
+  }
   await db.execute(sql`
     insert into public.billing_settings (key, value)
     values ('BILLING_SCHEMA_VERSION', ${BILLING_SCHEMA_VERSION})
@@ -265,10 +271,10 @@ function parseSettings(result: unknown): BillingSettings {
     AIS_SINGLE_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_SINGLE_QUERY_CREDITS"), 2))),
     AIS_UPDATE_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_UPDATE_CREDITS"), 1))),
     AIS_AREA_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AIS_AREA_QUERY_CREDITS"), 10))),
-    AI_BASIC_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AI_BASIC_QUERY_CREDITS"), 1))),
-    AI_FULL_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_FULL_ANALYSIS_CREDITS"), 2))),
-    AI_ADVANCED_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_ADVANCED_ANALYSIS_CREDITS"), 3))),
-    AI_WELCOME_BONUS_BRL: Math.max(0, asNumber(get("AI_WELCOME_BONUS_BRL"), 2)),
+    AI_BASIC_QUERY_CREDITS: Math.max(0, Math.round(asNumber(get("AI_BASIC_QUERY_CREDITS"), 0))),
+    AI_FULL_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_FULL_ANALYSIS_CREDITS"), 0))),
+    AI_ADVANCED_ANALYSIS_CREDITS: Math.max(0, Math.round(asNumber(get("AI_ADVANCED_ANALYSIS_CREDITS"), 0))),
+    AI_WELCOME_BONUS_BRL: Math.max(0, asNumber(get("AI_WELCOME_BONUS_BRL"), 0)),
     AIS_CACHE_MINUTES: Math.max(0, Math.round(asNumber(get("AIS_CACHE_MINUTES"), 0))),
     AIS_PROVIDER_COST_PER_QUERY_BRL: Math.max(0, asNumber(get("AIS_PROVIDER_COST_PER_QUERY_BRL"), 0)),
     OPENAI_INPUT_COST_PER_1M: Math.max(0, asNumber(get("OPENAI_INPUT_COST_PER_1M"), 0)),
@@ -305,12 +311,12 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
   `), 1));
 
   if (!rows.length) {
-    const welcomeBonus = admin ? 0 : settings.AI_WELCOME_BONUS_BRL;
+    const welcomeBonus = 0;
     rows = rowsOf<any>(await retryDb(() => db.execute(sql`
       insert into public.credit_wallets
         (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
       values
-        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, false, false)
+        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, false, true)
       on conflict (user_id) do nothing
       returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
     `), 1));
@@ -331,11 +337,11 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
 
   let row = rows[0] || {};
   const expectedRole = admin ? "super_admin" : "user";
-  const flagsWrong = Boolean(row.free_ais_access) || Boolean(row.free_ai_access) || String(row.role || "") !== expectedRole || String(row.email || "") !== String(user.email || "");
+  const flagsWrong = Boolean(row.free_ais_access) || !Boolean(row.free_ai_access) || String(row.role || "") !== expectedRole || String(row.email || "") !== String(user.email || "");
   if (flagsWrong) {
     const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
       update public.credit_wallets set
-        email = ${user.email || null}, role = ${expectedRole}, free_ais_access = false, free_ai_access = false, updated_at = CURRENT_TIMESTAMP::text
+        email = ${user.email || null}, role = ${expectedRole}, ai_bonus_brl = 0, ai_bonus_granted = true, free_ais_access = false, free_ai_access = true, updated_at = CURRENT_TIMESTAMP::text
       where user_id = ${user.id}
       returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
     `), 1));
@@ -375,9 +381,9 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
     email: row.email || user.email,
     role: row.role || expectedRole,
     balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
-    aiBonusBrl: admin ? 0 : Math.max(0, Math.round(asNumber(row.ai_bonus_brl, 0) * 100) / 100),
+    aiBonusBrl: 0,
     freeAisAccess: false,
-    freeAiAccess: false,
+    freeAiAccess: true,
     isSuperAdmin: admin,
   };
 }

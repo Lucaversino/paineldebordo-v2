@@ -1,3 +1,25 @@
+# PAINEL DE BORDO — v85
+
+Continuação direta da **V84**. A V85 restaura a lógica de análise do **Painel IA da V52** dentro do botão flutuante e deixa a IA **livre/grátis para todos os usuários**, sem desconto de créditos. Os créditos continuam existindo somente para os recursos AIS.
+
+Principais mudanças da V85:
+
+- Painel IA V52 em janela flutuante;
+- perguntas, análise de viagem, comparação, melhores condições e próxima largada marcadas como **GRÁTIS**;
+- nenhuma rota da IA chama cobrança/debito de créditos;
+- carteira marca `free_ai_access = true` como proteção adicional;
+- preços internos da IA migrados para zero e bônus antigo de IA desativado;
+- botão **Testar API** dentro do assistente;
+- `GET /api/ai-assistant` testa de verdade a chave e o modelo na OpenAI, em vez de apenas conferir se a variável existe;
+- timeout do navegador ampliado e tratamento de falha do banco separado da chamada OpenAI;
+- se o contexto do Supabase falhar, o assistente tenta responder com os dados disponíveis em vez de cancelar toda a consulta.
+
+A checagem do projeto em produção mostrou que o endpoint de status da IA respondia, mas uma consulta POST retornou 502 e os logs da Vercel também registravam timeouts/fechamentos de conexão do pooler do Supabase. Por isso a V85 separa melhor **problema de banco** de **problema de OpenAI** e exibe o resultado do teste real da API.
+
+Consulte `FIX-V85-IA-V52-GRATIS-API.md`.
+
+---
+
 # PAINEL DE BORDO — v84
 
 Continuação direta da V83. O Super Admin deixa de ter AIS/IA grátis e recebe **80 créditos iniciais, uma única vez**. O painel administrativo interno agora permite localizar usuários e adicionar créditos manualmente (+10, +20, +50, +100 ou valor personalizado), com registro no extrato e estatística separada de créditos vendidos.

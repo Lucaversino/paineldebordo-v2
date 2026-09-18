@@ -1,9 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
-import { getEnvironmentalSnapshots } from "../../../lib/environmentalSnapshots";
-import { assertCanUse, debitCreditsAfterSuccess, ensureWallet, getBillingSettings, isSuperAdmin, logAiUsage, quoteService } from "../../../lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,7 +10,7 @@ const DEFAULT_MODEL = "gpt-5.6-sol";
 const ALLOWED_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 type ClientMessage = { role?: string; content?: string };
-
+type AiMode = "basic" | "full" | "advanced";
 type CatchRow = {
   tripId: number;
   fishingSetId: number;
@@ -51,24 +49,44 @@ function compactExternalContext(value: unknown) {
 }
 
 function extractOutputText(response: any) {
-  if (typeof response?.output_text === "string" && response.output_text.trim()) {
-    return response.output_text.trim();
-  }
+  if (typeof response?.output_text === "string" && response.output_text.trim()) return response.output_text.trim();
   for (const item of response?.output || []) {
     for (const part of item?.content || []) {
-      if (part?.type === "output_text" && typeof part.text === "string" && part.text.trim()) {
-        return part.text.trim();
-      }
+      if (part?.type === "output_text" && typeof part.text === "string" && part.text.trim()) return part.text.trim();
     }
   }
   return "";
 }
 
-async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "advanced") {
+async function testOpenAiConnection(apiKey: string, model: string) {
+  try {
+    const response = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(6_000),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) return { ok: true, status: response.status };
+    return {
+      ok: false,
+      status: response.status,
+      error: response.status === 401
+        ? "OPENAI_API_KEY recusada"
+        : response.status === 404
+          ? `Modelo ${model} não encontrado ou sem acesso`
+          : body?.error?.message || `OpenAI respondeu HTTP ${response.status}`,
+    };
+  } catch (error: any) {
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return { ok: false, error: timedOut ? "Tempo esgotado ao testar a OpenAI" : "Não foi possível alcançar a OpenAI" };
+  }
+}
+
+async function buildFishingContext(ownerId: string, mode: AiMode) {
   const db = getDb();
   const tripLimit = mode === "basic" ? 8 : mode === "full" ? 16 : 24;
-  const setLimit = mode === "basic" ? 32 : mode === "full" ? 96 : 160;
-  const catchLimit = mode === "basic" ? 320 : mode === "full" ? 1000 : 1800;
+  const setLimit = mode === "basic" ? 36 : mode === "full" ? 96 : 160;
+  const catchLimit = mode === "basic" ? 360 : mode === "full" ? 1000 : 1800;
 
   const tripRows = await db
     .select({
@@ -92,9 +110,7 @@ async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "ad
     .orderBy(desc(trips.id))
     .limit(tripLimit);
 
-  const currentTripRow = tripRows.find((trip) => trip.status === "IN_PROGRESS") || tripRows[0] || null;
-
-  const [setRows, catchRows, speciesRows, environmentRows] = await Promise.all([
+  const [setRows, catchRows, speciesRows] = await Promise.all([
     db
       .select({
         id: fishingSets.id,
@@ -130,17 +146,10 @@ async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "ad
       .where(eq(trips.ownerId, ownerId))
       .orderBy(desc(catches.caughtAt))
       .limit(catchLimit),
-    db
-      .select({ id: species.id, commonName: species.commonName, code: species.code })
-      .from(species)
-      .where(eq(species.ownerId, ownerId)),
-    mode === "basic" || !currentTripRow
-      ? Promise.resolve([])
-      : getEnvironmentalSnapshots(db, ownerId, currentTripRow.id).catch(() => []),
+    db.select({ id: species.id, commonName: species.commonName, code: species.code }).from(species).where(eq(species.ownerId, ownerId)),
   ]);
 
   const speciesName = new Map(speciesRows.map((item) => [item.id, item.commonName]));
-  const environmentBySet = new Map((environmentRows as any[]).map((item: any) => [Number(item.fishingSetId), item]));
   const catchesBySet = new Map<number, CatchRow[]>();
   for (const row of catchRows as CatchRow[]) {
     const list = catchesBySet.get(row.fishingSetId) || [];
@@ -174,26 +183,6 @@ async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "ad
         kg: safeNumber(item.weightKg),
         caughtAt: item.caughtAt,
       })),
-      environment: (() => {
-        const snapshot = environmentBySet.get(Number(set.id));
-        if (!snapshot) return null;
-        return {
-          status: snapshot.status,
-          sourceMode: snapshot.sourceMode,
-          referenceTime: snapshot.referenceTime,
-          wind: { speedKmh: snapshot.windSpeedKmh, direction: snapshot.windDirection, directionDeg: snapshot.windDirectionDeg, gustKmh: snapshot.gustKmh },
-          sea: {
-            waveHeightM: snapshot.waveHeightM, waveDirection: snapshot.waveDirection, directionDeg: snapshot.waveDirectionDeg, wavePeriodS: snapshot.wavePeriodS,
-            swellHeightM: snapshot.swellHeightM, swellDirection: snapshot.swellDirection, swellPeriodS: snapshot.swellPeriodS,
-            temperatureC: snapshot.seaTemperatureC, currentKmh: snapshot.currentKmh, currentDirection: snapshot.currentDirection,
-            seaLevelMslM: snapshot.seaLevelMslM,
-          },
-          chlorophyllMgM3: snapshot.chlorophyllMgM3,
-          lunar: { phase: snapshot.lunarPhase, illumination: snapshot.lunarIllumination },
-          sunrise: snapshot.sunrise,
-          sunset: snapshot.sunset,
-        };
-      })(),
       notes: set.notes,
     };
   });
@@ -232,131 +221,78 @@ async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "ad
     };
   });
 
-  const currentTrip = tripSummaries.find((trip) => trip.status === "IN_PROGRESS") || null;
-  const topSets = [...setDetails]
-    .filter((set) => set.retainedKg > 0)
-    .sort((a, b) => b.retainedKg - a.retainedKg)
-    .slice(0, mode === "basic" ? 6 : 12)
-    .map(({ catches: _catches, ...set }) => set);
+  const currentTrip = tripSummaries.find((trip) => trip.status === "IN_PROGRESS") || tripSummaries[0] || null;
+  const topSets = [...setDetails].filter((set) => set.retainedKg > 0).sort((a, b) => b.retainedKg - a.retainedKg).slice(0, 12).map(({ catches: _catches, ...set }) => set);
 
   return {
     generatedAt: new Date().toISOString(),
     currentTrip,
-    tripHistory: tripSummaries,
+    tripHistory: mode === "basic" ? tripSummaries.slice(0, 4) : tripSummaries,
     finishedTripCount: tripSummaries.filter((trip) => trip.status === "FINISHED").length,
     totalSets: setDetails.length,
-    topSets,
+    topSets: mode === "basic" ? topSets.slice(0, 6) : topSets,
     recentSetDetails: setDetails.slice(0, mode === "basic" ? 20 : mode === "full" ? 60 : 120),
   };
+}
+
+async function logUsage(args: { userId: string; requestType: AiMode; model: string; result?: any; status: string; errorText?: string }) {
+  try {
+    const usage = args.result?.usage || {};
+    await getDb().execute(sql`
+      insert into public.ai_usage
+        (user_id, request_type, model, input_tokens, output_tokens, total_tokens, credits_charged, estimated_api_cost_brl, status, error_text)
+      values
+        (${args.userId}, ${args.requestType}, ${args.model}, ${Number(usage.input_tokens || 0)}, ${Number(usage.output_tokens || 0)}, ${Number(usage.total_tokens || 0)}, 0, 0, ${args.status}, ${args.errorText || null})
+    `);
+  } catch {
+    // O log é opcional e nunca pode derrubar o assistente.
+  }
 }
 
 export async function GET(request: Request) {
   const user = await getPanelUserFromRequest(request);
   if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
-  const settings = await getBillingSettings();
-  const wallet = await ensureWallet(user, settings);
-  const basic = quoteService(wallet, settings, "ai_basic");
-  const full = quoteService(wallet, settings, "ai_full");
-  const advanced = quoteService(wallet, settings, "ai_advanced");
-  const model = process.env.OPENAI_MODEL || settings.AI_BASIC_MODEL || DEFAULT_MODEL;
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
+  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const connection = apiKey ? await testOpenAiConnection(apiKey, model) : { ok: false, error: "OPENAI_API_KEY ausente" };
+
   return Response.json({
-    configured: Boolean(process.env.OPENAI_API_KEY),
+    configured: Boolean(apiKey),
     model,
     reasoningEffort: process.env.OPENAI_REASONING_EFFORT || "high",
-    wallet,
-    pricing: {
-      basicCredits: basic.credits,
-      fullCredits: full.credits,
-      advancedCredits: advanced.credits,
-      basicBrl: basic.fullPriceBrl,
-      fullBrl: full.fullPriceBrl,
-      advancedBrl: advanced.fullPriceBrl,
-      basicBonusBrl: basic.bonusAppliedBrl,
-      fullBonusBrl: full.bonusAppliedBrl,
-      advancedBonusBrl: advanced.bonusAppliedBrl,
-      welcomeBonusBrl: settings.AI_WELCOME_BONUS_BRL ?? 2,
-      adminFree: false,
-    },
+    connection,
+    free: true,
+    creditsRequired: 0,
   });
-}
-
-function compactContextByMode(context: any, mode: "basic" | "full" | "advanced") {
-  if (mode === "advanced") return context;
-  if (mode === "full") {
-    return {
-      generatedAt: context.generatedAt,
-      currentTrip: context.currentTrip,
-      tripHistory: context.tripHistory,
-      finishedTripCount: context.finishedTripCount,
-      totalSets: context.totalSets,
-      topSets: context.topSets?.slice(0, 10) || [],
-      recentSetDetails: context.recentSetDetails?.slice(-50) || [],
-    };
-  }
-  return {
-    generatedAt: context.generatedAt,
-    currentTrip: context.currentTrip,
-    totalSets: context.totalSets,
-    topSets: context.topSets?.slice(0, 6) || [],
-    recentSetDetails: context.recentSetDetails?.slice(-16).map((set: any) => ({
-      id: set.id,
-      tripId: set.tripId,
-      setNumber: set.setNumber,
-      startedAt: set.startedAt,
-      finishedAt: set.finishedAt,
-      depthMeters: set.depthMeters,
-      primaryKg: set.primaryKg,
-      mixtureKg: set.mixtureKg,
-      discardKg: set.discardKg,
-      retainedKg: set.retainedKg,
-      catches: set.catches,
-    })) || [],
-  };
 }
 
 export async function POST(request: Request) {
   const user = await getPanelUserFromRequest(request);
   if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
-  const admin = isSuperAdmin(user);
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    return Response.json(
-      { error: "OPENAI_API_KEY não configurada na Vercel. Adicione a chave como variável Secret e faça um novo deploy." },
-      { status: 503 },
-    );
+    return Response.json({ error: "OPENAI_API_KEY não configurada na Vercel. Adicione a chave como variável Secret e faça um novo deploy." }, { status: 503 });
   }
 
   const body = await request.json().catch(() => ({}));
   const question = String(body?.question || "").trim().slice(0, 2000);
   if (!question) return Response.json({ error: "Escreva uma pergunta para o assistente." }, { status: 400 });
-  const mode = body?.mode === "advanced" ? "advanced" : body?.mode === "full" ? "full" : "basic";
-  const creditMode = mode === "advanced" ? "ai_advanced" as const : mode === "full" ? "ai_full" as const : "ai_basic" as const;
+  const mode: AiMode = body?.mode === "advanced" ? "advanced" : body?.mode === "full" ? "full" : "basic";
 
-  let access: any = null;
+  let fishingContext: any;
   try {
-    access = await assertCanUse(user, creditMode);
-  } catch (error: any) {
-    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
-  }
-
-  const settings = access.settings;
-  let allContext: any;
-  try {
-    allContext = await buildFishingContext(user.id, mode);
+    fishingContext = await buildFishingContext(user.id, mode);
   } catch (error) {
-    console.error("Painel IA context error", error);
-    allContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], finishedTripCount: 0, totalSets: 0, topSets: [], recentSetDetails: [] };
+    console.error("Painel IA V85 context error", error);
+    fishingContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], finishedTripCount: 0, totalSets: 0, topSets: [], recentSetDetails: [] };
   }
-  const fishingContext = compactContextByMode(allContext, mode);
-  const environment = mode === "basic" ? null : compactExternalContext(body?.environment);
-  const statisticalAnalysis = mode === "basic" ? null : compactExternalContext(body?.statisticalAnalysis);
+
+  const environment = compactExternalContext(body?.environment);
+  const statisticalAnalysis = compactExternalContext(body?.statisticalAnalysis);
   const conversation = normalizeConversation(body?.conversation);
-  const model = mode === "advanced"
-    ? (settings?.AI_ADVANCED_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
-    : mode === "full"
-      ? (settings?.AI_FULL_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
-      : (settings?.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL);
+  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const configuredEffort = process.env.OPENAI_REASONING_EFFORT || "high";
   const reasoningEffort = ALLOWED_EFFORTS.has(configuredEffort) ? configuredEffort : "high";
 
@@ -368,14 +304,20 @@ REGRAS DE QUALIDADE:
 2. Diferencie claramente: FATO OBSERVADO, PADRÃO ESTATÍSTICO e HIPÓTESE OPERACIONAL.
 3. Correlação não é causalidade. Se a amostra for pequena, diga isso de forma objetiva.
 4. Compare viagem atual com viagens anteriores quando houver histórico suficiente.
-5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria e, quando o modo permitir, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila.
-6. Não trate previsão de pesca como garantia.
+5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila quando esses dados estiverem disponíveis.
+6. Não trate previsão de pesca como garantia. Expresse janelas e condições como hipóteses operacionais baseadas no histórico.
 7. Dados de maré/modelos oceânicos não substituem carta náutica, avisos oficiais, decisão do comandante nem procedimentos de segurança.
-8. Seja direto, técnico e compreensível para uso a bordo.
-9. Responda em português do Brasil.
+8. Seja direto, técnico e compreensível para uso a bordo. Evite texto genérico.
+9. Quando a pergunta pedir uma decisão, entregue uma recomendação operacional condicionada às evidências, acompanhada do grau de confiança.
+10. Responda em português do Brasil.
 
-MODO DA SOLICITAÇÃO: ${mode.toUpperCase()}.
-Use apenas o contexto necessário e não peça dados que já estejam disponíveis no painel.`;
+FORMATO PREFERIDO:
+- RESUMO: 2 a 4 linhas.
+- EVIDÊNCIAS: números e comparações concretas do painel.
+- LEITURA OPERACIONAL: o que os padrões podem indicar.
+- O QUE OBSERVAR NA PRÓXIMA LARGADA: checklist curto.
+- CONFIANÇA: alta, média, baixa ou insuficiente, com motivo.
+Use texto simples e listas curtas; não use tabelas extensas.`;
 
   const payload = {
     pergunta: question,
@@ -390,79 +332,54 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
     openAIResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(38_000),
       body: JSON.stringify({
         model,
         instructions,
         input: `Analise o contexto operacional abaixo e responda à pergunta do usuário.\n\n${JSON.stringify(payload)}`,
         reasoning: { effort: reasoningEffort },
-        max_output_tokens: mode === "basic" ? 900 : mode === "full" ? 1500 : 1900,
+        max_output_tokens: mode === "basic" ? 1200 : 1800,
         store: false,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(55_000),
     });
   } catch (error: any) {
-    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: error?.name === "TimeoutError" ? "timeout" : "network" }).catch(() => null);
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
-    return Response.json({ error: timedOut ? "A OpenAI demorou para responder. Tente novamente; nenhum crédito foi consumido." : "Não foi possível conectar à OpenAI. Nenhum crédito foi consumido." }, { status: timedOut ? 504 : 502 });
+    void logUsage({ userId: user.id, requestType: mode, model, status: "error", errorText: timedOut ? "timeout" : "network" });
+    return Response.json({ error: timedOut ? "A OpenAI demorou para responder. Tente novamente. A IA é grátis e nenhum crédito foi consumido." : "Não foi possível conectar à OpenAI agora. A IA é grátis e nenhum crédito foi consumido." }, { status: timedOut ? 504 : 502 });
   }
 
   const result = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
     const detail = result?.error?.message || "A OpenAI não conseguiu processar esta análise.";
-    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
+    void logUsage({ userId: user.id, requestType: mode, model, status: "error", errorText: detail });
     const friendly = openAIResponse.status === 401
       ? "A OPENAI_API_KEY foi recusada. Confira a chave na Vercel."
       : openAIResponse.status === 429
-        ? "A conta OpenAI atingiu limite de uso/crédito ou rate limit. Confira Billing e Limits na plataforma OpenAI."
-        : `A OpenAI recusou a análise (${openAIResponse.status}).`;
-    return Response.json({ error: friendly, detail: admin ? detail : undefined }, { status: openAIResponse.status });
+        ? "A OpenAI atingiu um limite de uso/rate limit. Confira Billing e Limits da conta da API."
+        : detail;
+    return Response.json({ error: friendly, code: result?.error?.code || result?.error?.type || "openai_error" }, { status: openAIResponse.status });
   }
 
   const answer = extractOutputText(result);
   if (!answer) {
-    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
-    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
+    void logUsage({ userId: user.id, requestType: mode, model, result, status: "empty", errorText: "sem texto" });
+    return Response.json({ error: "A IA concluiu a solicitação sem retornar texto. Tente novamente." }, { status: 502 });
   }
 
-  const usage = result?.usage ? {
-    inputTokens: Number(result.usage.input_tokens || 0),
-    outputTokens: Number(result.usage.output_tokens || 0),
-    totalTokens: Number(result.usage.total_tokens || 0),
-  } : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
-
-  let debit: any;
-  try {
-    debit = await debitCreditsAfterSuccess({
-      user,
-      mode: creditMode,
-      description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
-      reference: result?.id || null,
-      metadata: { model: result?.model || model, mode },
-    });
-  } catch (error: any) {
-    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
-  }
-
-  const estimatedApiCostBrl = ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M);
-  await logAiUsage({
-    userId: user.id,
-    requestType: mode,
-    model: result?.model || model,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    creditsCharged: debit.charged,
-    estimatedApiCostBrl,
-    status: "success",
-  }).catch(() => null);
+  void logUsage({ userId: user.id, requestType: mode, model: result?.model || model, result, status: "success" });
 
   return Response.json({
     answer,
     model: result?.model || model,
     responseId: result?.id || null,
-    usage,
-    billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free, bonusUsedBrl: debit.bonusUsedBrl, aiBonusBrl: debit.aiBonusBrl },
+    usage: result?.usage ? {
+      inputTokens: result.usage.input_tokens ?? null,
+      outputTokens: result.usage.output_tokens ?? null,
+      totalTokens: result.usage.total_tokens ?? null,
+    } : null,
+    billing: { chargedCredits: 0, free: true },
+    free: true,
     generatedAt: new Date().toISOString(),
   });
 }
