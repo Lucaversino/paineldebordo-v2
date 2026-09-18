@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
+import DailyDataUsage from "../components/DailyDataUsage";
 
 const ModuleLoading = () => <section className="content"><div className="emptydash"><h2>Carregando módulo…</h2></div></section>;
 const Operations = dynamic(() => import("../components/Operations"), { ssr: false, loading: ModuleLoading });
@@ -344,6 +345,7 @@ export default function Home() {
         </header>
         {view === "Dashboard" ? (
           <section className="content">
+            {!loading && !loadError && <DailyDataUsage />}
             {loading ? (
               <div className="emptydash">
                 <h2>Carregando painel...</h2>
