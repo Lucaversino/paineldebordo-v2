@@ -690,8 +690,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
         )}
 
-        {tracked ? (
-          <div className="ais-vessel-card ais-v61-vessel-card ais-v62-vessel-card">
+        {!tracked && (
+          <div className="ais-v61-map-empty"><Radio /><b>Nenhum barco selecionado</b><span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span></div>
+        )}
+
+        <div className="ais-bottom-status">
+          <span><Anchor /> Zoom {zoom}</span>
+          {baseMode === "dhn" && <span><MapPinned /> {selectedDhnChart ? `DHN ${selectedDhnChart}` : "DHN sem tiles"}</span>}
+          <span>{formatCoord(center.lat, true)} · {formatCoord(center.lon, false)}</span>
+          {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS ativo</span>}
+        </div>
+      </div>
+
+      {tracked && (
+        <div className="ais-v63-result-wrap">
+          <div className="ais-vessel-card ais-v61-vessel-card ais-v62-vessel-card ais-v63-below-card">
             <div className="ais-v62-card-head">
               <div>
                 <small>EMBARCAÇÃO LOCALIZADA</small>
@@ -757,17 +770,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <RefreshCw /> ATUALIZAR POSIÇÃO · 1 CRÉDITO
             </button>
           </div>
-        ) : (
-          <div className="ais-v61-map-empty"><Radio /><b>Nenhum barco selecionado</b><span>Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui.</span></div>
-        )}
-
-        <div className="ais-bottom-status">
-          <span><Anchor /> Zoom {zoom}</span>
-          {baseMode === "dhn" && <span><MapPinned /> {selectedDhnChart ? `DHN ${selectedDhnChart}` : "DHN sem tiles"}</span>}
-          <span>{formatCoord(center.lat, true)} · {formatCoord(center.lon, false)}</span>
-          {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS ativo</span>}
         </div>
-      </div>
+      )}
 
       <div className="ais-footnote ais-v61-footnote">
         <b>Data Docked: Vessel by Name + Vessel Location</b>

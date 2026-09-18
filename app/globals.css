@@ -1533,3 +1533,23 @@ main.loginpage{
 .app:not(.dark) .ais-v62-vessel-card{background:linear-gradient(150deg,#fffffff8,#eff9f6f8)}.app:not(.dark) .ais-v62-position-hero{background:#f4fbf9}.app:not(.dark) .ais-v62-position-hero>strong{color:#123a40;text-shadow:none}.app:not(.dark) .ais-v62-time-row>div{background:#fff;border-color:#c6dcda}.app:not(.dark) .ais-v62-time-row b{color:#173a41}.app:not(.dark) .ais-v62-source-note{background:#f4fbf9}.app:not(.dark) .ais-v62-source-note b{color:#21464d}
 @media(max-width:900px){.ais-v62-vessel-card{width:auto;left:57px;right:8px;max-height:69%;overflow:auto}.ais-v62-position-hero>strong{font-size:clamp(22px,6vw,31px)}}
 @media(max-width:620px){.ais-v62-vessel-card{left:8px;right:8px;bottom:8px;max-height:72%;padding:11px}.ais-v62-card-head{display:grid}.ais-v62-source-badge{width:100%;min-width:0}.ais-v62-time-row{grid-template-columns:1fr}.ais-v62-position-hero{padding:11px}.ais-v62-position-hero>strong{font-size:25px}.ais-v62-detail-grid{grid-template-columns:1fr 1fr!important}}
+
+/* AIS v63 — card de posição abaixo do mapa, menor e sem cobrir a carta */
+.ais-v63-result-wrap{max-width:1600px;width:100%;margin:0 auto;display:flex;justify-content:flex-start}
+.ais-v63-below-card{position:relative!important;z-index:1!important;left:auto!important;right:auto!important;bottom:auto!important;top:auto!important;width:min(980px,100%)!important;max-height:none!important;overflow:visible!important;margin:0;padding:12px 14px!important;border-radius:12px;box-shadow:0 10px 30px #00131a55;backdrop-filter:none}
+.ais-v63-below-card .ais-v62-card-head{margin-bottom:8px}
+.ais-v63-below-card .ais-v62-card-head h3{font-size:16px}
+.ais-v63-below-card .ais-v62-source-badge{min-width:140px;padding:7px 9px}
+.ais-v63-below-card .ais-v62-position-hero{padding:10px 12px;grid-template-columns:1fr 1fr;column-gap:20px;align-items:end}
+.ais-v63-below-card .ais-v62-position-hero>small,.ais-v63-below-card .ais-v62-position-hero>span{grid-column:1/-1}
+.ais-v63-below-card .ais-v62-position-hero>strong{font-size:clamp(21px,1.8vw,29px)}
+.ais-v63-below-card .ais-v62-time-row{margin-top:7px}
+.ais-v63-below-card .ais-v62-time-row>div{padding:7px 9px}
+.ais-v63-below-card .ais-v62-time-row b{font-size:10px}
+.ais-v63-below-card .ais-v62-detail-grid{grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:5px;margin-top:7px}
+.ais-v63-below-card .ais-detail-grid span{padding:6px}
+.ais-v63-below-card .ais-detail-grid b{font-size:9px}
+.ais-v63-below-card .ais-v62-source-note{margin-top:7px;padding:6px 8px}
+.ais-v63-below-card .ais-refresh-position{margin-top:7px;height:34px;width:max-content;min-width:190px}
+@media(max-width:900px){.ais-v63-result-wrap{display:block}.ais-v63-below-card{width:100%!important}.ais-v63-below-card .ais-v62-detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(max-width:620px){.ais-v63-below-card{padding:10px!important}.ais-v63-below-card .ais-v62-card-head{display:grid}.ais-v63-below-card .ais-v62-source-badge{width:100%;min-width:0}.ais-v63-below-card .ais-v62-position-hero{grid-template-columns:1fr;gap:2px}.ais-v63-below-card .ais-v62-position-hero>small,.ais-v63-below-card .ais-v62-position-hero>span{grid-column:auto}.ais-v63-below-card .ais-v62-position-hero>strong{font-size:23px}.ais-v63-below-card .ais-v62-time-row{grid-template-columns:1fr}.ais-v63-below-card .ais-v62-detail-grid{grid-template-columns:1fr 1fr!important}.ais-v63-below-card .ais-refresh-position{width:100%}}

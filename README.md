@@ -1,4 +1,4 @@
-# PAINEL DE BORDO — PESCA INDUSTRIAL v62
+# PAINEL DE BORDO — PESCA INDUSTRIAL v63
 
 Versão 60 preparada para **Vercel + Supabase**, com Inteligência Oceânica, Assistente IA, Ventos e Mar, Cartas Raster DHN/CHM e AIS Data Docked com pesquisa direta por latitude e longitude.
 ## Correção v48 — PDF + proteção de build na Vercel
@@ -201,3 +201,11 @@ A busca por área (10 créditos) foi desativada nesta versão. O mapa mantém Ca
 ## v62 — posição AIS em destaque
 
 A posição do barco agora aparece em grande formato náutico (graus e minutos decimais), com fonte AIS informada pelo provedor, horário real da posição, idade do dado e horário atual da consulta. O painel somente chama a posição de satélite quando `dataSource` retornar Satellite/S-AIS; caso contrário mostra Terrestrial/T-AIS.
+
+
+## v63 — card AIS abaixo do mapa
+
+- Card da embarcação removido de cima do mapa.
+- Posição AIS, fonte, horário e dados do barco agora aparecem em um card compacto abaixo da carta.
+- No desktop o card tem largura reduzida e detalhes em linha; no celular reorganiza automaticamente.
+- O mapa permanece totalmente livre para visualização e navegação.
