@@ -210,7 +210,7 @@ A posição do barco agora aparece em grande formato náutico (graus e minutos d
 - No desktop o card tem largura reduzida e detalhes em linha; no celular reorganiza automaticamente.
 - O mapa permanece totalmente livre para visualização e navegação.
 
-## v64 — Histórico AIS e Barcos Salvos
+## v65 — Histórico AIS e Barcos Salvos
 
 A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
 
@@ -220,3 +220,12 @@ A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
 - Barcos salvos podem ser removidos individualmente e atualizados por **1 crédito**.
 - Quando um barco salvo recebe uma nova posição, a última posição armazenada é atualizada automaticamente.
 - O banco cria as tabelas AIS automaticamente na primeira utilização e mantém RLS habilitado.
+
+
+## v65 — Carta da Marinha online
+
+- Remove o modo Oceano do AIS: ficam apenas **Marinha** e **Mapa**.
+- O modo Marinha consulta o **WMS oficial do GeoServer IDEM-DHN** e não depende de tiles locais convertidos.
+- Se existirem tiles locais em `public/cartas`, eles continuam tendo prioridade.
+- O catálogo oficial é descoberto em `/api/dhn/charts` e a carta pode ser escolhida automaticamente pela posição/zoom quando o WMS fornece limites geográficos.
+- Os scripts KAP/BSB continuam no projeto para uso offline, mas não são necessários para o mapa online.

@@ -1,14 +1,19 @@
-# PAINEL DE BORDO v58 — Cartas Raster DHN/CHM
+# Cartas Náuticas da Marinha — v65
 
-A v58 integra ao mapa AIS o catálogo de Cartas Raster KAP/BSB da Marinha do Brasil (DHN/CHM) para RS, SC, SP, RJ e transição pelo PR.
+A v65 usa duas formas de carregar as cartas da DHN/CHM:
 
-## Importante sobre o pacote recebido
+1. **Oficial online (padrão):** o painel consulta o WMS público do GeoServer IDEM-DHN (`https://idem.dhn.mar.mil.br/geoserver/wms`). Não é necessário converter KAP para o mapa funcionar.
+2. **Tiles locais (opcional/offline):** se existirem cartas convertidas em `public/cartas/<numero>/{z}/{x}/{y}.png`, o painel pode usá-las localmente.
 
-O arquivo `cartas_marinha_RS_SC_SP_RJ_setup.zip` contém o **catálogo e os scripts de download/conversão**, mas não contém os arquivos `.KAP` nem os tiles prontos. Por isso a v58 inclui toda a integração, mas é necessário preparar os tiles uma vez antes de eles aparecerem no mapa.
+## Por que o modo online foi adotado
 
-## Preparar as cartas
+O pacote `cartas_marinha_RS_SC_SP_RJ_setup.zip` contém o catálogo e os scripts, mas não contém os arquivos `.KAP`/`.BSB` binários das cartas. Sem esses arquivos não existe imagem para converter localmente. Além disso, dezenas de cartas convertidas em XYZ podem ocupar centenas de MB ou vários GB, o que não é uma boa solução para um deploy normal da Vercel.
 
-Na raiz do projeto:
+Na v65, `/api/dhn/charts` lê o GetCapabilities do GeoServer oficial e identifica as camadas das cartas selecionadas de RJ, SP, PR, SC e RS. Quando uma carta possui vários painéis, as camadas são combinadas automaticamente.
+
+## Conversão local opcional
+
+Se quiser manter cópia offline, rode em uma máquina com internet e GDAL:
 
 ```bash
 npm run charts:download
@@ -16,39 +21,17 @@ npm run charts:extract
 npm run charts:convert
 ```
 
-- `charts:download`: busca da página oficial do CHM as versões atuais das cartas listadas.
-- `charts:extract`: extrai os arquivos NOAA-BSB/KAP.
-- `charts:convert`: usa GDAL/gdal2tiles para gerar tiles XYZ web e também `public/cartas/installed.json`.
+Os scripts permanecem em `tools/cartas-marinha`.
 
-### Dependência para conversão
+## Uso
 
-Instale GDAL no computador que fará a conversão.
+No AIS agora existem somente dois botões de base:
 
-- Windows: OSGeo4W
-- macOS: `brew install gdal`
-- Ubuntu/Debian: `sudo apt install gdal-bin python3-gdal`
+- **Marinha** — carta oficial IDEM-DHN, quando disponível.
+- **Mapa** — OpenStreetMap.
 
-## Como a seleção funciona
+O modo **Oceano** foi removido.
 
-O conversor lê do cabeçalho KAP:
+## Aviso
 
-- número da carta;
-- título;
-- escala;
-- referências geográficas.
-
-A página AIS usa esses dados para escolher automaticamente uma carta que cubra a posição central do mapa. Conforme o zoom, ela procura a escala mais apropriada. Também é possível desligar o modo automático e escolher uma carta manualmente.
-
-## Vercel e armazenamento
-
-Poucas cartas podem ser publicadas dentro de `public/cartas`. Para o conjunto completo, o número de tiles pode ficar grande demais para um deploy simples na Vercel. Nesse caso, hospede as pastas de tiles em um storage/CDN público e configure:
-
-```text
-NEXT_PUBLIC_DHN_TILE_BASE_URL=https://seu-cdn.exemplo/cartas
-```
-
-Mantenha `public/cartas/installed.json` no projeto para que o painel saiba quais cartas existem e seus limites.
-
-## Uso e direitos
-
-Consulte sempre as condições vigentes no portal do CHM/DHN. O próprio CHM informa que a Carta Raster KAP/BSB é atualizada conforme Avisos aos Navegantes permanentes, mas seu uso em software não dispensa as cartas e procedimentos oficiais aplicáveis. Para reprodução/compilação/derivação com finalidade comercial, o CHM informa que é necessária autorização/acordo apropriado.
+As cartas raster da DHN são auxílio à navegação. Consulte as regras de uso do CHM/DHN e mantenha cartas/avisos oficiais atualizados. Para uso comercial das cartas, verifique a autorização aplicável junto à DHN/EMGEPRON.

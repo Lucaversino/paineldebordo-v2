@@ -17,13 +17,13 @@ import {
   Search,
   Ship,
   Trash2,
-  Waves,
 } from "lucide-react";
 import Map from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import XYZ from "ol/source/XYZ";
+import TileWMS from "ol/source/TileWMS";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
@@ -31,9 +31,7 @@ import Point from "ol/geom/Point";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 
-const OCEAN_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}";
-const OCEAN_REFERENCE_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}";
-const SEAMARK_TILES = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
+const DHN_WMS_URL = "https://idem.dhn.mar.mil.br/geoserver/wms";
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
 
 type Props = {
@@ -41,7 +39,7 @@ type Props = {
   defaultLon?: number | null;
 };
 
-type BaseMode = "dhn" | "nautical" | "map";
+type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 
 type DhnChart = {
@@ -51,6 +49,8 @@ type DhnChart = {
   scale?: number | null;
   bounds?: [number, number, number, number] | null;
   files?: string[];
+  layerName?: string;
+  source?: "wms" | "local";
 };
 
 type VesselMatch = {
@@ -236,11 +236,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const mapRef = useRef<Map | null>(null);
   const vesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
-  const oceanLayerRef = useRef<TileLayer<XYZ> | null>(null);
-  const oceanReferenceLayerRef = useRef<TileLayer<XYZ> | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
-  const seamarkLayerRef = useRef<TileLayer<XYZ> | null>(null);
-  const dhnLayerRef = useRef<TileLayer<XYZ> | null>(null);
+  const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
   const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
 
@@ -255,12 +252,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [center, setCenter] = useState({ lat: fallbackLat, lon: fallbackLon });
   const [devicePosition, setDevicePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [zoom, setZoom] = useState(10);
-  const [baseMode, setBaseMode] = useState<BaseMode>("nautical");
+  const [baseMode, setBaseMode] = useState<BaseMode>("dhn");
   const [dhnCharts, setDhnCharts] = useState<DhnChart[]>([]);
-  const [dhnCatalogCount, setDhnCatalogCount] = useState(0);
   const [dhnAuto, setDhnAuto] = useState(true);
   const [selectedDhnChart, setSelectedDhnChart] = useState("");
-  const [dhnLoadMessage, setDhnLoadMessage] = useState("Carregando catálogo DHN...");
+  const [dhnLoadMessage, setDhnLoadMessage] = useState("Conectando ao serviço oficial IDEM-DHN...");
   const [clockNow, setClockNow] = useState(() => new Date());
   const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
   const [historyItems, setHistoryItems] = useState<AisHistoryItem[]>([]);
@@ -624,19 +620,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function setMapMode(mode: BaseMode) {
     setBaseMode(mode);
-    const hasDhn = dhnCharts.length > 0 && Boolean(selectedDhnChart);
-    oceanLayerRef.current?.setVisible(mode === "nautical" || (mode === "dhn" && !hasDhn));
-    oceanReferenceLayerRef.current?.setVisible(mode === "nautical");
-    streetLayerRef.current?.setVisible(mode === "map");
-    seamarkLayerRef.current?.setVisible(mode !== "dhn");
-    dhnLayerRef.current?.setVisible(mode === "dhn" && hasDhn);
+    streetLayerRef.current?.setVisible(mode === "map" || mode === "dhn");
+    dhnLayerRef.current?.setVisible(mode === "dhn" && Boolean(selectedDhnChart));
   }
 
   useEffect(() => {
     if (!hostRef.current) return;
-    const ocean = new TileLayer({ visible: true, source: new XYZ({ url: OCEAN_TILES, attributions: "Esri · GEBCO · NOAA" }) });
-    const oceanReference = new TileLayer({ visible: true, source: new XYZ({ url: OCEAN_REFERENCE_TILES, attributions: "Esri Ocean Reference" }) });
-    const street = new TileLayer({ visible: false, source: new OSM() });
+    const street = new TileLayer({ visible: true, source: new OSM() });
     const dhn = new TileLayer({
       visible: false,
       opacity: 1,
@@ -646,7 +636,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         crossOrigin: "anonymous",
       }),
     });
-    const seamarks = new TileLayer({ opacity: 1, source: new XYZ({ url: SEAMARK_TILES, maxZoom: 18, attributions: "OpenSeaMap" }) });
     const vesselSource = new VectorSource();
     const vesselLayer = new VectorLayer({ source: vesselSource, declutter: true });
     const positionSource = new VectorSource();
@@ -660,17 +649,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new Map({
       target: hostRef.current,
       controls: [],
-      layers: [ocean, street, dhn, oceanReference, seamarks, vesselLayer, positionLayer],
+      layers: [street, dhn, vesselLayer, positionLayer],
       view,
     });
 
     mapRef.current = map;
     vesselSourceRef.current = vesselSource;
     positionSourceRef.current = positionSource;
-    oceanLayerRef.current = ocean;
-    oceanReferenceLayerRef.current = oceanReference;
     streetLayerRef.current = street;
-    seamarkLayerRef.current = seamarks;
     dhnLayerRef.current = dhn;
 
     const updateCenter = () => {
@@ -697,21 +683,29 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/cartas/catalogo.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : { charts: [] }).catch(() => ({ charts: [] })),
+      fetch("/api/dhn/charts", { cache: "no-store" }).then((r) => r.ok ? r.json() : { charts: [], error: `HTTP ${r.status}` }).catch((error) => ({ charts: [], error: String(error) })),
       fetch("/cartas/installed.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : { charts: [] }).catch(() => ({ charts: [] })),
-    ]).then(([catalog, installed]) => {
+    ]).then(([official, installed]) => {
       if (cancelled) return;
-      const catalogList = Array.isArray(catalog?.charts) ? catalog.charts : [];
-      const installedList = Array.isArray(installed?.charts) ? installed.charts : [];
-      setDhnCatalogCount(catalogList.length);
-      setDhnCharts(installedList);
-      if (installedList.length) {
-        const first = chooseDhnChart(installedList, fallbackLon, fallbackLat, 10.5) || installedList[0];
+      const localList = Array.isArray(installed?.charts) ? installed.charts.map((item: DhnChart) => ({ ...item, source: "local" as const })) : [];
+      const officialList = Array.isArray(official?.charts) ? official.charts.map((item: DhnChart) => ({ ...item, source: "wms" as const })) : [];
+      const mergedMap = new Map<string, DhnChart>();
+      for (const chart of officialList) mergedMap.set(chart.number, chart);
+      for (const chart of localList) mergedMap.set(chart.number, { ...mergedMap.get(chart.number), ...chart, source: "local" });
+      const merged = [...mergedMap.values()].sort((a, b) => Number(a.number.replace(/\D/g, "")) - Number(b.number.replace(/\D/g, "")));
+      setDhnCharts(merged);
+      if (merged.length) {
+        const first = chooseDhnChart(merged, fallbackLon, fallbackLat, 10.5) || merged.find((c) => c.number.startsWith("1841")) || merged[0];
         setSelectedDhnChart(first.number);
-        setDhnLoadMessage(`${installedList.length} cartas DHN instaladas`);
+        const wmsCount = officialList.length;
+        const localCount = localList.length;
+        setDhnLoadMessage(wmsCount
+          ? `Serviço oficial IDEM-DHN online · ${wmsCount} carta(s) encontrada(s)${localCount ? ` · ${localCount} local(is)` : ""}`
+          : `Serviço oficial indisponível · ${localCount} carta(s) local(is) carregada(s)`);
         setBaseMode("dhn");
       } else {
-        setDhnLoadMessage(`Catálogo com ${catalogList.length || "várias"} cartas; tiles ainda não instalados`);
+        setDhnLoadMessage(official?.error ? `IDEM-DHN indisponível: ${official.error}` : "Nenhuma carta DHN disponível no momento");
+        setBaseMode("map");
       }
     });
     return () => { cancelled = true; };
@@ -726,22 +720,34 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     const layer = dhnLayerRef.current;
     if (!layer || !selectedDhnChart) return;
-    layer.setSource(new XYZ({
-      url: `${DHN_TILE_BASE}/${selectedDhnChart}/{z}/{x}/{y}.png`,
-      attributions: `Carta Raster DHN/CHM ${selectedDhnChart}`,
-      crossOrigin: "anonymous",
-    }));
+    const chart = dhnCharts.find((item) => item.number === selectedDhnChart);
+    if (!chart) return;
+    if (chart.source === "local") {
+      layer.setSource(new XYZ({
+        url: `${DHN_TILE_BASE}/${selectedDhnChart}/{z}/{x}/{y}.png`,
+        attributions: `Carta Raster DHN/CHM ${selectedDhnChart}`,
+        crossOrigin: "anonymous",
+      }));
+    } else if (chart.layerName) {
+      layer.setSource(new TileWMS({
+        url: DHN_WMS_URL,
+        params: {
+          LAYERS: chart.layerName,
+          TILED: true,
+          FORMAT: "image/png",
+          TRANSPARENT: true,
+        },
+        serverType: "geoserver",
+        attributions: `Carta Náutica Raster — DHN/CHM · IDEM-DHN · ${selectedDhnChart}`,
+      }));
+    }
     layer.setVisible(baseMode === "dhn");
-  }, [selectedDhnChart, baseMode]);
+  }, [selectedDhnChart, baseMode, dhnCharts]);
 
   useEffect(() => {
-    const hasDhn = dhnCharts.length > 0 && Boolean(selectedDhnChart);
-    oceanLayerRef.current?.setVisible(baseMode === "nautical" || (baseMode === "dhn" && !hasDhn));
-    oceanReferenceLayerRef.current?.setVisible(baseMode === "nautical");
-    streetLayerRef.current?.setVisible(baseMode === "map");
-    seamarkLayerRef.current?.setVisible(baseMode !== "dhn");
-    dhnLayerRef.current?.setVisible(baseMode === "dhn" && hasDhn);
-  }, [baseMode, dhnCharts.length, selectedDhnChart]);
+    streetLayerRef.current?.setVisible(true);
+    dhnLayerRef.current?.setVisible(baseMode === "dhn" && Boolean(selectedDhnChart));
+  }, [baseMode, selectedDhnChart]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(new Date()), 1000);
@@ -909,8 +915,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         <div className="ais-map-header-controls">
           <div className="ais-base-toggle">
-            <button className={baseMode === "dhn" ? "active" : ""} onClick={() => setMapMode("dhn")} title="Carta Raster da Marinha"><MapPinned /> Marinha</button>
-            <button className={baseMode === "nautical" ? "active" : ""} onClick={() => setMapMode("nautical")}><Waves /> Oceano</button>
+            <button className={baseMode === "dhn" ? "active" : ""} onClick={() => setMapMode("dhn")} title="Carta Náutica Raster oficial da Marinha"><MapPinned /> Marinha</button>
             <button className={baseMode === "map" ? "active" : ""} onClick={() => setMapMode("map")}><Navigation /> Mapa</button>
           </div>
         </div>
@@ -918,21 +923,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         {baseMode === "dhn" && (
           <div className="ais-dhn-control ais-v61-dhn">
             <div className="ais-dhn-head">
-              <span><MapPinned /><b>Carta Raster Marinha</b></span>
-              <em>{dhnCharts.length}/{dhnCatalogCount || "—"} instaladas</em>
+              <span><MapPinned /><b>Carta Náutica da Marinha</b></span>
+              <em>{dhnCharts.length} disponíveis</em>
             </div>
             {dhnCharts.length ? (
               <>
                 <select value={selectedDhnChart} onChange={(e) => { setDhnAuto(false); setSelectedDhnChart(e.target.value); }} aria-label="Selecionar carta DHN">
                   {dhnCharts.map((chart) => (
-                    <option key={chart.number} value={chart.number}>{chart.number} — {chart.title}{chart.scale ? ` · 1:${Number(chart.scale).toLocaleString("pt-BR")}` : ""}</option>
+                    <option key={chart.number} value={chart.number}>{chart.number} — {chart.title}{chart.scale ? ` · 1:${Number(chart.scale).toLocaleString("pt-BR")}` : ""}{chart.source === "wms" ? " · OFICIAL ONLINE" : " · LOCAL"}</option>
                   ))}
                 </select>
                 <label className="ais-dhn-auto"><input type="checkbox" checked={dhnAuto} onChange={(e) => setDhnAuto(e.target.checked)} /><span>Automática pela posição e zoom</span></label>
                 <small>{dhnLoadMessage}</small>
               </>
             ) : (
-              <div className="ais-dhn-missing"><b>Cartas ainda não convertidas para o mapa</b><span>Rode os comandos de instalação das cartas DHN para gerar os tiles XYZ.</span></div>
+              <div className="ais-dhn-missing"><b>Serviço de cartas da Marinha indisponível</b><span>O painel tentará novamente ao recarregar. O mapa comum continua disponível.</span></div>
             )}
           </div>
         )}
@@ -943,7 +948,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         <div className="ais-bottom-status">
           <span><Anchor /> Zoom {zoom}</span>
-          {baseMode === "dhn" && <span><MapPinned /> {selectedDhnChart ? `DHN ${selectedDhnChart}` : "DHN sem tiles"}</span>}
+          {baseMode === "dhn" && <span><MapPinned /> {selectedDhnChart ? `DHN ${selectedDhnChart}` : "DHN"}</span>}
           <span>{formatCoord(center.lat, true)} · {formatCoord(center.lon, false)}</span>
           {devicePosition && <span className="ais-gps-ok"><LocateFixed /> GPS ativo</span>}
         </div>
