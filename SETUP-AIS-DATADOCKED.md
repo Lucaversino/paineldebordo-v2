@@ -1,4 +1,4 @@
-# AIS Data Docked — v61
+# AIS Data Docked — v62
 
 Configure na Vercel:
 
@@ -16,6 +16,6 @@ Use como **Secret** e faça Redeploy.
 - Primeira localização completa: normalmente 2 créditos.
 - Atualizar novamente a posição do mesmo barco: 1 crédito por atualização.
 
-A busca por área foi desativada na v61 para evitar o endpoint de 10 créditos.
+A busca por área foi desativada na v62 para evitar o endpoint de 10 créditos.
 
 A chave nunca é enviada ao navegador. Todas as chamadas passam por `/api/ais` no servidor Next.js/Vercel usando o header `x-api-key`.

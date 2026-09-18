@@ -133,6 +133,56 @@ function formatCoord(value: number, latitude = true) {
   return `${Math.abs(value).toFixed(5)}° ${letter}`;
 }
 
+function formatCoordMarine(value: number, latitude = true) {
+  const hemisphere = latitude ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
+  const absolute = Math.abs(value);
+  let degrees = Math.floor(absolute);
+  let minutes = (absolute - degrees) * 60;
+  // Evita exibir 60.00' por arredondamento.
+  if (Number(minutes.toFixed(2)) >= 60) {
+    degrees += 1;
+    minutes = 0;
+  }
+  const degreeText = latitude ? String(degrees).padStart(2, "0") : String(degrees).padStart(3, "0");
+  const minuteText = minutes.toFixed(2).padStart(5, "0");
+  return `${degreeText}º ${minuteText}' ${hemisphere}`;
+}
+
+function parseProviderTime(value?: string) {
+  if (!value) return null;
+  const normalized = /UTC$/i.test(value.trim()) ? value.trim().replace(/ UTC$/i, " GMT") : value.trim();
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLocalDateTime(date: Date) {
+  const sameDay = date.toDateString() === new Date().toDateString();
+  const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
+  const day = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return sameDay ? `Hoje · ${time}` : `${day} · ${time}`;
+}
+
+function positionAgeLabel(value?: string) {
+  const date = parseProviderTime(value);
+  if (!date) return { label: "HORÁRIO NÃO INFORMADO", className: "unknown" };
+  const ageMinutes = Math.max(0, (Date.now() - date.getTime()) / 60000);
+  if (ageMinutes <= 10) return { label: "POSIÇÃO MUITO RECENTE", className: "fresh" };
+  if (ageMinutes <= 60) return { label: `POSIÇÃO DE ${Math.round(ageMinutes)} MIN ATRÁS`, className: "fresh" };
+  if (ageMinutes <= 24 * 60) return { label: `POSIÇÃO DE ${Math.round(ageMinutes / 60)} H ATRÁS`, className: "warning" };
+  return { label: `POSIÇÃO DE ${Math.max(1, Math.round(ageMinutes / 1440))} DIA(S) ATRÁS`, className: "stale" };
+}
+
+function sourceInfo(dataSource?: string) {
+  const source = (dataSource || "").trim();
+  if (/satellite|s-ais/i.test(source)) {
+    return { title: "AIS POR SATÉLITE", short: "S-AIS", className: "satellite" };
+  }
+  if (/terrestrial|t-ais/i.test(source)) {
+    return { title: "AIS TERRESTRE", short: "T-AIS", className: "terrestrial" };
+  }
+  return { title: source ? `AIS · ${source}` : "FONTE AIS", short: "AIS", className: "unknown" };
+}
+
 export default function AISPage({ defaultLat, defaultLon }: Props) {
   const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
   const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
@@ -165,6 +215,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [dhnAuto, setDhnAuto] = useState(true);
   const [selectedDhnChart, setSelectedDhnChart] = useState("");
   const [dhnLoadMessage, setDhnLoadMessage] = useState("Carregando catálogo DHN...");
+  const [clockNow, setClockNow] = useState(() => new Date());
 
   function buildVesselStyle(vessel: Vessel, currentZoom: number) {
     const speed = Number(vessel.sog || 0);
@@ -506,6 +557,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [baseMode, dhnCharts.length, selectedDhnChart]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     refreshCredits();
   }, []);
 
@@ -529,13 +585,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return matches.find((m) => m.name.toLowerCase() === q) || null;
   }, [matches, nameQuery]);
 
+  const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
+  const trackedAge = tracked ? positionAgeLabel(tracked.positionReceived || tracked.updateTime) : null;
+  const trackedProviderDate = tracked ? parseProviderTime(tracked.positionReceived || tracked.updateTime) : null;
+
   return (
-    <section className="ais-page ais-v61-page">
+    <section className="ais-page ais-v61-page ais-v62-page">
       <div className="ais-topbar">
         <div>
           <small>MONITORAMENTO MARÍTIMO</small>
-          <h2>AIS — buscar barco pelo nome</h2>
-          <p>Busca econômica: nome do barco + posição atual. Sem consulta por área.</p>
+          <h2>AIS — posição do barco</h2>
+          <p>Busca pelo nome e posição AIS individual, com horário e origem do sinal bem destacados.</p>
         </div>
         <div className="ais-live-box">
           <span className={`ais-live-dot ${status === "ready" ? "connected" : status === "loading" ? "connecting" : status}`} />
@@ -631,19 +691,59 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         {tracked ? (
-          <div className="ais-vessel-card ais-v61-vessel-card">
-            <small>POSIÇÃO AIS ATUAL</small>
-            <h3>{tracked.name || `MMSI ${tracked.mmsi}`}</h3>
-            <div className="ais-detail-grid">
+          <div className="ais-vessel-card ais-v61-vessel-card ais-v62-vessel-card">
+            <div className="ais-v62-card-head">
+              <div>
+                <small>EMBARCAÇÃO LOCALIZADA</small>
+                <h3>{tracked.name || `MMSI ${tracked.mmsi}`}</h3>
+                <em>MMSI {tracked.mmsi || "—"}{tracked.imo ? ` · IMO ${tracked.imo}` : ""}</em>
+              </div>
+              {trackedSource && (
+                <div className={`ais-v62-source-badge ${trackedSource.className}`}>
+                  <Radio />
+                  <span>FONTE DA POSIÇÃO</span>
+                  <b>{trackedSource.title}</b>
+                  <small>{trackedSource.short}</small>
+                </div>
+              )}
+            </div>
+
+            <div className="ais-v62-position-hero">
+              <small>POSIÇÃO AIS RECEBIDA</small>
+              <strong>{formatCoordMarine(tracked.lat, true)}</strong>
+              <strong>{formatCoordMarine(tracked.lon, false)}</strong>
+              <span>WGS84 · graus e minutos decimais</span>
+            </div>
+
+            <div className="ais-v62-time-row">
+              <div>
+                <small>HORÁRIO DA POSIÇÃO</small>
+                <b>{trackedProviderDate ? formatLocalDateTime(trackedProviderDate) : (tracked.positionReceived || "Não informado")}</b>
+                {tracked.positionReceived && <em>{tracked.positionReceived}</em>}
+                {trackedAge && <strong className={trackedAge.className}>{trackedAge.label}</strong>}
+              </div>
+              <div>
+                <small>CONSULTA REALIZADA AGORA</small>
+                <b>{formatLocalDateTime(clockNow)}</b>
+                <em>Horário local deste dispositivo</em>
+                <strong className="fresh">CONSULTA ONLINE</strong>
+              </div>
+            </div>
+
+            <div className="ais-detail-grid ais-v62-detail-grid">
               <span><small>VELOCIDADE</small><b>{tracked.sog != null ? `${Number(tracked.sog).toFixed(1)} kn` : "—"}</b></span>
               <span><small>RUMO</small><b>{tracked.cog != null ? `${Math.round(tracked.cog)}°` : "—"}</b></span>
               <span><small>PROA</small><b>{tracked.heading != null && tracked.heading < 511 ? `${Math.round(tracked.heading)}°` : "—"}</b></span>
               <span><small>STATUS</small><b>{tracked.navStatusText || "Não informado"}</b></span>
               <span><small>DESTINO</small><b>{tracked.destination || "—"}</b></span>
-              <span><small>FONTE</small><b>{tracked.dataSource || "AIS"}</b></span>
+              <span><small>DADOS ATUALIZADOS</small><b>{tracked.updateTime || "—"}</b></span>
             </div>
-            <p>{formatCoord(tracked.lat, true)} · {formatCoord(tracked.lon, false)}</p>
-            {tracked.positionReceived && <p className="ais-position-time">Posição recebida: {tracked.positionReceived}</p>}
+
+            <div className="ais-v62-source-note">
+              <b>{trackedSource?.className === "satellite" ? "Posição recebida por AIS via satélite." : trackedSource?.className === "terrestrial" ? "Esta posição foi informada pela API como AIS terrestre." : "Origem AIS conforme informada pelo provedor."}</b>
+              <span>O painel identifica como satélite somente quando a Data Docked devolve a fonte como Satellite/S-AIS.</span>
+            </div>
+
             <button className="ais-refresh-position" type="button" onClick={() => getVesselPosition({
               name: tracked.name || "",
               mmsi: tracked.mmsi,
