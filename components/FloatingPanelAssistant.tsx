@@ -42,7 +42,7 @@ function modelLabel(model?: string) {
 function restoreMessages(): ChatMessage[] {
   if (typeof window === "undefined") return [];
   try {
-    const saved = window.sessionStorage.getItem("painel-ia-chat-v72");
+    const saved = window.sessionStorage.getItem("painel-ia-chat-v73") || window.sessionStorage.getItem("painel-ia-chat-v72");
     const parsed = saved ? JSON.parse(saved) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -80,7 +80,7 @@ export default function FloatingPanelAssistant() {
 
   useEffect(() => {
     try {
-      window.sessionStorage.setItem("painel-ia-chat-v72", JSON.stringify(messages.slice(-18)));
+      window.sessionStorage.setItem("painel-ia-chat-v73", JSON.stringify(messages.slice(-18)));
     } catch {
       // sessionStorage é apenas conveniência; o chat segue funcionando sem ele.
     }
@@ -163,6 +163,7 @@ export default function FloatingPanelAssistant() {
     setQuestion("");
     setError("");
     try {
+      window.sessionStorage.removeItem("painel-ia-chat-v73");
       window.sessionStorage.removeItem("painel-ia-chat-v72");
     } catch {}
   };

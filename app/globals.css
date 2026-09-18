@@ -1699,3 +1699,87 @@ main.loginpage{
   .floating-ai-context{margin:8px 9px 0}.floating-ai-quick{padding:8px 9px;grid-template-columns:1fr 1fr}.floating-ai-quick button{min-height:38px;padding:6px;font-size:6.5px}.floating-ai-chat{padding:7px 9px 9px}.floating-ai-message{max-width:94%}.floating-ai-message div{font-size:9px}.floating-ai-composer{padding:8px 9px}.floating-ai-composer textarea{font-size:16px;min-height:44px;padding:10px}.floating-ai-panel>footer{display:none}
 }
 @media(max-width:390px){.floating-ai-panel{left:5px;right:5px;height:min(75dvh,620px)}.floating-ai-quick{grid-template-columns:1fr}.floating-ai-quick button:nth-child(n+3){display:none}}
+
+
+/* ======================================================================
+   v73 — PAINEL IA: tipografia grande, leitura confortável e chat premium
+   ====================================================================== */
+.floating-ai-panel{
+  width:min(540px,calc(100vw - 36px));
+  height:min(760px,calc(100dvh - 110px));
+}
+.floating-ai-head{min-height:92px;padding:15px 16px}
+.floating-ai-brand{gap:13px}
+.floating-ai-brand>span{width:52px;height:52px;flex:0 0 52px;border-radius:15px}
+.floating-ai-brand>span svg{width:25px;height:25px}
+.floating-ai-brand small{font-size:11px;letter-spacing:.13em}
+.floating-ai-brand b{font-size:22px;line-height:1.15;margin-top:3px}
+.floating-ai-brand em{font-size:13px;line-height:1.25;margin-top:5px}
+.floating-ai-head-actions{gap:7px}
+.floating-ai-head-actions button{height:40px;min-width:42px;border-radius:11px;font-size:14px;padding:0 11px}
+.floating-ai-head-actions button.icon{width:40px}
+.floating-ai-head-actions button.icon svg{width:18px;height:18px}
+
+.floating-ai-context{margin:12px 14px 0;padding:12px 13px;border-radius:12px;gap:10px;font-size:14px;line-height:1.5}
+.floating-ai-context svg{width:20px;height:20px;flex:0 0 20px}
+
+.floating-ai-quick{gap:9px;padding:11px 14px}
+.floating-ai-quick button{min-height:50px;padding:10px 12px;border-radius:12px;gap:9px;font-size:14px;line-height:1.25}
+.floating-ai-quick svg{width:18px;height:18px;flex:0 0 18px}
+
+.floating-ai-chat{padding:10px 14px 14px;gap:12px}
+.floating-ai-welcome{padding:18px;border-radius:14px;gap:12px}
+.floating-ai-welcome>svg{width:28px;height:28px;flex:0 0 28px}
+.floating-ai-welcome div{gap:7px}
+.floating-ai-welcome b{font-size:18px;line-height:1.25}
+.floating-ai-welcome span{font-size:15px;line-height:1.6}
+
+.floating-ai-message{max-width:90%;padding:13px 15px;border-radius:15px;gap:7px}
+.floating-ai-message small{font-size:11px;letter-spacing:.08em}
+.floating-ai-message div{font-size:17px;line-height:1.62;font-weight:500}
+.floating-ai-message.user{border-bottom-right-radius:5px}
+.floating-ai-message.assistant{border-bottom-left-radius:5px}
+.floating-ai-message.thinking div{gap:9px}
+.floating-ai-message.thinking svg{width:18px;height:18px}
+
+.floating-ai-error,.floating-ai-warning{margin:0 14px 10px;padding:11px 12px;border-radius:10px;font-size:14px;line-height:1.5}
+
+.floating-ai-composer{padding:12px 14px 13px;grid-template-columns:minmax(0,1fr) 52px;gap:9px}
+.floating-ai-composer textarea{max-height:150px;min-height:54px;border-radius:14px;padding:14px 15px;font-size:18px;line-height:1.5;font-weight:500}
+.floating-ai-composer button{width:52px;height:52px;border-radius:14px}
+.floating-ai-composer button svg{width:22px;height:22px}
+.floating-ai-panel>footer{padding:9px 14px 11px;font-size:11px;line-height:1.45}
+
+@media(max-width:760px){
+  .floating-ai-panel{left:6px;right:6px;bottom:max(76px,calc(env(safe-area-inset-bottom) + 70px));height:min(82dvh,760px);border-radius:18px}
+  .floating-ai-head{min-height:82px;padding:11px 12px}
+  .floating-ai-brand>span{width:46px;height:46px;flex-basis:46px}
+  .floating-ai-brand small{font-size:10px}
+  .floating-ai-brand b{font-size:20px}
+  .floating-ai-brand em{font-size:12px}
+  .floating-ai-head-actions button{height:40px;font-size:14px}
+  .floating-ai-head-actions button:first-child{display:none}
+  .floating-ai-context{margin:9px 10px 0;padding:10px 11px;font-size:14px}
+  .floating-ai-quick{padding:9px 10px;gap:7px}
+  .floating-ai-quick button{min-height:48px;padding:9px 10px;font-size:14px}
+  .floating-ai-chat{padding:8px 10px 11px;gap:11px}
+  .floating-ai-welcome{padding:15px}
+  .floating-ai-welcome b{font-size:17px}
+  .floating-ai-welcome span{font-size:15px}
+  .floating-ai-message{max-width:95%;padding:12px 14px}
+  .floating-ai-message small{font-size:10px}
+  .floating-ai-message div{font-size:16px;line-height:1.62}
+  .floating-ai-error,.floating-ai-warning{margin:0 10px 8px;font-size:14px}
+  .floating-ai-composer{padding:9px 10px 10px;grid-template-columns:minmax(0,1fr) 50px}
+  .floating-ai-composer textarea{min-height:52px;padding:13px 14px;font-size:17px;line-height:1.45}
+  .floating-ai-composer button{width:50px;height:50px}
+}
+
+@media(max-width:390px){
+  .floating-ai-panel{left:4px;right:4px;height:min(84dvh,760px)}
+  .floating-ai-quick{grid-template-columns:1fr 1fr}
+  .floating-ai-quick button:nth-child(n+3){display:flex}
+  .floating-ai-quick button{font-size:13px;min-height:46px}
+  .floating-ai-brand b{font-size:18px}
+  .floating-ai-message div{font-size:16px}
+}

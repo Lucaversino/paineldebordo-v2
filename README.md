@@ -261,3 +261,13 @@ A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
 
 ## v72 — Painel IA flutuante
 O assistente OpenAI agora é global e abre por um botão flutuante no canto inferior direito, tanto no desktop quanto no celular. O chat usa a mesma rota `/api/ai-assistant`, lê os dados reais do painel e mantém a conversa durante a sessão do navegador.
+
+
+## v73 — Painel IA com tipografia ampliada
+
+- Chat flutuante mantido no desktop e mobile.
+- Mensagens em 17 px no desktop e 16 px no celular.
+- Cabeçalho, atalhos rápidos, contexto, avisos e campo de digitação ampliados.
+- Painel desktop mais largo e área de conversa mais confortável.
+- No celular, o chat usa até 82% da altura útil e mantém o compositor sempre visível.
+- Conversas da v72 são reaproveitadas automaticamente na primeira abertura.
