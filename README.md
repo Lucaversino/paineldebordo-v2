@@ -258,3 +258,6 @@ A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
 - Botão **Limpar campos** prepara latitude/longitude para uma nova busca sem apagar o resultado atual.
 - Botão **Limpar histórico** não remove as previsões salvas.
 - As tabelas `forecast_history` e `saved_forecasts` são criadas automaticamente pela rota privada `/api/forecast-library`.
+
+## v72 — Painel IA flutuante
+O assistente OpenAI agora é global e abre por um botão flutuante no canto inferior direito, tanto no desktop quanto no celular. O chat usa a mesma rota `/api/ai-assistant`, lê os dados reais do painel e mantém a conversa durante a sessão do navegador.

@@ -36,6 +36,7 @@ import PwaControls from "../components/PwaControls";
 import OceanIntelligence from "../components/OceanIntelligence";
 import PositionForecast from "../components/PositionForecast";
 import AISPage from "../components/AISPage";
+import FloatingPanelAssistant from "../components/FloatingPanelAssistant";
 const fmt = (n: number, d = 0) =>
   new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: d,
@@ -559,6 +560,7 @@ export default function Home() {
           <Operations view={view} onDashboard={() => setView("Dashboard")} />
         )}
       </main>
+      <FloatingPanelAssistant />
       {modal && t && (
         <div className="overlay" onMouseDown={() => setModal(null)}>
           <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
