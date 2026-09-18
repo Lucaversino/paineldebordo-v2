@@ -11,9 +11,9 @@ const legacyPaths = [
   ".sites-runtime",
   "tests",
   "vendor",
-  // Legacy AISStream WebSocket route from v56/v57. The current AIS uses Data Docked HTTP API.
-  // GitHub web uploads can leave this old tracked route behind and break Turbopack
-  // when its old dependencies (@vercel/functions and ws) are no longer installed.
+  // Legacy AISStream WebSocket route from v56/v57. A V93 usa a nova rota
+  // app/api/ais-map para a camada automática; o caminho antigo continua removido
+  // para evitar conflito com arquivos rastreados de versões anteriores.
   "app/api/ais-stream",
 ];
 
@@ -21,4 +21,4 @@ for (const path of legacyPaths) {
   await rm(path, { recursive: true, force: true });
 }
 
-console.log("Legacy files (including obsolete AISStream WebSocket route) removed before build.");
+console.log("Legacy files (including obsolete AISStream route) removed before build.");

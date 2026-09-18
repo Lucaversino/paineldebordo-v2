@@ -1,3 +1,9 @@
+## V93 — camada AIS automática no mapa
+
+O mapa AIS agora carrega embarcações reais automaticamente sem consumir créditos do usuário. A fonte principal é **AISStream** e o fallback é **VesselAPI Free**. A pesquisa manual existente continua separada e mantém a cobrança configurada. As chaves permanecem somente no backend e a nova rota usa cache por região para reduzir chamadas externas.
+
+Configure `AISSTREAM_API_KEY` e `VESSELAPI_API_KEY` na Vercel. Consulte `FIX-V93-AIS-CAMADA-GRATUITA.md`.
+
 ## V92 — gráfico legível no modo escuro
 
 O tooltip do gráfico de desempenho foi corrigido para fundo escuro e texto branco, inclusive com fallback para o tooltip padrão do Recharts.
@@ -376,3 +382,7 @@ A análise ambiental usa por padrão a primeira posição registrada na primeira
 - Linha da produção acumulada e linha da meta agora têm identificação visual distinta.
 - Eixos e datas ficam mais legíveis e usam formatação pt-BR.
 - Layout responsivo para celular.
+
+
+## V94 — Kpler AIS
+A camada automática usa AISStream → VesselAPI Free → Kpler Maritime 2.0. Configure `KPLER_API_KEY` apenas no backend/Vercel.

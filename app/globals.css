@@ -1962,3 +1962,14 @@ main.loginpage{
 .production-tooltip b {
   color: #fff;
 }
+
+/* ===== V93 — camada AIS automática gratuita no mapa ===== */
+.ais-single-map-badge .ais-free-map-badge{border-color:#246a5b;background:#062b29e8;color:#dffcf4}
+.ais-single-map-badge .ais-free-map-badge svg{color:#33ddb3}
+.ais-single-map-badge .ais-free-map-badge.loading{border-color:#80672d;color:#ffe39a}
+.ais-single-map-badge .ais-free-map-badge.loading svg{color:#e8bd54}
+.ais-single-map-badge .ais-free-map-badge.error{border-color:#754047;color:#ffadb3}
+.ais-single-map-badge .ais-free-map-badge.error svg{color:#ff7d87}
+.app:not(.dark) .ais-single-map-badge .ais-free-map-badge{background:#effbf7ed;color:#17483f;border-color:#99cfc2}
+@media(max-width:760px){.ais-single-map-badge{display:grid;justify-items:end}.ais-single-map-badge .ais-free-map-badge{height:30px!important;padding:0 8px!important;font-size:7px!important;max-width:205px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+@media(max-width:470px){.ais-single-map-badge .ais-free-map-badge{max-width:160px}.ais-single-map-badge>span:first-child{display:none}}
