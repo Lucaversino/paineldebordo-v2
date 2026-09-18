@@ -394,3 +394,8 @@ A camada automática usa AISStream → VesselAPI Free → Kpler Maritime 2.0. Co
 
 ## V95 — AIS pesca em laranja e card compacto
 Veja `FIX-V95-AIS-PESCA-CARD-COMPACTO.md`.
+
+
+## V96.1 — MarineTraffic WebView
+
+A aba MarineTraffic não usa mais iframe. Em navegador comum ela mostra a opção para abrir o site externamente; no aplicativo desktop Electron ela usa um WebView real com Chromium separado. Veja `FIX-V96-MARINETRAFFIC-WEBVIEW.md`.
