@@ -9,7 +9,7 @@ type AssistantStatus = {
   model: string;
   reasoningEffort?: string;
   wallet?: { balance: number; aiBonusBrl?: number; freeAiAccess?: boolean; isSuperAdmin?: boolean };
-  pricing?: { basicCredits: number; fullCredits: number; advancedCredits: number; basicBrl: number; fullBrl: number; advancedBrl: number; basicBonusBrl?: number; fullBonusBrl?: number; advancedBonusBrl?: number; welcomeBonusBrl?: number; adminFree: boolean };
+  pricing?: { basicCredits: number; fullCredits: number; advancedCredits: number; basicBrl: number; fullBrl: number; advancedBrl: number; basicBonusBrl?: number; fullBonusBrl?: number; advancedBonusBrl?: number; welcomeBonusBrl?: number; adminFree?: boolean };
 };
 type ChatMessage = { role: "user" | "assistant"; content: string; model?: string };
 type AiMode = "basic" | "full" | "advanced";
@@ -98,7 +98,6 @@ export default function FloatingPanelAssistant() {
     return `${modelLabel(assistant.model)} • ${assistant.reasoningEffort || "high"}`;
   }, [assistant]);
   const costLabel = (mode: AiMode) => {
-    if (assistant?.pricing?.adminFree) return "GRÁTIS";
     if (!assistant?.pricing) return "VALOR...";
     const credits = mode === "advanced" ? assistant.pricing.advancedCredits : mode === "full" ? assistant.pricing.fullCredits : assistant.pricing.basicCredits;
     const costBrl = mode === "advanced" ? assistant.pricing.advancedBrl : mode === "full" ? assistant.pricing.fullBrl : assistant.pricing.basicBrl;
@@ -141,7 +140,7 @@ export default function FloatingPanelAssistant() {
         <div className="floating-ai-brand"><span><Sparkles /></span><div><small>PAINEL IA</small><b>Assistente de pesca</b><em className={assistant?.configured ? "ready" : ""}>{statusText}</em></div></div>
         <div className="floating-ai-head-actions"><button type="button" onClick={clearConversation}>Limpar</button><button type="button" className="icon" onClick={() => setOpen(false)}><Minimize2 /></button><button type="button" className="icon close" onClick={() => setOpen(false)}><X /></button></div>
       </header>
-      <div className="floating-ai-creditbar"><span>MEUS CRÉDITOS</span><b>{assistant?.pricing?.adminFree ? "GRÁTIS — ADMIN" : `${assistant?.wallet?.balance ?? 0} créditos`}</b>{!assistant?.pricing?.adminFree && Number(assistant?.wallet?.aiBonusBrl || 0) > 0 && <em>Bônus IA: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(assistant?.wallet?.aiBonusBrl || 0))}</em>}</div>
+      <div className="floating-ai-creditbar"><span>MEUS CRÉDITOS</span><b>{`${assistant?.wallet?.balance ?? 0} créditos`}</b>{Number(assistant?.wallet?.aiBonusBrl || 0) > 0 && <em>Bônus IA: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(assistant?.wallet?.aiBonusBrl || 0))}</em>}</div>
       <div className="floating-ai-context"><BrainCircuit /><span>Leio viagens, largadas, capturas e registros ambientais preservados no painel.</span></div>
       <div className="floating-ai-quick">{quickPrompts.map((item, index) => <button key={item.label} type="button" onClick={() => ask(item.prompt, item.mode)} disabled={asking || assistant?.configured === false}>{index === 0 ? <BrainCircuit /> : <MessageSquareText />}<span>{item.label}<small>{costLabel(item.mode)}</small></span></button>)}</div>
       <div className="floating-ai-chat" aria-live="polite">
@@ -151,7 +150,7 @@ export default function FloatingPanelAssistant() {
       </div>
       {error && <div className="floating-ai-error">{error}</div>}
       {assistant?.configured === false && <div className="floating-ai-warning">Configure <b>OPENAI_API_KEY</b> na Vercel para ativar a conversa.</div>}
-      <div className="floating-ai-composer"><textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(undefined, "basic"); } }} placeholder={assistant?.pricing?.adminFree ? "Pergunte ao Painel IA — GRÁTIS" : `Pergunte ao Painel IA — ${costLabel("basic")}`} rows={1} maxLength={2000} disabled={asking || assistant?.configured === false}/><button type="button" onClick={() => void ask(undefined, "basic")} disabled={asking || !question.trim() || assistant?.configured === false} title="Enviar">{asking ? <LoaderCircle className="spin" /> : <Send />}</button></div>
+      <div className="floating-ai-composer"><textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(undefined, "basic"); } }} placeholder={`Pergunte ao Painel IA — ${costLabel("basic")}`} rows={1} maxLength={2000} disabled={asking || assistant?.configured === false}/><button type="button" onClick={() => void ask(undefined, "basic")} disabled={asking || !question.trim() || assistant?.configured === false} title="Enviar">{asking ? <LoaderCircle className="spin" /> : <Send />}</button></div>
       <footer>IA para apoio operacional. Confirme sempre segurança, navegação e condições reais a bordo.</footer>
     </section>}
     <button type="button" className="floating-ai-trigger" onClick={() => setOpen((v) => !v)} aria-label={open ? "Fechar Painel IA" : "Abrir Painel IA"}><span className="floating-ai-trigger-icon"><Sparkles /></span><span className="floating-ai-trigger-copy"><small>ASSISTENTE</small><b>PAINEL IA</b></span><i /></button>

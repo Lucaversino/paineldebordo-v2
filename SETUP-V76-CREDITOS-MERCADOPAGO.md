@@ -6,7 +6,7 @@
 - AIS simples: localizar barco = 2 créditos; atualizar posição = 2 créditos.
 - IA: pergunta simples = 1 crédito; análise completa = 2; análise avançada = 3.
 - Falhas de AIS/OpenAI não descontam créditos.
-- Super Admin identificado pelo e-mail autenticado e com AIS/IA grátis.
+- Regra histórica da V76: Super Admin tinha AIS/IA grátis. **Na V84 isso foi substituído por saldo inicial único de 80 créditos, com consumo normal de AIS/IA.**
 - Extrato de créditos.
 - Compra de 10, 20, 50 ou 100 créditos via Mercado Pago Checkout Pro.
 - Webhook consulta o pagamento diretamente no Mercado Pago antes de liberar créditos.

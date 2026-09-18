@@ -152,13 +152,13 @@ export default function CreditsPage() {
   return <section className="credits-page">
     <div className="credits-head"><div><small>CARTEIRA ÚNICA</small><h2>Meus créditos</h2><p>AIS e Painel IA usam a mesma carteira.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>
     {paymentStatus === "success" && <div className="credits-payment-status success">Pagamento PIX confirmado. Seus créditos foram atualizados.</div>}
-    <article className="credits-balance"><WalletCards /><div><span>Saldo atual</span><b>{data.wallet.isSuperAdmin ? "GRÁTIS — ADMIN" : `${data.wallet.balance} créditos`}</b>{!data.wallet.isSuperAdmin && <em>Equivalente: {brl(equivalent)}</em>}</div>{!data.wallet.isSuperAdmin && Number(data.wallet.aiBonusBrl || 0) > 0 && <div className="credits-ai-bonus"><small>BÔNUS DE BOAS-VINDAS · SÓ IA</small><b>{brl(Number(data.wallet.aiBonusBrl || 0))}</b><span>Use no Painel IA antes dos créditos comprados.</span></div>}</article>
+    <article className="credits-balance"><WalletCards /><div><span>Saldo atual</span><b>{`${data.wallet.balance} créditos`}</b><em>{data.wallet.isSuperAdmin ? "ADMIN · saldo inicial 80 créditos" : `Equivalente: ${brl(equivalent)}`}</em></div>{!data.wallet.isSuperAdmin && Number(data.wallet.aiBonusBrl || 0) > 0 && <div className="credits-ai-bonus"><small>BÔNUS DE BOAS-VINDAS · SÓ IA</small><b>{brl(Number(data.wallet.aiBonusBrl || 0))}</b><span>Use no Painel IA antes dos créditos comprados.</span></div>}</article>
     <div className="credits-services">
-      <article><b>Consulta AIS</b><span>{data.wallet.freeAisAccess ? "GRÁTIS — ADMIN" : `${data.settings.aisSingleCredits} créditos`}</span><small>Localizar um barco</small></article>
-      <article><b>Atualizar AIS</b><span>{data.wallet.freeAisAccess ? "GRÁTIS — ADMIN" : `${data.settings.aisUpdateCredits} créditos`}</span><small>Nova posição</small></article>
-      <article><b>Pergunta IA</b><span>{data.wallet.freeAiAccess ? "GRÁTIS — ADMIN" : `${data.settings.aiBasicCredits} crédito(s)`}</span><small>Pergunta simples</small></article>
-      <article><b>Análise completa</b><span>{data.wallet.freeAiAccess ? "GRÁTIS — ADMIN" : `${data.settings.aiFullCredits} créditos`}</span><small>Viagem e largadas</small></article>
-      <article><b>Análise avançada</b><span>{data.wallet.freeAiAccess ? "GRÁTIS — ADMIN" : `${data.settings.aiAdvancedCredits} créditos`}</span><small>Histórico + ambiente</small></article>
+      <article><b>Consulta AIS</b><span>{`${data.settings.aisSingleCredits} créditos`}</span><small>Localizar um barco</small></article>
+      <article><b>Atualizar AIS</b><span>{`${data.settings.aisUpdateCredits} créditos`}</span><small>Nova posição</small></article>
+      <article><b>Pergunta IA</b><span>{`${data.settings.aiBasicCredits} crédito(s)`}</span><small>Pergunta simples</small></article>
+      <article><b>Análise completa</b><span>{`${data.settings.aiFullCredits} créditos`}</span><small>Viagem e largadas</small></article>
+      <article><b>Análise avançada</b><span>{`${data.settings.aiAdvancedCredits} créditos`}</span><small>Histórico + ambiente</small></article>
     </div>
 
     {!data.wallet.isSuperAdmin && <><div className="credits-section-heading"><div><h3 className="credits-section-title">Comprar créditos</h3><p>Pagamento somente por PIX. O QR Code e o Pix Copia e Cola aparecem aqui mesmo.</p></div><span><QrCode /> PIX</span></div><div className="credits-packages">{data.packages.map((pack) => <button key={pack.credits} type="button" onClick={() => openPix(pack)}><QrCode /><b>{pack.credits} CRÉDITOS</b><span>{brl(pack.amountBrl)}</span><small>PAGAR COM PIX</small></button>)}</div></>}

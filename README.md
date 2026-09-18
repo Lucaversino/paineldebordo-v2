@@ -1,4 +1,10 @@
-# PAINEL DE BORDO — v80
+# PAINEL DE BORDO — v84
+
+Continuação direta da V83. O Super Admin deixa de ter AIS/IA grátis e recebe **80 créditos iniciais, uma única vez**. O painel administrativo interno agora permite localizar usuários e adicionar créditos manualmente (+10, +20, +50, +100 ou valor personalizado), com registro no extrato e estatística separada de créditos vendidos.
+
+AIS e Painel IA passam a consumir o saldo real do administrador. As demais funcionalidades da V83 são preservadas. Consulte `FIX-V84-ADMIN-80-CREDITOS.md`.
+
+## v80 — desempenho e bônus IA
 
 Versão focada em desempenho. Dashboard e navegação carregam módulos pesados somente quando necessários, consultas principais do Dashboard foram paralelizadas e o registro ambiental de novas largadas passou para segundo plano após o salvamento operacional.
 
@@ -292,7 +298,7 @@ O assistente OpenAI agora é global e abre por um botão flutuante no canto infe
 - 1 crédito = R$ 1,00 por padrão, configurável no backend/Admin.
 - AIS simples: localizar barco e atualizar posição usam valores oficiais do backend.
 - Painel IA com modos simples, completo e avançado e cobrança somente após resposta válida.
-- Super Admin autenticado por e-mail com AIS/IA grátis.
+- Super Admin autenticado por e-mail com acesso ao painel administrativo e saldo inicial único de 80 créditos; AIS/IA consomem créditos normalmente.
 - Extrato de créditos.
 - Compra de pacotes via Mercado Pago Checkout Pro com webhook e crédito somente após confirmação real do pagamento.
 - Painel Admin com receita, consumo, tokens, custo estimado e margem.

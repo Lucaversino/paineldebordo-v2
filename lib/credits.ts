@@ -53,7 +53,8 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
 const SETTINGS_CACHE_MS = 60_000;
-const BILLING_SCHEMA_VERSION = "80";
+const BILLING_SCHEMA_VERSION = "84";
+const ADMIN_INITIAL_CREDITS = Math.max(0, Math.round(Number(process.env.ADMIN_INITIAL_CREDITS || 80) || 80));
 
 let schemaPromise: Promise<void> | null = null;
 let schemaReady = false;
@@ -223,6 +224,11 @@ async function migrateBillingSchemaIfNeeded() {
     on conflict (key) do nothing
   `);
   await db.execute(sql`
+    update public.credit_wallets
+    set free_ais_access = false, free_ai_access = false, updated_at = CURRENT_TIMESTAMP::text
+    where free_ais_access = true or free_ai_access = true
+  `);
+  await db.execute(sql`
     insert into public.billing_settings (key, value)
     values ('BILLING_SCHEMA_VERSION', ${BILLING_SCHEMA_VERSION})
     on conflict (key) do update set value = excluded.value, updated_at = CURRENT_TIMESTAMP::text
@@ -304,7 +310,7 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
       insert into public.credit_wallets
         (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
       values
-        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, ${admin}, ${admin})
+        (${user.id}, ${user.email || null}, ${admin ? "super_admin" : "user"}, 0, ${welcomeBonus}, true, false, false)
       on conflict (user_id) do nothing
       returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
     `), 1));
@@ -325,15 +331,43 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
 
   let row = rows[0] || {};
   const expectedRole = admin ? "super_admin" : "user";
-  const flagsWrong = Boolean(row.free_ais_access) !== admin || Boolean(row.free_ai_access) !== admin || String(row.role || "") !== expectedRole || String(row.email || "") !== String(user.email || "");
+  const flagsWrong = Boolean(row.free_ais_access) || Boolean(row.free_ai_access) || String(row.role || "") !== expectedRole || String(row.email || "") !== String(user.email || "");
   if (flagsWrong) {
     const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
       update public.credit_wallets set
-        email = ${user.email || null}, role = ${expectedRole}, free_ais_access = ${admin}, free_ai_access = ${admin}, updated_at = CURRENT_TIMESTAMP::text
+        email = ${user.email || null}, role = ${expectedRole}, free_ais_access = false, free_ai_access = false, updated_at = CURRENT_TIMESTAMP::text
       where user_id = ${user.id}
       returning user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access
     `), 1));
     if (updated[0]) row = updated[0];
+  }
+
+  if (admin && ADMIN_INITIAL_CREDITS > 0) {
+    const marker = rowsOf<any>(await retryDb(() => db.execute(sql`
+      select id from public.credit_transactions
+      where user_id = ${user.id} and reference = 'ADMIN_INITIAL_CREDITS_V84'
+      limit 1
+    `), 1));
+    if (!marker.length) {
+      const currentBalance = Math.max(0, Math.round(asNumber(row.balance, 0)));
+      const targetBalance = Math.max(currentBalance, ADMIN_INITIAL_CREDITS);
+      const delta = targetBalance - currentBalance;
+      if (delta > 0) {
+        const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
+          update public.credit_wallets
+          set balance = ${targetBalance}, updated_at = CURRENT_TIMESTAMP::text
+          where user_id = ${user.id}
+          returning balance
+        `), 1));
+        if (updated[0]) row = { ...row, balance: updated[0].balance };
+      }
+      await db.execute(sql`
+        insert into public.credit_transactions
+          (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
+        values
+          (${user.id}, ${delta}, ${targetBalance}, 'admin_initial_credit', 'Créditos iniciais do administrador', null, 'ADMIN_INITIAL_CREDITS_V84', ${JSON.stringify({ targetCredits: ADMIN_INITIAL_CREDITS })})
+      `).catch(() => null);
+    }
   }
 
   return {
@@ -342,8 +376,8 @@ export async function ensureWallet(user: PanelUser, suppliedSettings?: BillingSe
     role: row.role || expectedRole,
     balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
     aiBonusBrl: admin ? 0 : Math.max(0, Math.round(asNumber(row.ai_bonus_brl, 0) * 100) / 100),
-    freeAisAccess: Boolean(row.free_ais_access ?? admin),
-    freeAiAccess: Boolean(row.free_ai_access ?? admin),
+    freeAisAccess: false,
+    freeAiAccess: false,
     isSuperAdmin: admin,
   };
 }
@@ -558,6 +592,132 @@ export async function updateBillingSettings(user: PanelUser, values: Partial<Rec
   return getBillingSettings();
 }
 
+export type AdminCreditUser = {
+  userId: string;
+  email: string;
+  balance: number;
+  role: string;
+  createdAt?: string | null;
+};
+
+export async function listAdminCreditUsers(user: PanelUser, search = "", limit = 300): Promise<AdminCreditUser[]> {
+  if (!isSuperAdmin(user)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
+  await ensureBillingSchema();
+  const db = getDb();
+  const term = search.trim().toLowerCase();
+  const safeLimit = Math.max(1, Math.min(500, Math.round(limit || 300)));
+
+  try {
+    const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+      select
+        u.id::text as user_id,
+        coalesce(u.email, w.email, '') as email,
+        coalesce(w.balance, 0)::int as balance,
+        coalesce(w.role, 'user') as role,
+        u.created_at::text as created_at
+      from auth.users u
+      left join public.credit_wallets w on w.user_id = u.id::text
+      where ${term === ""} or lower(coalesce(u.email, '')) like ${`%${term}%`}
+      order by u.created_at desc
+      limit ${safeLimit}
+    `), 1));
+    return rows.map((row) => ({
+      userId: String(row.user_id || ""),
+      email: String(row.email || ""),
+      balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
+      role: String(row.role || "user"),
+      createdAt: row.created_at || null,
+    })).filter((row) => row.userId);
+  } catch {
+    const rows = rowsOf<any>(await retryDb(() => db.execute(sql`
+      select user_id, coalesce(email, '') as email, balance, role, created_at
+      from public.credit_wallets
+      where ${term === ""} or lower(coalesce(email, '')) like ${`%${term}%`}
+      order by created_at desc
+      limit ${safeLimit}
+    `), 1));
+    return rows.map((row) => ({
+      userId: String(row.user_id || ""),
+      email: String(row.email || ""),
+      balance: Math.max(0, Math.round(asNumber(row.balance, 0))),
+      role: String(row.role || "user"),
+      createdAt: row.created_at || null,
+    })).filter((row) => row.userId);
+  }
+}
+
+export async function grantManualCredits(args: {
+  admin: PanelUser;
+  targetUserId: string;
+  credits: number;
+  note?: string | null;
+}) {
+  if (!isSuperAdmin(args.admin)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
+  await ensureBillingSchema();
+  const targetUserId = String(args.targetUserId || "").trim();
+  const credits = Math.round(Number(args.credits || 0));
+  const note = String(args.note || "").trim().slice(0, 160);
+  if (!targetUserId) throw Object.assign(new Error("Usuário inválido."), { status: 400 });
+  if (!Number.isFinite(credits) || credits < 1 || credits > 100000) {
+    throw Object.assign(new Error("Informe entre 1 e 100.000 créditos."), { status: 400 });
+  }
+
+  const db = getDb();
+  let email = "";
+  try {
+    const authRows = rowsOf<any>(await retryDb(() => db.execute(sql`
+      select coalesce(email, '') as email from auth.users where id::text = ${targetUserId} limit 1
+    `), 1));
+    email = String(authRows[0]?.email || "");
+  } catch {}
+
+  const existing = rowsOf<any>(await retryDb(() => db.execute(sql`
+    select user_id, coalesce(email, '') as email, balance, role
+    from public.credit_wallets where user_id = ${targetUserId} limit 1
+  `), 1));
+  if (!existing.length && !email) throw Object.assign(new Error("Usuário não encontrado."), { status: 404 });
+  if (!email) email = String(existing[0]?.email || "");
+
+  await retryDb(() => db.execute(sql`
+    insert into public.credit_wallets
+      (user_id, email, role, balance, ai_bonus_brl, ai_bonus_granted, free_ais_access, free_ai_access)
+    values
+      (${targetUserId}, ${email || null}, ${email.trim().toLowerCase() === SUPER_ADMIN_EMAIL ? "super_admin" : "user"}, 0, 0, true, false, false)
+    on conflict (user_id) do update set
+      email = coalesce(excluded.email, public.credit_wallets.email),
+      free_ais_access = false,
+      free_ai_access = false,
+      updated_at = CURRENT_TIMESTAMP::text
+  `), 1);
+
+  const updated = rowsOf<any>(await retryDb(() => db.execute(sql`
+    update public.credit_wallets
+    set balance = balance + ${credits}, updated_at = CURRENT_TIMESTAMP::text
+    where user_id = ${targetUserId}
+    returning balance, email, role
+  `), 1));
+  if (!updated.length) throw new Error("Não foi possível atualizar a carteira do usuário.");
+
+  const balance = Math.max(0, Math.round(asNumber(updated[0].balance, 0)));
+  const reference = `ADMIN_CREDIT_${Date.now()}_${targetUserId.slice(0, 8)}`;
+  await db.execute(sql`
+    insert into public.credit_transactions
+      (user_id, delta, balance_after, kind, description, amount_brl, reference, metadata_json)
+    values
+      (${targetUserId}, ${credits}, ${balance}, 'admin_credit', ${note ? `Crédito manual — ${note}` : "Crédito manual do administrador"}, null, ${reference}, ${JSON.stringify({ adminUserId: args.admin.id, adminEmail: args.admin.email, note: note || null })})
+  `);
+
+  return {
+    ok: true,
+    userId: targetUserId,
+    email: String(updated[0].email || email || ""),
+    role: String(updated[0].role || "user"),
+    creditsAdded: credits,
+    balance,
+    reference,
+  };
+}
+
 export async function getAdminBillingStats(user: PanelUser) {
   if (!isSuperAdmin(user)) throw Object.assign(new Error("Acesso administrativo negado."), { status: 403 });
   await ensureBillingSchema();
@@ -565,7 +725,11 @@ export async function getAdminBillingStats(user: PanelUser) {
   const pick = async (query: any) => rowsOf<any>(await retryDb(() => db.execute(query), 1))[0] || {};
   const [wallet, transactions, payments, ais, ai] = await Promise.all([
     pick(sql`select coalesce(sum(balance),0)::int as balance, coalesce(sum(ai_bonus_brl),0)::float8 as ai_bonus, count(*)::int as users from public.credit_wallets`),
-    pick(sql`select coalesce(sum(case when delta > 0 then delta else 0 end),0)::int as sold, coalesce(sum(case when delta < 0 then -delta else 0 end),0)::int as used from public.credit_transactions`),
+    pick(sql`select
+      coalesce(sum(case when kind = 'purchase' and delta > 0 then delta else 0 end),0)::int as sold,
+      coalesce(sum(case when kind = 'admin_credit' and delta > 0 then delta else 0 end),0)::int as manual,
+      coalesce(sum(case when delta < 0 then -delta else 0 end),0)::int as used
+      from public.credit_transactions`),
     pick(sql`select coalesce(sum(amount_brl),0)::float8 as revenue, count(*) filter (where status = 'approved')::int as approved from public.payment_orders where status = 'approved'`),
     pick(sql`select count(*)::int as queries, count(distinct vessel_name)::int as vessels, coalesce(sum(credits_charged),0)::int as credits, coalesce(sum(provider_calls),0)::int as calls, count(*) filter (where cache_hit)::int as cache, coalesce(sum(estimated_api_cost_brl),0)::float8 as cost from public.ais_usage where status = 'success'`),
     pick(sql`select count(*)::int as queries,
@@ -584,6 +748,7 @@ export async function getAdminBillingStats(user: PanelUser) {
   return {
     creditsSold: asNumber(transactions.sold, 0),
     creditsUsed: asNumber(transactions.used, 0),
+    manualCreditsGranted: asNumber(transactions.manual, 0),
     creditsInWallets: asNumber(wallet.balance, 0),
     aiBonusOutstandingBrl: asNumber(wallet.ai_bonus, 0),
     users: asNumber(wallet.users, 0),

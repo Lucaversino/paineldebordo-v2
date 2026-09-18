@@ -253,15 +253,12 @@ async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "ad
 export async function GET(request: Request) {
   const user = await getPanelUserFromRequest(request);
   if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
-  const admin = isSuperAdmin(user);
-  const settings = admin ? null : await getBillingSettings();
-  const wallet = admin
-    ? { userId: user.id, email: user.email, role: "super_admin", balance: 0, aiBonusBrl: 0, freeAisAccess: true, freeAiAccess: true, isSuperAdmin: true }
-    : await ensureWallet(user, settings!);
-  const basic = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_basic");
-  const full = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_full");
-  const advanced = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_advanced");
-  const model = process.env.OPENAI_MODEL || settings?.AI_BASIC_MODEL || DEFAULT_MODEL;
+  const settings = await getBillingSettings();
+  const wallet = await ensureWallet(user, settings);
+  const basic = quoteService(wallet, settings, "ai_basic");
+  const full = quoteService(wallet, settings, "ai_full");
+  const advanced = quoteService(wallet, settings, "ai_advanced");
+  const model = process.env.OPENAI_MODEL || settings.AI_BASIC_MODEL || DEFAULT_MODEL;
   return Response.json({
     configured: Boolean(process.env.OPENAI_API_KEY),
     model,
@@ -277,8 +274,8 @@ export async function GET(request: Request) {
       basicBonusBrl: basic.bonusAppliedBrl,
       fullBonusBrl: full.bonusAppliedBrl,
       advancedBonusBrl: advanced.bonusAppliedBrl,
-      welcomeBonusBrl: settings?.AI_WELCOME_BONUS_BRL ?? 2,
-      adminFree: wallet.freeAiAccess,
+      welcomeBonusBrl: settings.AI_WELCOME_BONUS_BRL ?? 2,
+      adminFree: false,
     },
   });
 }
@@ -337,15 +334,13 @@ export async function POST(request: Request) {
   const creditMode = mode === "advanced" ? "ai_advanced" as const : mode === "full" ? "ai_full" as const : "ai_basic" as const;
 
   let access: any = null;
-  if (!admin) {
-    try {
-      access = await assertCanUse(user, creditMode);
-    } catch (error: any) {
-      return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
-    }
+  try {
+    access = await assertCanUse(user, creditMode);
+  } catch (error: any) {
+    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
   }
 
-  const settings = access?.settings || null;
+  const settings = access.settings;
   let allContext: any;
   try {
     allContext = await buildFishingContext(user.id, mode);
@@ -407,7 +402,7 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
       cache: "no-store",
     });
   } catch (error: any) {
-    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: error?.name === "TimeoutError" ? "timeout" : "network" }).catch(() => null);
+    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: error?.name === "TimeoutError" ? "timeout" : "network" }).catch(() => null);
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
     return Response.json({ error: timedOut ? "A OpenAI demorou para responder. Tente novamente; nenhum crédito foi consumido." : "Não foi possível conectar à OpenAI. Nenhum crédito foi consumido." }, { status: timedOut ? 504 : 502 });
   }
@@ -415,7 +410,7 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
   const result = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
     const detail = result?.error?.message || "A OpenAI não conseguiu processar esta análise.";
-    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
+    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
     const friendly = openAIResponse.status === 401
       ? "A OPENAI_API_KEY foi recusada. Confira a chave na Vercel."
       : openAIResponse.status === 429
@@ -426,7 +421,7 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
 
   const answer = extractOutputText(result);
   if (!answer) {
-    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
+    void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
     return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
   }
 
@@ -436,23 +431,21 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
     totalTokens: Number(result.usage.total_tokens || 0),
   } : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
-  let debit: any = { charged: 0, balance: 0, free: true, bonusUsedBrl: 0, aiBonusBrl: 0 };
-  if (!admin) {
-    try {
-      debit = await debitCreditsAfterSuccess({
-        user,
-        mode: creditMode,
-        description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
-        reference: result?.id || null,
-        metadata: { model: result?.model || model, mode },
-      });
-    } catch (error: any) {
-      return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
-    }
+  let debit: any;
+  try {
+    debit = await debitCreditsAfterSuccess({
+      user,
+      mode: creditMode,
+      description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
+      reference: result?.id || null,
+      metadata: { model: result?.model || model, mode },
+    });
+  } catch (error: any) {
+    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
   }
 
-  const estimatedApiCostBrl = settings ? ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M) : 0;
-  if (!admin) await logAiUsage({
+  const estimatedApiCostBrl = ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M);
+  await logAiUsage({
     userId: user.id,
     requestType: mode,
     model: result?.model || model,

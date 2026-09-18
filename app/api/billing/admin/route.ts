@@ -1,27 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPanelUser } from "../../../../lib/panelAuth";
-import { getAdminBillingStats, getBillingSettings, isSuperAdmin, updateBillingSettings } from "../../../../lib/credits";
+import { getPanelUserFromRequest } from "../../../../lib/panelAuth";
+import {
+  getAdminBillingStats,
+  getBillingSettings,
+  isSuperAdmin,
+  listAdminCreditUsers,
+  updateBillingSettings,
+} from "../../../../lib/credits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const user = await getPanelUser();
+export async function GET(request: NextRequest) {
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isSuperAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const [settings, stats] = await Promise.all([getBillingSettings(), getAdminBillingStats(user)]);
-  return NextResponse.json({ settings, stats });
+  const search = new URL(request.url).searchParams.get("search") || "";
+  const [settings, stats, users] = await Promise.all([
+    getBillingSettings(),
+    getAdminBillingStats(user),
+    listAdminCreditUsers(user, search),
+  ]);
+  return NextResponse.json({ settings, stats, users });
 }
 
 export async function PUT(request: NextRequest) {
-  const user = await getPanelUser();
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isSuperAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => ({}));
   try {
     const settings = await updateBillingSettings(user, body?.settings || {});
-    const stats = await getAdminBillingStats(user);
-    return NextResponse.json({ ok: true, settings, stats });
+    const [stats, users] = await Promise.all([
+      getAdminBillingStats(user),
+      listAdminCreditUsers(user),
+    ]);
+    return NextResponse.json({ ok: true, settings, stats, users });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Não foi possível salvar as configurações." }, { status: Number(error?.status) || 400 });
   }
