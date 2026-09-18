@@ -109,3 +109,53 @@ export const auditLogs = pgTable("audit_logs", {
   afterJson: text("after_json"),
   createdAt: text("created_at").notNull().default(nowText),
 });
+
+export const aisSavedVessels = pgTable("ais_saved_vessels", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  vesselKey: text("vessel_key").notNull(),
+  name: text("name").notNull(),
+  mmsi: text("mmsi"),
+  imo: text("imo"),
+  country: text("country"),
+  vesselType: text("vessel_type"),
+  callsign: text("callsign"),
+  lastLatitude: doublePrecision("last_latitude"),
+  lastLongitude: doublePrecision("last_longitude"),
+  lastSog: doublePrecision("last_sog"),
+  lastCog: doublePrecision("last_cog"),
+  lastHeading: doublePrecision("last_heading"),
+  lastDestination: text("last_destination"),
+  lastStatus: text("last_status"),
+  lastDataSource: text("last_data_source"),
+  lastPositionReceived: text("last_position_received"),
+  lastUpdateTime: text("last_update_time"),
+  savedAt: text("saved_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  uniqueIndex("idx_ais_saved_owner_key").on(t.ownerId, t.vesselKey),
+  index("idx_ais_saved_owner_updated").on(t.ownerId, t.updatedAt),
+]);
+
+export const aisSearchHistory = pgTable("ais_search_history", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  vesselKey: text("vessel_key").notNull(),
+  name: text("name").notNull(),
+  mmsi: text("mmsi"),
+  imo: text("imo"),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  sog: doublePrecision("sog"),
+  cog: doublePrecision("cog"),
+  heading: doublePrecision("heading"),
+  destination: text("destination"),
+  navStatus: text("nav_status"),
+  dataSource: text("data_source"),
+  positionReceived: text("position_received"),
+  updateTime: text("update_time"),
+  queriedAt: text("queried_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_ais_history_owner_time").on(t.ownerId, t.queriedAt),
+  index("idx_ais_history_owner_vessel").on(t.ownerId, t.vesselKey),
+]);

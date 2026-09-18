@@ -209,3 +209,14 @@ A posição do barco agora aparece em grande formato náutico (graus e minutos d
 - Posição AIS, fonte, horário e dados do barco agora aparecem em um card compacto abaixo da carta.
 - No desktop o card tem largura reduzida e detalhes em linha; no celular reorganiza automaticamente.
 - O mapa permanece totalmente livre para visualização e navegação.
+
+## v64 — Histórico AIS e Barcos Salvos
+
+A página AIS agora mantém uma biblioteca privada por usuário no Supabase:
+
+- **Pasta de barcos salvos** para guardar embarcações frequentes sem gastar créditos para reabrir a última posição conhecida.
+- **Histórico AIS** das últimas posições realmente consultadas no Data Docked.
+- **Limpar histórico** apaga somente o histórico AIS da conta logada.
+- Barcos salvos podem ser removidos individualmente e atualizados por **1 crédito**.
+- Quando um barco salvo recebe uma nova posição, a última posição armazenada é atualizada automaticamente.
+- O banco cria as tabelas AIS automaticamente na primeira utilização e mantém RLS habilitado.

@@ -109,3 +109,55 @@ alter table public.trips enable row level security;
 alter table public.fishing_sets enable row level security;
 alter table public.catches enable row level security;
 alter table public.audit_logs enable row level security;
+
+-- AIS — barcos salvos e histórico por usuário (v64+)
+create table if not exists public.ais_saved_vessels (
+  id serial primary key,
+  owner_id text not null,
+  vessel_key text not null,
+  name text not null,
+  mmsi text,
+  imo text,
+  country text,
+  vessel_type text,
+  callsign text,
+  last_latitude double precision,
+  last_longitude double precision,
+  last_sog double precision,
+  last_cog double precision,
+  last_heading double precision,
+  last_destination text,
+  last_status text,
+  last_data_source text,
+  last_position_received text,
+  last_update_time text,
+  saved_at text not null default CURRENT_TIMESTAMP::text,
+  updated_at text not null default CURRENT_TIMESTAMP::text,
+  unique(owner_id, vessel_key)
+);
+create index if not exists idx_ais_saved_owner_updated on public.ais_saved_vessels(owner_id, updated_at);
+
+create table if not exists public.ais_search_history (
+  id serial primary key,
+  owner_id text not null,
+  vessel_key text not null,
+  name text not null,
+  mmsi text,
+  imo text,
+  latitude double precision not null,
+  longitude double precision not null,
+  sog double precision,
+  cog double precision,
+  heading double precision,
+  destination text,
+  nav_status text,
+  data_source text,
+  position_received text,
+  update_time text,
+  queried_at text not null default CURRENT_TIMESTAMP::text
+);
+create index if not exists idx_ais_history_owner_time on public.ais_search_history(owner_id, queried_at);
+create index if not exists idx_ais_history_owner_vessel on public.ais_search_history(owner_id, vessel_key);
+
+alter table public.ais_saved_vessels enable row level security;
+alter table public.ais_search_history enable row level security;
