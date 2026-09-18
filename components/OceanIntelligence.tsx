@@ -6,6 +6,34 @@ import { Activity, BrainCircuit, Droplets, MoonStar, RefreshCw, Thermometer, Wav
 const n = (v: any, d = 1) => v == null || Number.isNaN(Number(v)) ? "—" : new Intl.NumberFormat("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(Number(v));
 const tm = (v?: string | null) => v ? new Date(v).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
 
+const toKnots = (kmh: any) => {
+  const value = Number(kmh);
+  return Number.isFinite(value) ? value / 1.852 : null;
+};
+
+function currentFlow(speedKmh: any, directionDeg: any) {
+  const knots = toKnots(speedKmh);
+  const deg = Number(directionDeg);
+  if (knots == null || !Number.isFinite(deg)) {
+    return { knots, label: "DIREÇÃO INDISPONÍVEL", cardinal: "—", northSouthKnots: null };
+  }
+
+  const normalized = ((deg % 360) + 360) % 360;
+  const northSouth = knots * Math.cos(normalized * Math.PI / 180);
+  const eastWest = knots * Math.sin(normalized * Math.PI / 180);
+  const absNorthSouth = Math.abs(northSouth);
+  const absEastWest = Math.abs(eastWest);
+  const cardinalPoints = ["N", "NE", "L", "SE", "S", "SO", "O", "NO"];
+  const cardinal = cardinalPoints[Math.round(normalized / 45) % 8];
+
+  // Quando a componente norte/sul é muito pequena, a corrente está praticamente transversal.
+  const label = absNorthSouth < Math.max(0.05, knots * 0.2) && absEastWest > absNorthSouth
+    ? `VAI MAIS PARA ${eastWest >= 0 ? "LESTE" : "OESTE"}`
+    : `VAI PARA ${northSouth >= 0 ? "NORTE" : "SUL"}`;
+
+  return { knots, label, cardinal, northSouthKnots: absNorthSouth };
+}
+
 export default function OceanIntelligence() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -40,8 +68,17 @@ export default function OceanIntelligence() {
       <div className="ocean-grid">
         <article><MoonStar/><small>LUA AGORA</small><b>{e.lunar.name}</b><span>{n(e.lunar.illumination * 100,0)}% iluminada</span><i>Nasce {tm(e.lunar.moonrise)} • põe {tm(e.lunar.moonset)}</i></article>
         <article><Wind/><small>VENTO</small><b>{n(e.wind?.speedKmh)} km/h</b><span>Direção: {e.wind?.direction || "—"}{e.wind?.directionDeg != null ? ` (${n(e.wind.directionDeg,0)}°)` : ""}</span><i>Rajadas {n(e.wind?.gustKmh)} km/h • Atualização {tm(e.wind?.time)}</i></article>
-        <article><Waves/><small>MAR / ONDA</small><b>{n(e.sea?.waveHeightM)} m</b><span>Período {n(e.sea?.wavePeriodS)} s • swell {n(e.sea?.swellHeightM)} m</span><i>Corrente {n(e.sea?.currentKmh)} km/h</i></article>
-        <article><Droplets/><small>MARÉ MODELADA</small><b>{n(e.sea?.seaLevelMslM,2)} m MSL</b><span>{e.sea?.extrema?.[0] ? `${e.sea.extrema[0].type === "HIGH" ? "Próx. alta" : "Próx. baixa"} ${tm(e.sea.extrema[0].time)}` : "Sem extremo próximo"}</span><i>Não usar para navegação</i></article>
+        <article><Waves/><small>MAR / ONDA</small><b>{n(e.sea?.waveHeightM)} m</b><span>Período {n(e.sea?.wavePeriodS)} s • swell {n(e.sea?.swellHeightM)} m</span><i>{e.sea?.time ? `Atualização ${tm(e.sea.time)}` : "Modelo oceânico"}</i></article>
+        {(() => {
+          const flow = currentFlow(e.sea?.currentKmh, e.sea?.currentDirectionDeg);
+          return <article>
+            <Droplets/>
+            <small>CORRENTE DE MARÉ</small>
+            <b>{flow.knots == null ? "—" : `${n(flow.knots,2)} MN/h`}</b>
+            <span>{flow.label}{flow.cardinal !== "—" ? ` • ${flow.cardinal} ${n(e.sea?.currentDirectionDeg,0)}°` : ""}</span>
+            <i>{flow.knots == null ? "Sem leitura de corrente" : `${n(flow.knots,2)} nós • em 1 h ≈ ${n(flow.knots,2)} milha náutica`}</i>
+          </article>;
+        })()}
         <article><Thermometer/><small>TEMPERATURA DO MAR</small><b>{n(e.sea?.sstC)} °C</b><span>Posição da largada #{e.position.setNumber}</span><i>{n(e.position.lat,4)}, {n(e.position.lon,4)}</i></article>
         <article><Activity/><small>CLOROFILA-a</small><b>{e.chlorophyll ? `${n(e.chlorophyll.mgM3,2)} mg/m³` : "Sem leitura"}</b><span>{e.chlorophyll ? "Satélite VIIRS" : "Nuvem/grade pode impedir leitura"}</span><i>{e.chlorophyll?.time ? new Date(e.chlorophyll.time).toLocaleDateString("pt-BR") : "NOAA CoastWatch"}</i></article>
       </div>

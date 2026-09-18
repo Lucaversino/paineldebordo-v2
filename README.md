@@ -78,7 +78,7 @@ Esta versão remove do pacote as pastas antigas de Vinext/Cloudflare D1 e execut
 - Histórico e dashboards de viagens finalizadas
 - Ajustes de peso final e relatórios/PDF já existentes no projeto
 - PWA
-- Inteligência Oceânica: Lua, nascer/pôr da Lua e do Sol, vento, ondas, swell, corrente, maré modelada, temperatura do mar e clorofila
+- Inteligência Oceânica: Lua, nascer/pôr da Lua e do Sol, vento, ondas, swell, corrente de maré em nós/MN por hora com direção do fluxo, temperatura do mar e clorofila
 - Assistente analítico baseado no histórico de largadas/capturas
 
 ## O que mudou
@@ -350,3 +350,12 @@ Veja `FIX-V86-ADMIN-LOADING-IA-CHAT-LIMPO.md`.
 - Histórico local separado por usuário autenticado.
 
 Veja `FIX-V88-FISH-AI-HISTORICO.md`.
+
+
+## V89 — Corrente de maré no dashboard
+
+- O card **MARÉ MODELADA** do dashboard foi substituído por **CORRENTE DE MARÉ**.
+- Mostra velocidade em **nós** e também em **milhas náuticas por hora (MN/h)**.
+- Mostra para onde a corrente está indo: **Norte, Sul, Leste ou Oeste**, com rumo em graus e ponto cardeal.
+- Mostra também a componente Norte/Sul para facilitar a leitura operacional.
+- A leitura vem do modelo oceânico usado pela API; não substitui informação oficial de navegação costeira.
