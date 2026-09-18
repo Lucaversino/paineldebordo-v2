@@ -359,3 +359,6 @@ Veja `FIX-V88-FISH-AI-HISTORICO.md`.
 - Mostra para onde a corrente está indo: **Norte, Sul, Leste ou Oeste**, com rumo em graus e ponto cardeal.
 - Mostra também a componente Norte/Sul para facilitar a leitura operacional.
 - A leitura vem do modelo oceânico usado pela API; não substitui informação oficial de navegação costeira.
+
+## V90 — posição da Inteligência Oceânica
+A análise ambiental usa por padrão a primeira posição registrada na primeira largada do dia. O usuário pode alterar temporariamente o ponto pelo botão **Alterar posição** sem modificar os dados da largada no banco. A posição é exibida em graus e minutos decimais (S/W).

@@ -150,11 +150,18 @@ function bucketAnalysis(rows: any[]) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
   const user = auth.user!;
-  const cached = oceanCache.get(user.id);
+  const url = new URL(request.url);
+  const manualLatRaw = url.searchParams.get("lat");
+  const manualLonRaw = url.searchParams.get("lon");
+  const manualLat = manualLatRaw == null ? NaN : Number(manualLatRaw);
+  const manualLon = manualLonRaw == null ? NaN : Number(manualLonRaw);
+  const hasManualPosition = manualLatRaw != null && manualLonRaw != null && Number.isFinite(manualLat) && Number.isFinite(manualLon) && Math.abs(manualLat) <= 90 && Math.abs(manualLon) <= 180;
+  const cacheKey = hasManualPosition ? `${user.id}|manual:${manualLat.toFixed(5)},${manualLon.toFixed(5)}` : `${user.id}|auto`;
+  const cached = oceanCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return Response.json(cached.payload);
   const db = getDb();
   const [allSets, allCatches] = await Promise.all([
@@ -167,13 +174,42 @@ export async function GET() {
   allCatches.filter(c=>c.catchType !== "DISCARD").forEach(c=>kgBySet.set(c.fishingSetId,(kgBySet.get(c.fishingSetId)||0)+Number(c.weightKg||0)));
   const rows = allSets.map(s=>({ ...s, kg:kgBySet.get(s.id)||0, hour:new Date(s.startedAt).getHours() })).filter(r=>r.kg>0);
   const patterns = bucketAnalysis(rows);
-  const latest = [...allSets].reverse().find(s=>s.lat != null && s.lon != null);
+  const validSets = allSets.filter(s => s.lat != null && s.lon != null);
+  const localDayKey = (value: string | Date) => {
+    try {
+      // startedAt vem do input datetime-local e é salvo como texto; preserve a data digitada a bordo.
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+      const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+      const pick = (type: string) => parts.find(p => p.type === type)?.value || "";
+      return `${pick("year")}-${pick("month")}-${pick("day")}`;
+    } catch {
+      return "";
+    }
+  };
+  const todayKey = localDayKey(new Date());
+  let automaticSet = validSets.find(s => localDayKey(s.startedAt) === todayKey) || null;
+  let positionSource: "FIRST_SET_TODAY" | "FIRST_SET_LATEST_DAY" | "MANUAL" = "FIRST_SET_TODAY";
+
+  // Se ainda não houver largada hoje, usa a primeira posição do último dia com largada.
+  // Isso mantém o painel útil sem trocar silenciosamente para a última posição do dia.
+  if (!automaticSet && validSets.length) {
+    const latestDay = localDayKey(validSets[validSets.length - 1].startedAt);
+    automaticSet = validSets.find(s => localDayKey(s.startedAt) === latestDay) || validSets[0];
+    positionSource = "FIRST_SET_LATEST_DAY";
+  }
+
+  const position = hasManualPosition
+    ? { lat: manualLat, lon: manualLon, setNumber: null, startedAt: null, source: "MANUAL" as const }
+    : automaticSet
+      ? { lat: Number(automaticSet.lat), lon: Number(automaticSet.lon), setNumber: automaticSet.setNumber, startedAt: automaticSet.startedAt, source: positionSource }
+      : null;
+
   let environment:any = null;
-  if (latest?.lat != null && latest?.lon != null) {
+  if (position) {
     const now = new Date();
-    const [ocean, chlorophyll] = await Promise.all([fetchOpenMeteo(Number(latest.lat), Number(latest.lon)).catch(()=>null), fetchChlorophyll(Number(latest.lat), Number(latest.lon))]);
-    const phase = moonPhase(now), mt = moonTimes(now, Number(latest.lat), Number(latest.lon));
-    environment = { position:{ lat:latest.lat, lon:latest.lon, setNumber:latest.setNumber }, lunar:{ ...phase, moonrise:mt.rise?.toISOString()||null, moonset:mt.set?.toISOString()||null }, ...ocean, chlorophyll };
+    const [ocean, chlorophyll] = await Promise.all([fetchOpenMeteo(position.lat, position.lon).catch(()=>null), fetchChlorophyll(position.lat, position.lon)]);
+    const phase = moonPhase(now), mt = moonTimes(now, position.lat, position.lon);
+    environment = { position, lunar:{ ...phase, moonrise:mt.rise?.toISOString()||null, moonset:mt.set?.toISOString()||null }, ...ocean, chlorophyll };
   }
   const bestHour = patterns.hours.find(x=>x.samples>=2) || patterns.hours[0] || null;
   const bestDepth = patterns.depth.find(x=>x.samples>=2 && x.label!=="Sem profundidade") || patterns.depth.find(x=>x.label!=="Sem profundidade") || null;
@@ -184,6 +220,6 @@ export async function GET() {
     sampleCount < 5 ? "Ainda há poucas largadas com captura para detectar padrões confiáveis." : "A análise aprende com as largadas registradas neste painel e compara produtividade média por faixa.",
     "Correlação não prova causa: lua, vento, maré e clorofila devem ser comparados com histórico antes de orientar uma decisão operacional.",
   ] }, sources:{ marine:"Open-Meteo Marine", weather:"Open-Meteo Forecast", chlorophyll:"NOAA CoastWatch ERDDAP / VIIRS" } };
-  oceanCache.set(user.id, { expiresAt: Date.now() + 120_000, payload });
+  oceanCache.set(cacheKey, { expiresAt: Date.now() + 120_000, payload });
   return Response.json(payload);
 }
