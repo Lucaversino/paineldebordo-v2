@@ -1,3 +1,12 @@
+
+## v69 — previsão automática por largada
+
+- Registra automaticamente vento, rajadas, ondas, swell, maré/nível modelado, temperatura do mar, corrente, clorofila e fase lunar quando uma largada é salva.
+- Faz backfill gradual das largadas antigas (inclusive viagens finalizadas) usando dados históricos quando disponíveis.
+- Preserva um snapshot do dia por largada para o PAINEL IA correlacionar ambiente x captura.
+- O PDF normal continua sem previsão. Um botão separado **PDF + previsão** gera um anexo ambiental por largada.
+- Em Configurações há o botão **Sincronizar todas as largadas** para forçar/completar o backfill.
+
 # PAINEL DE BORDO — PESCA INDUSTRIAL v63
 
 Versão 60 preparada para **Vercel + Supabase**, com Inteligência Oceânica, Assistente IA, Ventos e Mar, Cartas Raster DHN/CHM e AIS Data Docked com pesquisa direta por latitude e longitude.

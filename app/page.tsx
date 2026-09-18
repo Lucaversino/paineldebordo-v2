@@ -80,6 +80,35 @@ export default function Home() {
   useEffect(() => {
     load();
   }, []);
+
+  // v69: preenche gradualmente o histórico ambiental das largadas antigas sem
+  // bloquear a tela. Cada visita continua de onde parou até cobrir as viagens
+  // atuais e finalizadas.
+  useEffect(() => {
+    let stopped = false;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const backfill = async () => {
+      await sleep(1600);
+      for (let round = 0; round < 10 && !stopped; round++) {
+        if (!navigator.onLine) return;
+        try {
+          const response = await fetch("/api/environmental-snapshots", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "backfill", limit: 3 }),
+          });
+          if (!response.ok) return;
+          const result = await response.json().catch(() => ({}));
+          if (!Number(result.remaining || 0)) return;
+        } catch {
+          return;
+        }
+        await sleep(900);
+      }
+    };
+    void backfill();
+    return () => { stopped = true; };
+  }, []);
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
     window.location.replace("/login");

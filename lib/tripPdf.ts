@@ -13,7 +13,7 @@ const coord = (value: number | null, latitude: boolean) => {
   return `${String(degrees).padStart(2, "0")}°${minutes} ${direction}`;
 };
 
-export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true) {
+export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true, environmentalSnapshots: any[] = []) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const tripSets = sets.filter((item) => Number(item.tripId) === Number(trip.id)).sort((a, b) => a.setNumber - b.setNumber);
   const tripCatches = catches.filter((item) => Number(item.tripId) === Number(trip.id));
@@ -200,6 +200,75 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.text(`${tripSets.length} ${tripSets.length === 1 ? "largada registrada" : "largadas registradas"}`, 272, summaryY + 22, { align: "right" });
   doc.setFontSize(7.5);
   doc.text("Total capturado = Corvina + Mistura. O descarte é apresentado separadamente.", 272, summaryY + 29, { align: "right" });
+
+  if (environmentalSnapshots.length) {
+    doc.addPage();
+    doc.setFillColor(4, 32, 39);
+    doc.rect(0, 0, 297, 32, "F");
+    doc.setFillColor(31, 207, 160);
+    doc.rect(0, 0, 7, 32, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text("DADOS AMBIENTAIS DAS LARGADAS", 16, 15);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(153, 201, 207);
+    doc.setFontSize(8.5);
+    doc.text("Anexo opcional • previsão/registro ambiental preservado para análise histórica e IA", 16, 23);
+
+    const envBySet = new Map(environmentalSnapshots.map((item: any) => [Number(item.fishingSetId), item]));
+    const num = (value: any, digits = 1) => value == null || !Number.isFinite(Number(value)) ? "-" : Number(value).toFixed(digits).replace(".", ",");
+    autoTable(doc, {
+      startY: 40,
+      margin: { left: 12, right: 12, bottom: 18 },
+      head: [["Largada", "Data/hora", "Vento", "Rajada", "Onda", "Swell", "Temp. mar", "Maré MSL", "Corrente", "Clorofila", "Lua", "Fonte"]],
+      body: tripSets.map((set: any) => {
+        const env = envBySet.get(Number(set.id));
+        if (!env) return [
+          `#${String(set.setNumber).padStart(2, "0")}`, `${date(set.startedAt)} ${time(set.startedAt)}`,
+          "Sem snapshot", "-", "-", "-", "-", "-", "-", "-", "-", "Pendente",
+        ];
+        return [
+          `#${String(set.setNumber).padStart(2, "0")}`,
+          `${date(env.referenceTime || set.startedAt)} ${time(env.referenceTime || set.startedAt)}`,
+          `${num(env.windSpeedKmh)} km/h
+${env.windDirection || "-"}`,
+          `${num(env.gustKmh)} km/h`,
+          `${num(env.waveHeightM)} m
+${env.waveDirection || "-"} • ${num(env.wavePeriodS)} s`,
+          `${num(env.swellHeightM)} m
+${env.swellDirection || "-"} • ${num(env.swellPeriodS)} s`,
+          `${num(env.seaTemperatureC)} °C`,
+          `${num(env.seaLevelMslM, 2)} m`,
+          `${num(env.currentKmh)} km/h
+${env.currentDirection || "-"}`,
+          env.chlorophyllMgM3 == null ? "-" : `${num(env.chlorophyllMgM3, 2)} mg/m³`,
+          `${env.lunarPhase || "-"}${env.lunarIllumination == null ? "" : `
+${num(Number(env.lunarIllumination) * 100, 0)}%`}`,
+          env.sourceMode === "HISTORICAL_BACKFILL" ? "Histórico" : "Previsão do dia",
+        ];
+      }),
+      styles: { font: "helvetica", fontSize: 6.8, cellPadding: 2.2, textColor: [28, 53, 59], lineColor: [221, 232, 234], lineWidth: 0.12, valign: "middle" },
+      headStyles: { fillColor: [5, 54, 62], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 6.8 },
+      alternateRowStyles: { fillColor: [244, 249, 249] },
+      columnStyles: {
+        0: { cellWidth: 13 }, 1: { cellWidth: 27 }, 2: { cellWidth: 28 }, 3: { cellWidth: 18 },
+        4: { cellWidth: 31 }, 5: { cellWidth: 31 }, 6: { cellWidth: 20 }, 7: { cellWidth: 20 },
+        8: { cellWidth: 29 }, 9: { cellWidth: 24 }, 10: { cellWidth: 25 }, 11: { cellWidth: 22 },
+      },
+      didDrawPage: () => drawFooter(),
+    });
+
+    const complete = environmentalSnapshots.filter((item: any) => item.status === "COMPLETE").length;
+    const partial = environmentalSnapshots.filter((item: any) => item.status === "PARTIAL").length;
+    const finalY = (doc as any).lastAutoTable?.finalY ?? 50;
+    if (finalY < 184) {
+      doc.setTextColor(86, 109, 115);
+      doc.setFontSize(7.5);
+      doc.text(`Cobertura ambiental: ${environmentalSnapshots.length}/${tripSets.length} largadas • completas ${complete} • parciais ${partial}. Dados ambientais são modelados/satelitais e servem para análise histórica; não substituem referências oficiais de navegação.`, 16, Math.min(190, finalY + 8));
+    }
+    drawFooter();
+  }
 
   const safeName = `${trip.boatName}-${trip.name}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
   const filename = `Relatorio-${safeName || "Viagem"}.pdf`;

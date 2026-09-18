@@ -9,6 +9,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { claimLegacyData } from "../../../lib/userData";
+import { captureEnvironmentalSnapshot } from "../../../lib/environmentalSnapshots";
 
 function coordinate(value: unknown, latitude: boolean) {
   const raw = String(value || "").toUpperCase().replace(/[NSEW\s]/g, "");
@@ -511,5 +512,18 @@ export async function PUT(r: Request) {
     .returning();
   if (!row)
     return Response.json({ error: "Largada não encontrada." }, { status: 404 });
+  try {
+    await captureEnvironmentalSnapshot(db, {
+      ownerId: user.id,
+      tripId: Number(row.tripId),
+      fishingSetId: Number(row.id),
+      latitude: row.startLatitude == null ? null : Number(row.startLatitude),
+      longitude: row.startLongitude == null ? null : Number(row.startLongitude),
+      referenceTime: String(row.startedAt),
+      force: true,
+    });
+  } catch (error) {
+    console.error("environmental snapshot on set update", error);
+  }
   return Response.json(row);
 }

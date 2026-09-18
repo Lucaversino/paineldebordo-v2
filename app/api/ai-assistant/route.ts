@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
+import { getEnvironmentalSnapshots } from "../../../lib/environmentalSnapshots";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -64,7 +65,7 @@ function extractOutputText(response: any) {
 
 async function buildFishingContext(ownerId: string) {
   const db = getDb();
-  const [tripRows, setRows, catchRows, speciesRows] = await Promise.all([
+  const [tripRows, setRows, catchRows, speciesRows, environmentRows] = await Promise.all([
     db
       .select({
         id: trips.id,
@@ -120,9 +121,11 @@ async function buildFishingContext(ownerId: string) {
       .select({ id: species.id, commonName: species.commonName, code: species.code })
       .from(species)
       .where(eq(species.ownerId, ownerId)),
+    getEnvironmentalSnapshots(db, ownerId),
   ]);
 
   const speciesName = new Map(speciesRows.map((item) => [item.id, item.commonName]));
+  const environmentBySet = new Map(environmentRows.map((item) => [Number(item.fishingSetId), item]));
   const catchesBySet = new Map<number, CatchRow[]>();
   for (const row of catchRows as CatchRow[]) {
     const list = catchesBySet.get(row.fishingSetId) || [];
@@ -156,6 +159,28 @@ async function buildFishingContext(ownerId: string) {
         kg: safeNumber(item.weightKg),
         caughtAt: item.caughtAt,
       })),
+      environment: (() => {
+        const snapshot = environmentBySet.get(Number(set.id));
+        if (!snapshot) return null;
+        return {
+          status: snapshot.status,
+          sourceMode: snapshot.sourceMode,
+          referenceTime: snapshot.referenceTime,
+          wind: { speedKmh: snapshot.windSpeedKmh, direction: snapshot.windDirection, directionDeg: snapshot.windDirectionDeg, gustKmh: snapshot.gustKmh },
+          sea: {
+            waveHeightM: snapshot.waveHeightM, waveDirection: snapshot.waveDirection, waveDirectionDeg: snapshot.waveDirectionDeg, wavePeriodS: snapshot.wavePeriodS,
+            swellHeightM: snapshot.swellHeightM, swellDirection: snapshot.swellDirection, swellPeriodS: snapshot.swellPeriodS,
+            temperatureC: snapshot.seaTemperatureC, currentKmh: snapshot.currentKmh, currentDirection: snapshot.currentDirection,
+            seaLevelMslM: snapshot.seaLevelMslM,
+          },
+          chlorophyllMgM3: snapshot.chlorophyllMgM3,
+          chlorophyllTime: snapshot.chlorophyllTime,
+          lunar: { phase: snapshot.lunarPhase, illumination: snapshot.lunarIllumination },
+          sunrise: snapshot.sunrise,
+          sunset: snapshot.sunset,
+          dayForecast: snapshot.payload?.dayForecast || null,
+        };
+      })(),
       notes: set.notes,
     };
   });
@@ -257,6 +282,7 @@ REGRAS DE QUALIDADE:
 3. Correlação não é causalidade. Se a amostra for pequena, diga isso de forma objetiva.
 4. Compare viagem atual com viagens anteriores quando houver histórico suficiente.
 5. Ao analisar largadas, considere horário, profundidade, posição, produção por largada, espécie/categoria, lua, vento/direção, rajadas, onda/swell, corrente, nível do mar/maré modelada, temperatura da superfície e clorofila quando esses dados estiverem disponíveis.
+5A. Prefira o campo environment preservado dentro de cada largada para correlações históricas. Não use o ambiente atual do dashboard como se fosse a condição de uma largada passada.
 6. Não trate previsão de pesca como garantia. Expresse janelas e condições como hipóteses operacionais baseadas no histórico.
 7. Dados de maré/modelos oceânicos não substituem carta náutica, avisos oficiais, decisão do comandante nem procedimentos de segurança.
 8. Seja direto, técnico e compreensível para uso a bordo. Evite texto genérico.

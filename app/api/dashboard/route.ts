@@ -9,6 +9,7 @@ import {
 import { and, asc, eq, sql } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { claimLegacyData } from "../../../lib/userData";
+import { captureEnvironmentalSnapshot } from "../../../lib/environmentalSnapshots";
 
 function parseDmm(value: unknown, latitude: boolean) {
   const raw = String(value || "")
@@ -306,7 +307,24 @@ export async function POST(req: Request) {
       const [saved] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: row.id, speciesId: extra.speciesId, catchType: extra.type, weightKg: extra.weight, caughtAt: finishedAt, createdBy: user.id }).returning();
       extraCatches.push(saved);
     }
-    return Response.json({ ...row, catch: catchRow, extraCatches }, { status: 201 });
+
+    // v69: registra automaticamente um snapshot ambiental da largada. A captura
+    // nunca impede o salvamento operacional: se alguma fonte externa falhar,
+    // a largada permanece salva e o backfill automático tenta novamente depois.
+    let environmentSnapshot: any = null;
+    try {
+      environmentSnapshot = await captureEnvironmentalSnapshot(db, {
+        ownerId: user.id,
+        tripId: body.tripId,
+        fishingSetId: row.id,
+        latitude: startLatitude,
+        longitude: startLongitude,
+        referenceTime: startedAt,
+      });
+    } catch (error) {
+      console.error("environmental snapshot on set create", error);
+    }
+    return Response.json({ ...row, catch: catchRow, extraCatches, environmentSnapshot }, { status: 201 });
   }
   return Response.json({ error: "Ação inválida." }, { status: 400 });
 }

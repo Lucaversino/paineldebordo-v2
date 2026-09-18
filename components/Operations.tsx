@@ -76,11 +76,14 @@ export default function Operations({ view, onDashboard }: Props) {
     [reportTripId, setReportTripId] = useState(""),
     [pdfTrip, setPdfTrip] = useState<any>(null),
     [pdfMode, setPdfMode] = useState<"download" | "share">("download"),
+    [pdfIncludeEnvironment, setPdfIncludeEnvironment] = useState(false),
     [pdfFile, setPdfFile] = useState<File | null>(null),
     [sharing, setSharing] = useState(false),
     [pdfError, setPdfError] = useState(""),
     [saving, setSaving] = useState(false),
     [selectedFinishedTripId, setSelectedFinishedTripId] = useState<number | null>(null),
+    [envSyncing, setEnvSyncing] = useState(false),
+    [envSyncMsg, setEnvSyncMsg] = useState(""),
     [msg, setMsg] = useState("");
   const load = () => {
     setLoading(true);
@@ -91,6 +94,34 @@ export default function Operations({ view, onDashboard }: Props) {
   };
   useEffect(load, []);
   useEffect(() => setSelectedFinishedTripId(null), [view]);
+  async function syncEnvironmentalHistory() {
+    if (envSyncing) return;
+    setEnvSyncing(true);
+    setEnvSyncMsg("Sincronizando largadas atuais e antigas...");
+    try {
+      let remaining = 1;
+      let processed = 0;
+      for (let round = 0; round < 12 && remaining > 0; round++) {
+        const response = await fetch("/api/environmental-snapshots", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "backfill", limit: 3 }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw Error(result.error || "Não foi possível sincronizar o histórico ambiental.");
+        processed += Number(result.processed || 0);
+        remaining = Number(result.remaining || 0);
+        setEnvSyncMsg(remaining > 0 ? `${processed} largadas processadas • faltam ${remaining}` : `Histórico ambiental completo • ${processed} processadas nesta sincronização`);
+        if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (remaining > 0) setEnvSyncMsg(`Sincronização parcial concluída. Ainda faltam ${remaining}; clique novamente para continuar.`);
+    } catch (error) {
+      setEnvSyncMsg(error instanceof Error ? error.message : "Falha ao sincronizar histórico ambiental.");
+    } finally {
+      setEnvSyncing(false);
+    }
+  }
+
   async function save(type: string, e: any) {
     e.preventDefault();
     if (saving) return;
@@ -309,7 +340,13 @@ export default function Operations({ view, onDashboard }: Props) {
   const selectedFinishedTrip = s.trips.find(
     (x) => x.status === "FINISHED" && Number(x.id) === Number(selectedFinishedTripId),
   );
-  const downloadPdf = (trip: any, mode: "download" | "share" = "download") => { setPdfError(""); setPdfFile(null); setPdfMode(mode); setPdfTrip(trip); };
+  const downloadPdf = (trip: any, mode: "download" | "share" = "download", includeEnvironment = false) => {
+    setPdfError("");
+    setPdfFile(null);
+    setPdfMode(mode);
+    setPdfIncludeEnvironment(includeEnvironment);
+    setPdfTrip(trip);
+  };
   const sharePdf = async () => {
     if (!pdfFile || sharing) return;
     setPdfError("");
@@ -353,14 +390,23 @@ export default function Operations({ view, onDashboard }: Props) {
       if (!freshTrip) throw Error("Viagem não encontrada.");
       setS(fresh);
       setPdfTrip(freshTrip);
+      let environmentalSnapshots: any[] = [];
+      if (pdfIncludeEnvironment) {
+        const environmentalResponse = await fetch(`/api/environmental-snapshots?tripId=${freshTrip.id}`, { cache: "no-store" });
+        const environmental = await environmentalResponse.json().catch(() => ({}));
+        if (!environmentalResponse.ok) throw Error(environmental.error || "Não foi possível carregar os dados ambientais.");
+        environmentalSnapshots = Array.isArray(environmental.snapshots) ? environmental.snapshots : [];
+      }
       const { generateTripPdf } = await import("../lib/tripPdf");
-      const file = generateTripPdf(freshTrip, fresh.sets, fresh.catches, pdfMode === "download");
+      const file = generateTripPdf(freshTrip, fresh.sets, fresh.catches, pdfMode === "download", environmentalSnapshots);
       if (pdfMode === "share") {
         setPdfFile(file);
         setMsg("");
       } else {
         setPdfTrip(null);
-        setMsg("PDF gerado com os totais de Corvina, Mistura e Descarte.");
+        setMsg(pdfIncludeEnvironment
+          ? "PDF com dados ambientais gerado. O PDF normal continua sem previsão."
+          : "PDF gerado com os totais de Corvina, Mistura e Descarte.");
       }
     } catch (error) {
       setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF.");
@@ -419,6 +465,9 @@ export default function Operations({ view, onDashboard }: Props) {
               </button>
               <button className="editbtn" onClick={() => downloadPdf(current)}>
                 <FileDown /> PDF da viagem
+              </button>
+              <button className="editbtn" onClick={() => downloadPdf(current, "download", true)} title="PDF opcional com vento, ondas, maré, temperatura, clorofila e lua por largada">
+                <Waves /> PDF + previsão
               </button>
               <button className="editbtn" onClick={() => downloadPdf(current, "share")}><Share2 /> WhatsApp</button>
               <button className="deletebtn" onClick={() => del(current.id)}>
@@ -637,6 +686,7 @@ export default function Operations({ view, onDashboard }: Props) {
                         </button>
                       )}
                       <button className="editbtn" onClick={() => downloadPdf(x)} title="Baixar PDF da viagem"><FileDown /> PDF</button>
+                      <button className="editbtn" onClick={() => downloadPdf(x, "download", true)} title="Baixar PDF com dados ambientais das largadas"><Waves /> PDF + previsão</button>
                       <button className="editbtn" onClick={() => downloadPdf(x, "share")}><Share2 /> WhatsApp</button>
                       <button className="deletebtn" onClick={() => del(x.id)} title="Excluir viagem"><Trash2 /> Excluir</button>
                     </div>
@@ -690,6 +740,7 @@ export default function Operations({ view, onDashboard }: Props) {
               {s.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} - {trip.boatName} ({status[trip.status]})</option>)}
             </select>
             <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip); }}><FileDown /> Gerar PDF</button>
+            <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip, "download", true); }}><Waves /> PDF + previsão</button>
             <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip, "share"); }}><Share2 /> WhatsApp</button>
           </div>
           <button className="csvbutton" onClick={csv}><Download /> Exportar resumo em CSV</button>
@@ -718,6 +769,15 @@ export default function Operations({ view, onDashboard }: Props) {
           >
             Salvar configurações
           </button>
+          <div className="env-sync-card">
+            <small>DADOS PARA IA</small>
+            <h3>Histórico ambiental das largadas</h3>
+            <p>Registra vento, rajadas, ondas, swell, maré modelada, temperatura do mar, corrente, clorofila e lua nas largadas atuais e antigas.</p>
+            <button type="button" onClick={syncEnvironmentalHistory} disabled={envSyncing}>
+              <RefreshCw className={envSyncing ? "spin" : ""} /> {envSyncing ? "Sincronizando..." : "Sincronizar todas as largadas"}
+            </button>
+            {envSyncMsg && <small>{envSyncMsg}</small>}
+          </div>
           <BackupImporter onImported={load} />
         </div>
       )}
@@ -732,7 +792,7 @@ export default function Operations({ view, onDashboard }: Props) {
         <div className="overlay">
           <form className="modal form" onSubmit={exportPdf} role="dialog" aria-modal="true" aria-labelledby="pdf-dates-title">
             <button type="button" className="modalx" disabled={saving} onClick={() => setPdfTrip(null)} aria-label="Fechar">×</button>
-            <small>{pdfMode === "share" ? "COMPARTILHAR NO WHATSAPP" : "EXPORTAR PDF"}</small>
+            <small>{pdfMode === "share" ? "COMPARTILHAR NO WHATSAPP" : pdfIncludeEnvironment ? "EXPORTAR PDF + PREVISÃO" : "EXPORTAR PDF"}</small>
             <h2 id="pdf-dates-title">Datas da viagem</h2>
             <p>{pdfTrip.name}</p>
             <label>Data e horário de saída
@@ -742,6 +802,7 @@ export default function Operations({ view, onDashboard }: Props) {
               <TripDateInput key={`pdf-in-${pdfTrip.id}`} name="returnDate" label="chegada" required={pdfTrip.status === "FINISHED"} value={pdfTrip.returnDate} />
             </label>
             <small>As datas serão salvas na viagem e usadas no PDF. Em viagens em andamento, deixe a chegada em branco se ainda não retornou.</small>
+            {pdfIncludeEnvironment && <small>Este PDF incluirá um anexo ambiental por largada. O PDF normal continua sem vento, onda, maré, temperatura, clorofila ou lua.</small>}
             {pdfError && <p role="alert">{pdfError}</p>}
             <button type="submit" disabled={saving}><FileDown /> {saving ? "Salvando e gerando..." : pdfMode === "share" ? "Salvar datas e preparar PDF" : "Salvar datas e gerar PDF"}</button>
           </form>
