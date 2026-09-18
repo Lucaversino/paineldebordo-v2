@@ -341,3 +341,12 @@ Consulte `SETUP-V76-CREDITOS-MERCADOPAGO.md` antes de publicar.
 A V86 corrige o carregamento infinito da área **Admin — AIS, IA e Créditos** com timeouts, retry e carregamento separado de resumo/usuários. Também remove os quatro atalhos de perguntas do Painel IA, deixando a conversa centralizada na caixa de mensagem.
 
 Veja `FIX-V86-ADMIN-LOADING-IA-CHAT-LIMPO.md`.
+
+## V88 — FISH AI com histórico
+
+- Cabeçalho **FISH AI**.
+- Botão para limpar e iniciar uma nova conversa.
+- Pasta de histórico com data/hora, restauração e exclusão individual de conversas.
+- Histórico local separado por usuário autenticado.
+
+Veja `FIX-V88-FISH-AI-HISTORICO.md`.
