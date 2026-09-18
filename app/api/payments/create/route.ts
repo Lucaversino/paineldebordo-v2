@@ -9,7 +9,7 @@ import { getPanelUserFromRequest } from "../../../../lib/panelAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_PACKAGES = new Set([10, 20, 50, 100]);
+const ALLOWED_PACKAGES = new Set([5, 10, 20, 50, 100]);
 
 function onlyDigits(value: unknown) {
   return String(value || "").replace(/\D/g, "");

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       ensureWallet(user, settings),
       listCreditTransactions(user.id, Number(new URL(request.url).searchParams.get("limit")) || 50),
     ]);
-    const packages = [10, 20, 50, 100].map((credits) => ({ credits, amountBrl: priceForCredits(settings, credits) }));
+    const packages = [5, 10, 20, 50, 100].map((credits) => ({ credits, amountBrl: priceForCredits(settings, credits) }));
     return NextResponse.json({
       wallet,
       settings: {

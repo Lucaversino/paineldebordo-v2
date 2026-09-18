@@ -258,6 +258,10 @@ function parseProviderTime(value?: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function formatBrl(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+}
+
 function formatLocalDateTime(date: Date) {
   const sameDay = date.toDateString() === new Date().toDateString();
   const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
@@ -364,6 +368,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [status, setStatus] = useState<AisStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Digite o nome do barco para localizar");
   const [credits, setCredits] = useState<number | null>(null);
+  const [creditUnitPrice, setCreditUnitPrice] = useState(1);
   const [aisPricing, setAisPricing] = useState({ locateCredits: 2, updateCredits: 1, areaCredits: 10 });
   const [lastFetch, setLastFetch] = useState<number | null>(null);
   const [center, setCenter] = useState({ lat: fallbackLat, lon: fallbackLon });
@@ -632,6 +637,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
+      if (Number.isFinite(Number(data?.creditUnitPrice))) setCreditUnitPrice(Math.max(0.01, Number(data.creditUnitPrice)));
       if (data?.pricing) setAisPricing({
         locateCredits: Number.isFinite(Number(data.pricing.locateCredits)) ? Number(data.pricing.locateCredits) : 2,
         updateCredits: Number.isFinite(Number(data.pricing.updateCredits)) ? Number(data.pricing.updateCredits) : 1,
@@ -641,6 +647,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     } catch {
       // Saldo é informativo e não deve bloquear o mapa.
     }
+  }
+
+  function openCreditPack(amount: 5 | 10) {
+    if (typeof window === "undefined") return;
+    window.location.assign(`/?view=credits&package=${amount}`);
   }
 
   function vesselKeyFrom(source: { imo?: string | null; mmsi?: string | null }) {
@@ -1145,14 +1156,31 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <h2>AIS — posição do barco</h2>
           <p>Busca pelo nome e posição AIS individual, com horário e origem do sinal bem destacados.</p>
         </div>
-        <div className="ais-live-box">
-          <span className={`ais-live-dot ${status === "ready" ? "connected" : status === "loading" ? "connecting" : status}`} />
-          <div>
-            <b>{statusMessage}</b>
-            <small>{credits != null ? `${credits} créditos restantes` : "Saldo não carregado"}{lastFetch ? ` · atualizado ${relativeTime(lastFetch)}` : ""}</small>
+        <div className="ais-credit-top-actions">
+          <div className={`ais-live-box ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"}`}>
+            <span className={`ais-live-dot ${status === "ready" ? "connected" : status === "loading" ? "connecting" : status}`} />
+            <div>
+              <b>{statusMessage}</b>
+              <small>
+                {credits != null ? <><strong className="ais-balance-value">{formatBrl(credits * creditUnitPrice)}</strong><span>{` · ${credits} crédito${credits === 1 ? "" : "s"}`}</span></> : "Saldo não carregado"}
+                {lastFetch ? ` · atualizado ${relativeTime(lastFetch)}` : ""}
+              </small>
+            </div>
+          </div>
+          <div className="ais-credit-buy">
+            <span>COMPRAR CRÉDITOS</span>
+            <button type="button" onClick={() => openCreditPack(5)}>+ R$ 5</button>
+            <button type="button" onClick={() => openCreditPack(10)}>+ R$ 10</button>
           </div>
         </div>
       </div>
+
+      {credits != null && credits <= 0 && (
+        <div className="ais-no-credit-warning" role="alert">
+          <div><b>⚠ SEM CRÉDITOS</b><span>Compre créditos para continuar usando as consultas AIS.</span></div>
+          <div><button type="button" onClick={() => openCreditPack(5)}>COMPRAR R$ 5</button><button type="button" onClick={() => openCreditPack(10)}>COMPRAR R$ 10</button></div>
+        </div>
+      )}
 
       <div className="ais-name-search-card ais-v70-search-card">
         <div className="ais-v70-search-tabs">
@@ -1315,6 +1343,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 ? "AIS temporariamente indisponível"
                 : `${freeMapSource} · ${freeMapVessels.length} barco(s)${freeMapUpdatedAt ? ` · ${relativeTime(freeMapUpdatedAt)}` : ""}`}
           </span>
+        </div>
+
+        <div className={`ais-mobile-credit ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"}`}>
+          <div><small>{credits != null && credits <= 0 ? "SEM CRÉDITOS" : "SALDO"}</small><b className="ais-mobile-credit-value">{credits != null ? formatBrl(credits * creditUnitPrice) : "—"}</b></div>
+          <button type="button" onClick={() => openCreditPack(5)}>+ R$ 5</button>
+          <button type="button" onClick={() => openCreditPack(10)}>+ R$ 10</button>
         </div>
 
         <div className="ais-v70-mobile-dock">

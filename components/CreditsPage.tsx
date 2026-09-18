@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BadgeCheck, Check, Copy, LoaderCircle, QrCode, RefreshCw, WalletCards, X } from "lucide-react";
 
 type Billing = {
@@ -43,6 +43,7 @@ export default function CreditsPage() {
   const [pixPayment, setPixPayment] = useState<PixPayment | null>(null);
   const [copied, setCopied] = useState(false);
   const [pixError, setPixError] = useState("");
+  const autoOpenHandled = useRef(false);
 
   const load = async () => {
     setError("");
@@ -69,6 +70,21 @@ export default function CreditsPage() {
       setPaymentStatus(status);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (!data || autoOpenHandled.current) return;
+    autoOpenHandled.current = true;
+    try {
+      const requested = Number(new URLSearchParams(window.location.search).get("package") || 0);
+      if (!requested) return;
+      const pack = data.packages.find((item) => item.credits === requested);
+      if (!pack) return;
+      setSelectedPack(pack);
+      setPixPayment(null);
+      setPixError("");
+      setCopied(false);
+    } catch {}
+  }, [data]);
 
   async function generatePix() {
     if (!selectedPack) return;
@@ -152,7 +168,8 @@ export default function CreditsPage() {
   return <section className="credits-page">
     <div className="credits-head"><div><small>CARTEIRA AIS</small><h2>Meus créditos</h2><p>Os créditos desta carteira são usados nas consultas AIS.</p></div><button type="button" onClick={load}><RefreshCw /> Atualizar</button></div>
     {paymentStatus === "success" && <div className="credits-payment-status success">Pagamento PIX confirmado. Seus créditos foram atualizados.</div>}
-    <article className="credits-balance"><WalletCards /><div><span>Saldo AIS</span><b>{`${data.wallet.balance} créditos`}</b><em>{data.wallet.isSuperAdmin ? "ADMIN · saldo inicial 80 créditos" : `Equivalente: ${brl(equivalent)}`}</em></div><div className="credits-ai-bonus"><small>FISH IA</small><b>{data.wallet.fishAiEnabled === false ? "DESLIGADA" : "ATIVA"}</b><span>Acesso controlado pelo administrador.</span></div></article>
+    {data.wallet.balance <= 0 && <div className="credits-zero-warning" role="alert"><b>⚠ SEM CRÉDITOS</b><span>Compre R$ 5 ou R$ 10 em créditos para continuar usando as consultas AIS.</span></div>}
+    <article className={`credits-balance ${data.wallet.balance > 0 ? "has-credit" : "no-credit"}`}><WalletCards /><div><span>Saldo AIS</span><b>{`${data.wallet.balance} créditos`}</b><em>{data.wallet.isSuperAdmin ? "ADMIN · saldo inicial 80 créditos" : `Equivalente: ${brl(equivalent)}`}</em></div><div className="credits-ai-bonus"><small>FISH IA</small><b>{data.wallet.fishAiEnabled === false ? "DESLIGADA" : "ATIVA"}</b><span>Acesso controlado pelo administrador.</span></div></article>
     <div className="credits-services">
       <article><b>Consulta AIS</b><span>{`${data.settings.aisSingleCredits} créditos`}</span><small>Localizar um barco</small></article>
       <article><b>Atualizar AIS</b><span>{`${data.settings.aisUpdateCredits} créditos`}</span><small>Nova posição</small></article>

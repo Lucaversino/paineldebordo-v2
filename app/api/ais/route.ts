@@ -150,6 +150,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         configured: Boolean(apiKey),
         credits: wallet.balance,
+        creditUnitPrice: settings.CREDIT_UNIT_PRICE,
+        balanceBrl: priceForCredits(settings, wallet.balance),
         adminFree: false,
         pricing: {
           locateCredits: settings.AIS_SINGLE_QUERY_CREDITS,
