@@ -1,9 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { catches, fishingSets, species, trips } from "../../../db/schema";
-import { requirePanelUserResponse } from "../../../lib/panelAuth";
+import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 import { getEnvironmentalSnapshots } from "../../../lib/environmentalSnapshots";
-import { assertCanUse, debitCreditsAfterSuccess, ensureWallet, getBillingSettings, logAiUsage, priceForCredits, quoteService } from "../../../lib/credits";
+import { assertCanUse, debitCreditsAfterSuccess, ensureWallet, getBillingSettings, isSuperAdmin, logAiUsage, quoteService } from "../../../lib/credits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -64,28 +64,37 @@ function extractOutputText(response: any) {
   return "";
 }
 
-async function buildFishingContext(ownerId: string) {
+async function buildFishingContext(ownerId: string, mode: "basic" | "full" | "advanced") {
   const db = getDb();
-  const [tripRows, setRows, catchRows, speciesRows, environmentRows] = await Promise.all([
-    db
-      .select({
-        id: trips.id,
-        name: trips.name,
-        departureDate: trips.departureDate,
-        expectedReturnDate: trips.expectedReturnDate,
-        returnDate: trips.returnDate,
-        departurePort: trips.departurePort,
-        returnPort: trips.returnPort,
-        captain: trips.captain,
-        crewCount: trips.crewCount,
-        targetKg: trips.targetKg,
-        primarySpeciesId: trips.primarySpeciesId,
-        fishingType: trips.fishingType,
-        status: trips.status,
-        notes: trips.notes,
-      })
-      .from(trips)
-      .where(eq(trips.ownerId, ownerId)),
+  const tripLimit = mode === "basic" ? 8 : mode === "full" ? 16 : 24;
+  const setLimit = mode === "basic" ? 32 : mode === "full" ? 96 : 160;
+  const catchLimit = mode === "basic" ? 320 : mode === "full" ? 1000 : 1800;
+
+  const tripRows = await db
+    .select({
+      id: trips.id,
+      name: trips.name,
+      departureDate: trips.departureDate,
+      expectedReturnDate: trips.expectedReturnDate,
+      returnDate: trips.returnDate,
+      departurePort: trips.departurePort,
+      returnPort: trips.returnPort,
+      captain: trips.captain,
+      crewCount: trips.crewCount,
+      targetKg: trips.targetKg,
+      primarySpeciesId: trips.primarySpeciesId,
+      fishingType: trips.fishingType,
+      status: trips.status,
+      notes: trips.notes,
+    })
+    .from(trips)
+    .where(eq(trips.ownerId, ownerId))
+    .orderBy(desc(trips.id))
+    .limit(tripLimit);
+
+  const currentTripRow = tripRows.find((trip) => trip.status === "IN_PROGRESS") || tripRows[0] || null;
+
+  const [setRows, catchRows, speciesRows, environmentRows] = await Promise.all([
     db
       .select({
         id: fishingSets.id,
@@ -104,7 +113,8 @@ async function buildFishingContext(ownerId: string) {
       .from(fishingSets)
       .innerJoin(trips, eq(fishingSets.tripId, trips.id))
       .where(eq(trips.ownerId, ownerId))
-      .orderBy(asc(fishingSets.startedAt)),
+      .orderBy(desc(fishingSets.startedAt))
+      .limit(setLimit),
     db
       .select({
         tripId: catches.tripId,
@@ -117,16 +127,20 @@ async function buildFishingContext(ownerId: string) {
       })
       .from(catches)
       .innerJoin(trips, eq(catches.tripId, trips.id))
-      .where(eq(trips.ownerId, ownerId)),
+      .where(eq(trips.ownerId, ownerId))
+      .orderBy(desc(catches.caughtAt))
+      .limit(catchLimit),
     db
       .select({ id: species.id, commonName: species.commonName, code: species.code })
       .from(species)
       .where(eq(species.ownerId, ownerId)),
-    getEnvironmentalSnapshots(db, ownerId),
+    mode === "basic" || !currentTripRow
+      ? Promise.resolve([])
+      : getEnvironmentalSnapshots(db, ownerId, currentTripRow.id).catch(() => []),
   ]);
 
   const speciesName = new Map(speciesRows.map((item) => [item.id, item.commonName]));
-  const environmentBySet = new Map(environmentRows.map((item) => [Number(item.fishingSetId), item]));
+  const environmentBySet = new Map((environmentRows as any[]).map((item: any) => [Number(item.fishingSetId), item]));
   const catchesBySet = new Map<number, CatchRow[]>();
   for (const row of catchRows as CatchRow[]) {
     const list = catchesBySet.get(row.fishingSetId) || [];
@@ -169,17 +183,15 @@ async function buildFishingContext(ownerId: string) {
           referenceTime: snapshot.referenceTime,
           wind: { speedKmh: snapshot.windSpeedKmh, direction: snapshot.windDirection, directionDeg: snapshot.windDirectionDeg, gustKmh: snapshot.gustKmh },
           sea: {
-            waveHeightM: snapshot.waveHeightM, waveDirection: snapshot.waveDirection, waveDirectionDeg: snapshot.waveDirectionDeg, wavePeriodS: snapshot.wavePeriodS,
+            waveHeightM: snapshot.waveHeightM, waveDirection: snapshot.waveDirection, directionDeg: snapshot.waveDirectionDeg, wavePeriodS: snapshot.wavePeriodS,
             swellHeightM: snapshot.swellHeightM, swellDirection: snapshot.swellDirection, swellPeriodS: snapshot.swellPeriodS,
             temperatureC: snapshot.seaTemperatureC, currentKmh: snapshot.currentKmh, currentDirection: snapshot.currentDirection,
             seaLevelMslM: snapshot.seaLevelMslM,
           },
           chlorophyllMgM3: snapshot.chlorophyllMgM3,
-          chlorophyllTime: snapshot.chlorophyllTime,
           lunar: { phase: snapshot.lunarPhase, illumination: snapshot.lunarIllumination },
           sunrise: snapshot.sunrise,
           sunset: snapshot.sunset,
-          dayForecast: snapshot.payload?.dayForecast || null,
         };
       })(),
       notes: set.notes,
@@ -221,33 +233,35 @@ async function buildFishingContext(ownerId: string) {
   });
 
   const currentTrip = tripSummaries.find((trip) => trip.status === "IN_PROGRESS") || null;
-  const finishedTrips = tripSummaries.filter((trip) => trip.status === "FINISHED");
   const topSets = [...setDetails]
     .filter((set) => set.retainedKg > 0)
     .sort((a, b) => b.retainedKg - a.retainedKg)
-    .slice(0, 12)
+    .slice(0, mode === "basic" ? 6 : 12)
     .map(({ catches: _catches, ...set }) => set);
 
   return {
     generatedAt: new Date().toISOString(),
     currentTrip,
     tripHistory: tripSummaries,
-    finishedTripCount: finishedTrips.length,
+    finishedTripCount: tripSummaries.filter((trip) => trip.status === "FINISHED").length,
     totalSets: setDetails.length,
     topSets,
-    recentSetDetails: setDetails.slice(-120),
+    recentSetDetails: setDetails.slice(0, mode === "basic" ? 20 : mode === "full" ? 60 : 120),
   };
 }
 
-export async function GET() {
-  const auth = await requirePanelUserResponse();
-  if (auth.response) return auth.response;
-  const settings = await getBillingSettings();
-  const wallet = await ensureWallet(auth.user!, settings);
-  const basic = quoteService(wallet, settings, "ai_basic");
-  const full = quoteService(wallet, settings, "ai_full");
-  const advanced = quoteService(wallet, settings, "ai_advanced");
-  const model = settings.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL;
+export async function GET(request: Request) {
+  const user = await getPanelUserFromRequest(request);
+  if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
+  const admin = isSuperAdmin(user);
+  const settings = admin ? null : await getBillingSettings();
+  const wallet = admin
+    ? { userId: user.id, email: user.email, role: "super_admin", balance: 0, aiBonusBrl: 0, freeAisAccess: true, freeAiAccess: true, isSuperAdmin: true }
+    : await ensureWallet(user, settings!);
+  const basic = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_basic");
+  const full = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_full");
+  const advanced = admin ? { credits: 0, fullPriceBrl: 0, bonusAppliedBrl: 0 } : quoteService(wallet, settings!, "ai_advanced");
+  const model = process.env.OPENAI_MODEL || settings?.AI_BASIC_MODEL || DEFAULT_MODEL;
   return Response.json({
     configured: Boolean(process.env.OPENAI_API_KEY),
     model,
@@ -263,7 +277,7 @@ export async function GET() {
       basicBonusBrl: basic.bonusAppliedBrl,
       fullBonusBrl: full.bonusAppliedBrl,
       advancedBonusBrl: advanced.bonusAppliedBrl,
-      welcomeBonusBrl: settings.AI_WELCOME_BONUS_BRL,
+      welcomeBonusBrl: settings?.AI_WELCOME_BONUS_BRL ?? 2,
       adminFree: wallet.freeAiAccess,
     },
   });
@@ -304,9 +318,9 @@ function compactContextByMode(context: any, mode: "basic" | "full" | "advanced")
 }
 
 export async function POST(request: Request) {
-  const auth = await requirePanelUserResponse();
-  if (auth.response) return auth.response;
-  const user = auth.user!;
+  const user = await getPanelUserFromRequest(request);
+  if (!user) return Response.json({ error: "Sessão encerrada. Entre novamente no painel." }, { status: 401 });
+  const admin = isSuperAdmin(user);
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -322,24 +336,32 @@ export async function POST(request: Request) {
   const mode = body?.mode === "advanced" ? "advanced" : body?.mode === "full" ? "full" : "basic";
   const creditMode = mode === "advanced" ? "ai_advanced" as const : mode === "full" ? "ai_full" as const : "ai_basic" as const;
 
-  let access;
-  try {
-    access = await assertCanUse(user, creditMode);
-  } catch (error: any) {
-    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
+  let access: any = null;
+  if (!admin) {
+    try {
+      access = await assertCanUse(user, creditMode);
+    } catch (error: any) {
+      return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits", balance: error?.balance, required: error?.required }, { status: Number(error?.status) || 402 });
+    }
   }
 
-  const settings = access.settings;
-  const allContext = await buildFishingContext(user.id);
+  const settings = access?.settings || null;
+  let allContext: any;
+  try {
+    allContext = await buildFishingContext(user.id, mode);
+  } catch (error) {
+    console.error("Painel IA context error", error);
+    allContext = { generatedAt: new Date().toISOString(), currentTrip: null, tripHistory: [], finishedTripCount: 0, totalSets: 0, topSets: [], recentSetDetails: [] };
+  }
   const fishingContext = compactContextByMode(allContext, mode);
   const environment = mode === "basic" ? null : compactExternalContext(body?.environment);
   const statisticalAnalysis = mode === "basic" ? null : compactExternalContext(body?.statisticalAnalysis);
   const conversation = normalizeConversation(body?.conversation);
   const model = mode === "advanced"
-    ? (settings.AI_ADVANCED_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
+    ? (settings?.AI_ADVANCED_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
     : mode === "full"
-      ? (settings.AI_FULL_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
-      : (settings.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL);
+      ? (settings?.AI_FULL_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL)
+      : (settings?.AI_BASIC_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL);
   const configuredEffort = process.env.OPENAI_REASONING_EFFORT || "high";
   const reasoningEffort = ALLOWED_EFFORTS.has(configuredEffort) ? configuredEffort : "high";
 
@@ -373,6 +395,7 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
     openAIResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(38_000),
       body: JSON.stringify({
         model,
         instructions,
@@ -383,21 +406,27 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
       }),
       cache: "no-store",
     });
-  } catch (error) {
-    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: "network" }).catch(() => null);
-    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
+  } catch (error: any) {
+    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: error?.name === "TimeoutError" ? "timeout" : "network" }).catch(() => null);
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return Response.json({ error: timedOut ? "A OpenAI demorou para responder. Tente novamente; nenhum crédito foi consumido." : "Não foi possível conectar à OpenAI. Nenhum crédito foi consumido." }, { status: timedOut ? 504 : 502 });
   }
 
   const result = await openAIResponse.json().catch(() => ({}));
   if (!openAIResponse.ok) {
     const detail = result?.error?.message || "A OpenAI não conseguiu processar esta análise.";
-    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
-    return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido.", detail }, { status: openAIResponse.status });
+    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "error", errorText: detail }).catch(() => null);
+    const friendly = openAIResponse.status === 401
+      ? "A OPENAI_API_KEY foi recusada. Confira a chave na Vercel."
+      : openAIResponse.status === 429
+        ? "A conta OpenAI atingiu limite de uso/crédito ou rate limit. Confira Billing e Limits na plataforma OpenAI."
+        : `A OpenAI recusou a análise (${openAIResponse.status}).`;
+    return Response.json({ error: friendly, detail: admin ? detail : undefined }, { status: openAIResponse.status });
   }
 
   const answer = extractOutputText(result);
   if (!answer) {
-    await logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
+    if (!admin) void logAiUsage({ userId: user.id, requestType: mode, model, creditsCharged: 0, estimatedApiCostBrl: 0, status: "empty" }).catch(() => null);
     return Response.json({ error: "Não foi possível concluir a análise. Nenhum crédito foi consumido." }, { status: 502 });
   }
 
@@ -407,21 +436,23 @@ Use apenas o contexto necessário e não peça dados que já estejam disponívei
     totalTokens: Number(result.usage.total_tokens || 0),
   } : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
-  let debit;
-  try {
-    debit = await debitCreditsAfterSuccess({
-      user,
-      mode: creditMode,
-      description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
-      reference: result?.id || null,
-      metadata: { model: result?.model || model, mode },
-    });
-  } catch (error: any) {
-    return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
+  let debit: any = { charged: 0, balance: 0, free: true, bonusUsedBrl: 0, aiBonusBrl: 0 };
+  if (!admin) {
+    try {
+      debit = await debitCreditsAfterSuccess({
+        user,
+        mode: creditMode,
+        description: mode === "advanced" ? "Análise avançada IA" : mode === "full" ? "Análise completa IA" : "Assistente IA",
+        reference: result?.id || null,
+        metadata: { model: result?.model || model, mode },
+      });
+    } catch (error: any) {
+      return Response.json({ error: error?.message || "Saldo insuficiente.", code: error?.code || "insufficient_credits" }, { status: Number(error?.status) || 402 });
+    }
   }
 
-  const estimatedApiCostBrl = ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M);
-  await logAiUsage({
+  const estimatedApiCostBrl = settings ? ((usage.inputTokens / 1_000_000) * settings.OPENAI_INPUT_COST_PER_1M) + ((usage.outputTokens / 1_000_000) * settings.OPENAI_OUTPUT_COST_PER_1M) : 0;
+  if (!admin) await logAiUsage({
     userId: user.id,
     requestType: mode,
     model: result?.model || model,

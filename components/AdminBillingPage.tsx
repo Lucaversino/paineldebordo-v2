@@ -1,12 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { LoaderCircle, Save, ShieldCheck } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Activity, LoaderCircle, Save, ShieldCheck } from "lucide-react";
+import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 function brl(value: number) { return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0); }
 
 export default function AdminBillingPage() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [data, setData] = useState<any>(null);
+  const [health, setHealth] = useState<any>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const load = async () => {
@@ -16,6 +20,24 @@ export default function AdminBillingPage() {
     setData(result);
   };
   useEffect(() => { void load(); }, []);
+
+  const adminFetch = async (url: string, init: RequestInit = {}) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const headers = new Headers(init.headers || {});
+    const token = sessionData.session?.access_token;
+    if (token) headers.set("authorization", `Bearer ${token}`);
+    return fetch(url, { ...init, headers, credentials: "include", cache: "no-store" });
+  };
+  const testProviders = async () => {
+    setHealthLoading(true); setError("");
+    try {
+      const response = await adminFetch("/api/provider-health");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(result?.error || "Não foi possível testar as APIs."); return; }
+      setHealth(result);
+    } catch { setError("Falha de rede no diagnóstico das APIs."); }
+    finally { setHealthLoading(false); }
+  };
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError("");
     const fd = new FormData(event.currentTarget); const settings: Record<string,string> = {};
@@ -29,6 +51,7 @@ export default function AdminBillingPage() {
   const s=data.settings, x=data.stats;
   return <section className="admin-billing-page">
     <div className="credits-head"><div><small>SUPER ADMIN</small><h2>AIS, IA e Créditos</h2><p>Preços, consumo, custos e resultado do sistema.</p></div><ShieldCheck /></div>
+    <div className="admin-service-stats"><article><h3>Diagnóstico das APIs</h3><p>Teste sem consumir crédito do Painel. A consulta de saldo da Data Docked não consome crédito do provedor.</p><button type="button" className="primary" onClick={testProviders} disabled={healthLoading}>{healthLoading ? <LoaderCircle className="spin"/> : <Activity/>} Testar APIs agora</button></article>{health && <><article><h3>Data Docked</h3><p>Status: <b>{health.datadocked?.ok ? "ONLINE" : "ERRO"}</b></p><p>Créditos do provedor: <b>{health.datadocked?.ok ? health.datadocked.credits : "—"}</b></p>{!health.datadocked?.ok && <p>{health.datadocked?.error}</p>}</article><article><h3>OpenAI</h3><p>Status: <b>{health.openai?.ok ? "CHAVE/MODELO OK" : "ERRO"}</b></p><p>Modelo: <b>{health.openai?.model || "—"}</b></p>{!health.openai?.ok && <p>{health.openai?.error}</p>}</article><article><h3>Banco</h3><p>Status: <b>{health.database?.ok ? "ONLINE" : "ERRO"}</b></p>{!health.database?.ok && <p>{health.database?.error}</p>}</article></>}</div>
     <div className="admin-kpis"><article><small>Créditos vendidos</small><b>{x.creditsSold}</b></article><article><small>Créditos utilizados</small><b>{x.creditsUsed}</b></article><article><small>Nas carteiras</small><b>{x.creditsInWallets}</b></article><article><small>Bônus IA disponível</small><b>{brl(x.aiBonusOutstandingBrl || 0)}</b></article><article><small>Receita confirmada</small><b>{brl(x.revenue)}</b></article><article><small>Custo AIS estimado</small><b>{brl(x.ais.cost)}</b></article><article><small>Custo OpenAI estimado</small><b>{brl(x.ai.cost)}</b></article><article><small>Custo total</small><b>{brl(x.totalCost)}</b></article><article><small>Resultado bruto</small><b>{brl(x.grossResult)}</b></article><article><small>Margem estimada</small><b>{x.estimatedMarginPct == null ? "—" : `${x.estimatedMarginPct.toFixed(1)}%`}</b></article></div>
     <div className="admin-service-stats"><article><h3>AIS</h3><p>Consultas: <b>{x.ais.queries}</b></p><p>Barcos pesquisados: <b>{x.ais.vessels}</b></p><p>Créditos: <b>{x.ais.credits}</b></p><p>Chamadas API: <b>{x.ais.providerCalls}</b></p><p>Cache: <b>{x.ais.cacheHits}</b></p></article><article><h3>IA</h3><p>Solicitações: <b>{x.ai.queries}</b></p><p>Perguntas simples: <b>{x.ai.basic}</b></p><p>Análises completas: <b>{x.ai.full}</b></p><p>Análises avançadas: <b>{x.ai.advanced}</b></p><p>Créditos: <b>{x.ai.credits}</b></p><p>Tokens: <b>{x.ai.tokens}</b></p><p>Custo estimado: <b>{brl(x.ai.cost)}</b></p></article></div>
     <form className="admin-settings-form" onSubmit={submit}>

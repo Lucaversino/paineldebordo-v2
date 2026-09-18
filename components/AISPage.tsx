@@ -272,6 +272,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         headers,
         credentials: "include",
         cache: "no-store",
+        signal: init.signal || AbortSignal.timeout(16_000),
       });
     };
 

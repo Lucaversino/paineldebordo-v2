@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "./supabase/server";
 
 export type PanelUser = {
@@ -52,8 +53,11 @@ export async function getPanelUserFromRequest(request?: Request): Promise<PanelU
   if (!accessToken) return null;
 
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.getUser(accessToken);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) return null;
+    const tokenClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    const { data, error } = await tokenClient.auth.getUser(accessToken);
     if (error || !data.user) return null;
     const user = data.user;
     const fullName =

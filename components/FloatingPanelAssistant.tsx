@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, LoaderCircle, MessageSquareText, Minimize2, Send, Sparkles, X } from "lucide-react";
+import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 type AssistantStatus = {
   configured: boolean;
@@ -39,6 +40,31 @@ function restoreMessages(): ChatMessage[] {
 }
 
 export default function FloatingPanelAssistant() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  async function aiFetch(input: string, init: RequestInit = {}) {
+    const makeRequest = async (token?: string | null) => {
+      const headers = new Headers(init.headers || {});
+      if (token) headers.set("authorization", `Bearer ${token}`);
+      const isPost = String(init.method || "GET").toUpperCase() === "POST";
+      return fetch(input, {
+        ...init,
+        headers,
+        credentials: "include",
+        cache: "no-store",
+        signal: init.signal || AbortSignal.timeout(isPost ? 45_000 : 12_000),
+      });
+    };
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    let response = await makeRequest(sessionData.session?.access_token || null);
+    if (response.status !== 401) return response;
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    const token = refreshed.session?.access_token;
+    if (!token) return response;
+    return makeRequest(token);
+  }
+
   const [open, setOpen] = useState(false);
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(restoreMessages);
@@ -49,7 +75,7 @@ export default function FloatingPanelAssistant() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const loadStatus = () => fetch("/api/ai-assistant", { cache: "no-store", signal: AbortSignal.timeout(10000) })
+  const loadStatus = () => aiFetch("/api/ai-assistant")
     .then((r) => r.ok ? r.json() : null)
     .then((status) => { if (status) setAssistant(status); })
     .catch(() => null);
@@ -89,7 +115,7 @@ export default function FloatingPanelAssistant() {
     setMessages((current) => [...current, { role: "user", content: text }]);
     setAsking(true);
     try {
-      const response = await fetch("/api/ai-assistant", {
+      const response = await aiFetch("/api/ai-assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: text, mode, conversation: previous, environment: oceanContext?.environment || null, statisticalAnalysis: oceanContext?.analysis || null }),
