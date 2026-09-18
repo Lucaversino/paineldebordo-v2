@@ -198,6 +198,34 @@ function formatCoordMarine(value: number, latitude = true) {
   return `${degreeText}º ${minuteText}' ${hemisphere}`;
 }
 
+function formatCoordOperational(value: number, latitude = true) {
+  const hemisphere = latitude ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
+  const absolute = Math.abs(value);
+  let degrees = Math.floor(absolute);
+  let minutes = (absolute - degrees) * 60;
+  if (Number(minutes.toFixed(2)) >= 60) {
+    degrees += 1;
+    minutes = 0;
+  }
+  const minuteDigits = minutes.toFixed(2).replace(".", "").padStart(4, "0");
+  return `${degrees}º ${minuteDigits} ${hemisphere}`;
+}
+
+function isFishingVessel(vessel: Vessel) {
+  const type = String(vessel.vesselType || "").toLowerCase();
+  const status = String(vessel.navStatusText || "").toLowerCase();
+  return /fishing|pesca|pesqueir/.test(type) || /(^|\D)30(\D|$)/.test(type) || /em pesca|engaged in fishing|fishing/.test(status);
+}
+
+function trackedDateParts(value?: string) {
+  const date = parseProviderTime(value);
+  if (!date) return { date: "DATA NÃO INFORMADA", time: "HORA —" };
+  return {
+    date: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date),
+    time: new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date),
+  };
+}
+
 function coordinateDigitsToDecimal(raw: string, latitude: boolean) {
   const digits = raw.replace(/\D/g, "").slice(0, 6);
   if (digits.length < 4) return null;
@@ -364,7 +392,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         angle: 0,
         rotation: (angle * Math.PI) / 180,
         rotateWithView: true,
-        fill: new Fill({ color: speed >= 0.5 ? "#25d4aa" : "#f0c65b" }),
+        fill: new Fill({ color: isFishingVessel(vessel) ? "#ff861c" : (speed >= 0.5 ? "#25d4aa" : "#f0c65b") }),
         stroke: new Stroke({ color: "#05252b", width: 2.4 }),
       }),
       text: currentZoom >= 8
@@ -391,7 +419,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         angle: 0,
         rotation: (angle * Math.PI) / 180,
         rotateWithView: true,
-        fill: new Fill({ color: speed >= 0.5 ? "#35d9b2" : "#e0b94e" }),
+        fill: new Fill({ color: isFishingVessel(vessel) ? "#ff861c" : (speed >= 0.5 ? "#35d9b2" : "#e0b94e") }),
         stroke: new Stroke({ color: "#043039", width: 1.8 }),
       }),
       text: currentZoom >= 10
@@ -449,6 +477,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         sog: raw?.sog == null ? null : Number(raw.sog),
         cog: raw?.cog == null ? null : Number(raw.cog),
         heading: raw?.heading == null ? null : Number(raw.heading),
+        vesselType: String(raw?.vesselType || raw?.shipType || ""),
         navStatusText: String(raw?.navStatusText || ""),
         dataSource: String(raw?.dataSource || data?.source || "AIS"),
         positionReceived: String(raw?.positionReceived || raw?.updateTime || data?.updatedAt || ""),
@@ -1063,6 +1092,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedAge = tracked ? positionAgeLabel(tracked.positionReceived || tracked.updateTime) : null;
   const trackedProviderDate = tracked ? parseProviderTime(tracked.positionReceived || tracked.updateTime) : null;
+  const trackedDateTime = tracked ? trackedDateParts(tracked.positionReceived || tracked.updateTime) : null;
+  const trackedFishing = tracked ? isFishingVessel(tracked) : false;
   const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
   const trackedKey = tracked ? vesselKeyFrom(tracked) : "";
   const recentCards = useMemo(() => {
@@ -1354,6 +1385,32 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <Radio />
             <b>{freeMapVessels.length ? "Toque em um barco no mapa" : "Nenhum barco selecionado"}</b>
             <span>{freeMapVessels.length ? "A camada AIS automática não consome créditos. A pesquisa manual continua separada." : "Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui."}</span>
+          </div>
+        )}
+
+        {tracked && trackedDateTime && (
+          <div className={`ais-v95-map-card ${trackedFishing ? "fishing" : ""}`}>
+            <div className="ais-v95-map-card-head">
+              <div>
+                <b>{tracked.name || `MMSI ${tracked.mmsi}`}</b>
+                <small>{trackedFishing ? `BARCO DE PESCA · MMSI ${tracked.mmsi || "—"}` : `MMSI ${tracked.mmsi || "—"}`}</small>
+              </div>
+              <button type="button" aria-label="Fechar dados da embarcação" title="Fechar" onClick={() => setTracked(null)}>×</button>
+            </div>
+            <div className="ais-v95-map-position">
+              <span>POSIÇÃO</span>
+              <strong>{formatCoordOperational(tracked.lat, true)}</strong>
+              <strong>{formatCoordOperational(tracked.lon, false)}</strong>
+            </div>
+            <div className="ais-v95-map-time">
+              <span><small>DATA RASTREADA</small><b>{trackedDateTime.date}</b></span>
+              <span><small>HORA</small><b>{trackedDateTime.time}</b></span>
+            </div>
+            <div className="ais-v95-map-mini">
+              <span><small>VELOCIDADE</small><b>{tracked.sog != null ? `${Number(tracked.sog).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MN/h` : "—"}</b></span>
+              <span><small>RUMO</small><b>{tracked.cog != null ? `${Math.round(tracked.cog)}º` : "—"}</b></span>
+              <span><small>FONTE</small><b>{trackedSource?.short || "AIS"}</b></span>
+            </div>
           </div>
         )}
 

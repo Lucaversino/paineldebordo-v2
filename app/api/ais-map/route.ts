@@ -15,6 +15,7 @@ type MapVessel = {
   sog: number | null;
   cog: number | null;
   heading: number | null;
+  vesselType?: string;
   navStatusText?: string;
   positionReceived: string;
   updateTime: string;
@@ -56,6 +57,13 @@ function numberOrNull(value: unknown) {
 
 function cleanText(value: unknown) {
   return value == null ? "" : String(value).trim();
+}
+
+function shipTypeText(value: unknown) {
+  const raw = cleanText(value);
+  const n = Number(raw);
+  if (Number.isFinite(n) && n === 30) return "Fishing vessel (30)";
+  return raw;
 }
 
 function navStatusText(value: unknown) {
@@ -155,6 +163,31 @@ function parseAisStreamEvent(event: any): MapVessel | null {
   };
 }
 
+function parseAisStreamStatic(event: any) {
+  const type = cleanText(event?.MessageType);
+  const meta = event?.MetaData || {};
+  const message = event?.Message || {};
+  let payload: any = null;
+  if (type === "ShipStaticData") payload = message?.ShipStaticData || null;
+  if (type === "StaticDataReport") payload = message?.StaticDataReport || null;
+  if (!payload) return null;
+
+  const reportA = payload?.ReportA || payload?.reportA || {};
+  const reportB = payload?.ReportB || payload?.reportB || {};
+  const mmsi = cleanText(meta?.MMSI ?? payload?.UserID ?? reportA?.UserID ?? reportB?.UserID).replace(/\D/g, "");
+  if (!mmsi) return null;
+
+  const vesselType = shipTypeText(
+    payload?.Type ?? payload?.ShipType ?? payload?.TypeAndCargo ??
+    reportB?.Type ?? reportB?.ShipType ?? reportB?.TypeAndCargo
+  );
+  const name = cleanText(
+    meta?.ShipName || meta?.shipName || payload?.Name || payload?.ShipName ||
+    reportA?.Name || reportA?.ShipName
+  );
+  return { mmsi, vesselType, name };
+}
+
 async function collectAisStream(lat: number, lon: number): Promise<MapVessel[]> {
   const apiKey = process.env.AISSTREAM_API_KEY?.trim();
   if (!apiKey) throw Object.assign(new Error("AISSTREAM_API_KEY não configurada."), { code: "not_configured" });
@@ -165,6 +198,7 @@ async function collectAisStream(lat: number, lon: number): Promise<MapVessel[]> 
 
   return new Promise<MapVessel[]>((resolve, reject) => {
     const vessels = new Map<string, MapVessel>();
+    const staticByMmsi = new Map<string, { vesselType?: string; name?: string }>();
     let settled = false;
     let opened = false;
     let confirmed = false;
@@ -197,7 +231,7 @@ async function collectAisStream(lat: number, lon: number): Promise<MapVessel[]> 
       socket.send(JSON.stringify({
         APIKey: apiKey,
         BoundingBoxes: [[[box.north, box.west], [box.south, box.east]]],
-        FilterMessageTypes: ["PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport"],
+        FilterMessageTypes: ["PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport", "ShipStaticData", "StaticDataReport"],
       }));
       sampleTimer = setTimeout(() => finish(), 3_800);
     });
@@ -209,8 +243,26 @@ async function collectAisStream(lat: number, lon: number): Promise<MapVessel[]> 
           confirmed = true;
           return;
         }
+        const staticData = parseAisStreamStatic(event);
+        if (staticData) {
+          staticByMmsi.set(staticData.mmsi, { vesselType: staticData.vesselType, name: staticData.name });
+          const existing = vessels.get(staticData.mmsi);
+          if (existing) {
+            vessels.set(staticData.mmsi, {
+              ...existing,
+              vesselType: staticData.vesselType || existing.vesselType,
+              name: staticData.name || existing.name,
+            });
+          }
+          return;
+        }
         const vessel = parseAisStreamEvent(event);
         if (!validVessel(vessel)) return;
+        const knownStatic = staticByMmsi.get(vessel.mmsi);
+        if (knownStatic) {
+          vessel.vesselType = knownStatic.vesselType || vessel.vesselType;
+          vessel.name = knownStatic.name || vessel.name;
+        }
         vessels.set(vessel.mmsi, vessel);
         if (vessels.size >= MAX_VESSELS) finish();
       } catch {
@@ -252,6 +304,7 @@ function parseVesselApiItem(raw: any): MapVessel | null {
     sog: speed,
     cog: course,
     heading: heading != null && heading < 511 ? heading : null,
+    vesselType: shipTypeText(raw?.ship_type ?? raw?.vessel_type ?? raw?.type ?? source?.ship_type ?? source?.vessel_type ?? source?.type),
     navStatusText: cleanText(source?.navigational_status ?? source?.nav_status ?? source?.navStatus) || navStatusText(source?.navstat ?? source?.NAVSTAT),
     positionReceived: parsedTime.toISOString(),
     updateTime: parsedTime.toISOString(),
@@ -285,7 +338,7 @@ async function fetchVesselApi(lat: number, lon: number): Promise<MapVessel[]> {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
-        "User-Agent": "Painel-de-Bordo/93",
+        "User-Agent": "Painel-de-Bordo/95",
       },
       cache: "no-store",
       signal: controller.signal,
@@ -335,6 +388,7 @@ function parseKplerItem(raw: any): MapVessel | null {
     sog: numberOrNull(pos?.speed),
     cog: numberOrNull(pos?.course),
     heading: heading != null && heading < 511 ? heading : null,
+    vesselType: shipTypeText(staticData?.vesselType ?? staticData?.type ?? staticData?.shipType),
     navStatusText: cleanText(nav) || navStatusText(nav),
     positionReceived: parsedTime.toISOString(),
     updateTime: parsedTime.toISOString(),
@@ -402,7 +456,7 @@ async function fetchKpler(lat: number, lon: number): Promise<MapVessel[]> {
         "Content-Type": "application/json",
         Accept: "application/json",
         "Accept-Encoding": "gzip, deflate",
-        "User-Agent": "Painel-de-Bordo/94",
+        "User-Agent": "Painel-de-Bordo/95",
       },
       body: JSON.stringify({ operationName: "PainelKplerMap", query }),
       cache: "no-store",

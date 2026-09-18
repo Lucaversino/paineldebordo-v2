@@ -386,3 +386,7 @@ A análise ambiental usa por padrão a primeira posição registrada na primeira
 
 ## V94 — Kpler AIS
 A camada automática usa AISStream → VesselAPI Free → Kpler Maritime 2.0. Configure `KPLER_API_KEY` apenas no backend/Vercel.
+
+
+## V95 — AIS pesca em laranja e card compacto
+Veja `FIX-V95-AIS-PESCA-CARD-COMPACTO.md`.
