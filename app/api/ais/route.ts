@@ -7,7 +7,7 @@ import {
   logAisUsage,
   priceForCredits,
 } from "../../../lib/credits";
-import { getPanelUser } from "../../../lib/panelAuth";
+import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,26 +22,60 @@ function numberOrNull(value: unknown) {
 function textOrEmpty(value: unknown) { return value == null ? "" : String(value).trim(); }
 
 async function callDataDocked(path: string, apiKey: string) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18000);
-  try {
-    const response = await fetch(`${BASE_URL}${path}`, {
-      headers: { accept: "application/json", "x-api-key": apiKey },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    let body: any = null;
-    try { body = await response.json(); } catch { body = { detail: `Resposta inválida do provedor AIS (${response.status}).` }; }
-    if (!response.ok) {
-      const message = typeof body?.detail === "string" ? body.detail : typeof body?.error === "string" ? body.error : `Erro Data Docked (${response.status}).`;
-      throw Object.assign(new Error(message), { status: response.status });
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), attempt === 0 ? 12000 : 15000);
+    try {
+      const response = await fetch(`${BASE_URL}${path}`, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          "x-api-key": apiKey,
+          "user-agent": "Painel-de-Bordo/81",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      let body: any = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = { detail: `Resposta inválida do provedor AIS (${response.status}).` };
+      }
+
+      if (response.ok) return body;
+
+      const detail = body?.detail;
+      const message =
+        typeof detail === "string" ? detail :
+        typeof detail?.message === "string" ? detail.message :
+        typeof body?.error === "string" ? body.error :
+        `Erro Data Docked (${response.status}).`;
+
+      const providerError = Object.assign(new Error(message), { status: response.status });
+      // 401/403/404 são respostas definitivas: não repetir e não mascarar.
+      if ([400, 401, 403, 404].includes(response.status)) throw providerError;
+      lastError = providerError;
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        lastError = Object.assign(new Error("A Data Docked demorou para responder. Tente novamente."), { status: 504 });
+      } else {
+        lastError = error;
+        if ([400, 401, 403, 404].includes(Number(error?.status))) throw error;
+      }
+    } finally {
+      clearTimeout(timer);
     }
-    return body;
-  } catch (error: any) {
-    if (error?.name === "AbortError") throw Object.assign(new Error("A consulta AIS demorou demais. Tente novamente."), { status: 504 });
-    throw error;
-  } finally { clearTimeout(timer); }
+
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+
+  throw lastError || Object.assign(new Error("Falha temporária na Data Docked."), { status: 502 });
 }
+
 
 function normalizeNameResult(raw: any) {
   return {
@@ -103,7 +137,7 @@ function normalizeAreaVessel(raw: any) {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await getPanelUser();
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const apiKey = process.env.DATADOCKED_API_KEY?.trim();
   const { searchParams } = new URL(request.url);
@@ -135,9 +169,10 @@ export async function GET(request: NextRequest) {
       const pageNumber = Math.max(1, Math.min(10, Math.round(numberOrNull(searchParams.get("page")) ?? 1)));
       const params = new URLSearchParams({ name: rawName.replace(/\s+/g, "_"), page_number: String(pageNumber) });
       const data = await callDataDocked(`/vessels-by-vessel-name?${params.toString()}`, apiKey);
-      const items = Array.isArray(data?.items) ? data.items.map(normalizeNameResult) : [];
+      const source = data?.detail && typeof data.detail === "object" ? data.detail : data;
+      const items = Array.isArray(source?.items) ? source.items.map(normalizeNameResult) : [];
       await logAisUsage({ userId: user.id, action: "name_search", vesselName: rawName, providerCalls: 1, creditsCharged: 0, estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL, status: items.length ? "success" : "not_found" }).catch(() => null);
-      return NextResponse.json({ configured: true, provider: "Data Docked", query: rawName, total: Number(data?.total) || items.length, page: pageNumber, items, finalQueryCredits: access.isFree ? 0 : access.settings.AIS_SINGLE_QUERY_CREDITS, adminFree: access.isFree });
+      return NextResponse.json({ configured: true, provider: "Data Docked", query: rawName, total: Number(source?.total) || items.length, page: pageNumber, items, finalQueryCredits: access.isFree ? 0 : access.settings.AIS_SINGLE_QUERY_CREDITS, adminFree: access.isFree });
     }
 
     if (action === "vessel") {
@@ -148,7 +183,8 @@ export async function GET(request: NextRequest) {
       const mode = isUpdate ? "ais_update" as const : "ais_single" as const;
       const access = await assertCanUse(user, mode);
       const data = await callDataDocked(`/get-vessel-location?imo_or_mmsi=${encodeURIComponent(id)}`, apiKey);
-      const vessel = normalizeSingleVessel(data);
+      const source = data?.detail && typeof data.detail === "object" ? data.detail : data;
+      const vessel = normalizeSingleVessel(source);
       if (!vessel) return NextResponse.json({ error: "O provedor não retornou uma posição válida para esta embarcação. Nenhum crédito foi descontado." }, { status: 404 });
       if (!vessel.name && name) vessel.name = name;
       const debit = await debitCreditsAfterSuccess({ user, mode, description: `${isUpdate ? "Atualizar posição" : "Localizar barco"} — ${vessel.name || id}`, reference: id, metadata: { name: vessel.name, lat: vessel.lat, lon: vessel.lon } });
@@ -163,7 +199,8 @@ export async function GET(request: NextRequest) {
       const access = await assertCanUse(user, "ais_area");
       const params = new URLSearchParams({ latitude: String(Math.round(latitude * 10) / 10), longitude: String(Math.round(longitude * 10) / 10), circle_radius: "50" });
       const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, apiKey);
-      const vessels = (Array.isArray(data?.vessels) ? data.vessels : []).map(normalizeAreaVessel).filter(Boolean);
+      const source = data?.detail && typeof data.detail === "object" ? data.detail : data;
+      const vessels = (Array.isArray(source?.vessels) ? source.vessels : []).map(normalizeAreaVessel).filter(Boolean);
       const debit = await debitCreditsAfterSuccess({ user, mode: "ais_area", description: `Busca AIS por área — 50 km`, reference: `${latitude.toFixed(4)},${longitude.toFixed(4)}`, metadata: { latitude, longitude, radiusKm: 50, vessels: vessels.length } });
       await logAisUsage({ userId: user.id, action: "area_50km", vesselName: null, providerCalls: 1, creditsCharged: debit.charged, estimatedApiCostBrl: debit.settings.AIS_PROVIDER_COST_PER_QUERY_BRL, status: "success" }).catch(() => null);
       return NextResponse.json({ configured: true, provider: "Data Docked", center: { latitude, longitude }, radiusKm: 50, vessels, total: vessels.length, creditCost: debit.charged, billing: { chargedCredits: debit.charged, balance: debit.balance, free: debit.free } });
@@ -173,6 +210,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const status = Number(error?.status) || 502;
     if (status === 402) return NextResponse.json({ error: error?.message || "Saldo insuficiente.", code: "insufficient_credits", balance: error?.balance, required: error?.required }, { status: 402 });
+    if (status === 401) return NextResponse.json({ error: "Sessão do painel ou chave Data Docked não autorizada. Atualize a sessão e tente novamente.", code: "unauthorized" }, { status: 401 });
+    if (status === 403) return NextResponse.json({ error: error?.message || "A Data Docked recusou a consulta. Verifique os créditos/plano da API.", code: "provider_forbidden" }, { status: 403 });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao consultar Data Docked." }, { status });
   }
 }

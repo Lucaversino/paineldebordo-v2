@@ -31,6 +31,7 @@ import Point from "ol/geom/Point";
 import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
+import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 const DHN_WMS_URL = "https://idem.dhn.mar.mil.br/geoserver/wms";
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
@@ -260,6 +261,32 @@ function sourceInfo(dataSource?: string) {
 export default function AISPage({ defaultLat, defaultLon }: Props) {
   const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
   const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  async function aisFetch(input: string, init: RequestInit = {}) {
+    const makeRequest = async (token?: string | null) => {
+      const headers = new Headers(init.headers || {});
+      if (token) headers.set("authorization", `Bearer ${token}`);
+      return fetch(input, {
+        ...init,
+        headers,
+        credentials: "include",
+        cache: "no-store",
+      });
+    };
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    let response = await makeRequest(sessionData.session?.access_token || null);
+    if (response.status !== 401) return response;
+
+    // Em PWA/mobile o cookie pode renovar alguns instantes depois da tela abrir.
+    // Renova explicitamente a sessão uma vez e repete a chamada AIS.
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    const token = refreshed.session?.access_token;
+    if (!token) return response;
+    response = await makeRequest(token);
+    return response;
+  }
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const vesselSourceRef = useRef<VectorSource | null>(null);
@@ -419,7 +446,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(`Pesquisando embarcações em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
     try {
-      const response = await fetch(`/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}`, { cache: "no-store" });
+      const response = await aisFetch(`/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}`);
       const data = await response.json();
       if (!response.ok) {
         setStatus(response.status === 503 ? "config" : "error");
@@ -457,7 +484,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function refreshCredits() {
     try {
-      const response = await fetch("/api/ais?action=credits", { cache: "no-store" });
+      const response = await aisFetch("/api/ais?action=credits");
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) {
@@ -656,12 +683,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatus("loading");
     setStatusMessage(force ? `Atualizando posição — ${adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.updateCredits} crédito(s)`}...` : `Consultando posição — ${adminFree ? "GRÁTIS — ADMIN" : `${aisPricing.locateCredits} crédito(s)`}...`);
     try {
-      const response = await fetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`, { cache: "no-store" });
+      const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`);
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) setStatus("config");
         else setStatus("error");
-        setStatusMessage(data?.error || "Não foi possível localizar a embarcação.");
+        setStatusMessage(response.status === 401 ? "Sua sessão expirou. Entre novamente no painel e tente de novo." : (data?.error || "Não foi possível localizar a embarcação."));
         return;
       }
       const raw = data?.vessel;
@@ -729,12 +756,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setMatches([]);
     setMatchTotal(0);
     try {
-      const response = await fetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}`, { cache: "no-store" });
+      const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}`);
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) setStatus("config");
         else setStatus("error");
-        setStatusMessage(data?.error || "Falha ao buscar embarcação pelo nome.");
+        setStatusMessage(response.status === 401 ? "Sua sessão expirou. Entre novamente no painel e tente a busca AIS." : (data?.error || "Falha ao buscar embarcação pelo nome."));
         return;
       }
 
