@@ -585,6 +585,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   async function searchArea() {
     const selected = areaCenter || center;
     if (!selected) return;
+
+    const areaCostCredits = aisPricing.areaCredits;
+    const areaCostBrl = formatBrl(areaCostCredits * creditUnitPrice);
+    const confirmed = window.confirm(
+      `ATENÇÃO — CONSULTA AIS POR ÁREA\n\nTem certeza que deseja pesquisar embarcações em uma área de 50 km?\n\nCUSTO: ${areaCostCredits} crédito(s) (${areaCostBrl})\n\nOs créditos serão descontados somente se a consulta for concluída com sucesso.`
+    );
+    if (!confirmed) {
+      setStatus("idle");
+      setStatusMessage("Consulta por área cancelada. Nenhum crédito foi descontado.");
+      return;
+    }
+
     setStatus("loading");
     setStatusMessage(`Pesquisando embarcações em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
@@ -765,6 +777,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(message);
   }
 
+  function savedItemToMatch(item: SavedVessel): VesselMatch {
+    return {
+      name: item.name,
+      mmsi: item.mmsi || "",
+      imo: item.imo || "",
+      country: item.country || "",
+      countryIso: "",
+      shipType: item.vesselType || "",
+      typeSpecific: item.vesselType || "",
+      callsign: item.callsign || "",
+    };
+  }
+
   function openSavedVessel(item: SavedVessel) {
     if (item.lastLatitude == null || item.lastLongitude == null) {
       setNameQuery(item.name);
@@ -829,6 +854,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       centerOn(cached.lat, cached.lon, 12);
       setStatus("ready");
       setStatusMessage(`${cached.name || "Embarcação"} localizada do cache — 0 créditos`);
+      return;
+    }
+
+    const operationCredits = force ? aisPricing.updateCredits : aisPricing.locateCredits;
+    const operationBrl = formatBrl(operationCredits * creditUnitPrice);
+    const operationLabel = force ? "ATUALIZAR OS DADOS" : "CONSULTAR A POSIÇÃO";
+    const vesselLabel = match.name || id;
+    const confirmed = window.confirm(
+      `ATENÇÃO — CONSULTA AIS\n\nTem certeza que deseja ${operationLabel.toLowerCase()} de ${vesselLabel}?\n\nCUSTO: ${operationCredits} crédito(s) (${operationBrl})\n\nOs créditos serão descontados somente se uma posição válida for retornada.`
+    );
+    if (!confirmed) {
+      setStatus("idle");
+      setStatusMessage(`${force ? "Atualização" : "Consulta"} cancelada. Nenhum crédito foi descontado.`);
       return;
     }
 
@@ -1196,7 +1234,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <>
             <div className="ais-name-search-head">
               <div className="ais-name-title"><Ship /><span><b>LOCALIZAR EMBARCAÇÃO</b><small>Pesquise pelo nome e consulte somente o barco escolhido.</small></span></div>
-              <div className="ais-credit-flow"><span>{`${aisPricing.locateCredits} CR`}</span><em>Consulta completa</em><i>→</i><strong>cobra somente com posição válida</strong></div>
+              <div className="ais-credit-flow ais-cost-highlight"><span>{`${aisPricing.locateCredits} CR`}</span><em>{formatBrl(aisPricing.locateCredits * creditUnitPrice)}</em><i>→</i><strong>CONFIRMAÇÃO ANTES DE COBRAR</strong></div>
             </div>
             <form className="ais-name-form" onSubmit={searchByName}>
               <label>
@@ -1205,7 +1243,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               </label>
               <button type="submit" disabled={status === "loading"}>
                 {status === "loading" ? <RefreshCw className="spin" /> : <Search />}
-                {status === "loading" ? "CONSULTANDO..." : "BUSCAR BARCO"}
+                {status === "loading" ? "CONSULTANDO..." : <>BUSCAR BARCO <strong>{aisPricing.locateCredits} CR</strong></>}
               </button>
             </form>
 
@@ -1242,7 +1280,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <div className="ais-v70-area-search">
             <div className="ais-name-search-head">
               <div className="ais-name-title"><Crosshair /><span><b>PESQUISAR EMBARCAÇÕES NA ÁREA</b><small>Área fixa de 50 km. Use GPS, toque no mapa ou digite a posição.</small></span></div>
-              <div className="ais-v70-area-cost">{`${aisPricing.areaCredits} CR`}</div>
+              <div className="ais-v70-area-cost ais-cost-highlight-area"><b>{`${aisPricing.areaCredits} CR`}</b><small>{formatBrl(aisPricing.areaCredits * creditUnitPrice)}</small></div>
             </div>
             <div className="ais-v70-radius-row">
               <button type="button" className="active">50 km <small>{`${aisPricing.areaCredits} créditos`}</small></button>
@@ -1258,7 +1296,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             {manualCoordError && <p className="ais-v74-coordinate-error">{manualCoordError}</p>}
             <div className="ais-v70-area-position">
               <span><small>CENTRO DA BUSCA · 50 KM</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Escolha pelo mapa, GPS ou latitude/longitude"}</b></span>
-              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR 50 KM</button>
+              <button type="button" onClick={searchArea} disabled={status === "loading" || !areaCenter}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} PESQUISAR 50 KM · {aisPricing.areaCredits} CR</button>
             </div>
             {areaVessels.length > 0 && (
               <div className="ais-v70-area-results">
@@ -1293,7 +1331,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                       <div><b>{item.name}</b><small>MMSI {item.mmsi || "—"} · IMO {item.imo || "—"}</small><em>{item.lastPositionReceived || item.lastUpdateTime || "Posição ainda não consultada"}</em></div>
                     </button>
                     <div className="ais-saved-actions">
-                      <button type="button" title={`Atualizar posição · ${aisPricing.updateCredits} crédito(s)`} onClick={() => getVesselPosition({ name: item.name, mmsi: item.mmsi || "", imo: item.imo || "", country: item.country || "", countryIso: "", shipType: item.vesselType || "", typeSpecific: item.vesselType || "", callsign: item.callsign || "" }, true)}><RefreshCw /></button>
+                      <button type="button" className="update" title={`Atualizar dados · ${aisPricing.updateCredits} crédito(s)`} onClick={() => getVesselPosition(savedItemToMatch(item), true)}><RefreshCw /><span>{`ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
                       <button type="button" className="danger" title="Remover dos salvos" onClick={() => removeSavedVessel(item.vesselKey)}><Trash2 /></button>
                     </div>
                   </article>
@@ -1395,7 +1433,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 </div>
                 {searchMode === "vessel" ? (
                   <>
-                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Nome do barco" /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar</button></div>
+                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Nome do barco" /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar · {aisPricing.locateCredits} CR</button></div>
                     {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"}</small></span><em>{`${aisPricing.locateCredits} CR`}</em></button>)}</div>}
                   </>
                 ) : (
@@ -1413,13 +1451,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                     {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
                     <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Usar centro atual do mapa</button>
                     <div className="ais-v70-mobile-area-current"><small>Centro selecionado · raio 50 km</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
-                    <button type="button" className="ais-v70-area-go" onClick={() => { searchArea(); setMobilePanel(null); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar área de 50 km</button>
+                    <button type="button" className="ais-v70-area-go" onClick={() => { void searchArea(); }} disabled={!areaCenter || status === "loading"}><Search /> Pesquisar 50 km · {aisPricing.areaCredits} CR</button>
                   </>
                 )}
               </div>
             )}
 
-            {mobilePanel === "saved" && <div className="ais-v70-mobile-list">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <button type="button" key={item.vesselKey} onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>) : <p>Nenhum barco salvo.</p>}</div>}
+            {mobilePanel === "saved" && <div className="ais-v70-mobile-list saved">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
+              <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>
+              <button type="button" className="ais-mobile-saved-update" onClick={() => void getVesselPosition(savedItemToMatch(item), true)}><RefreshCw /><span>{`ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
+            </article>) : <p>Nenhum barco salvo.</p>}</div>}
 
             {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => {
               const historyVessel = historyItemToVessel(item);
