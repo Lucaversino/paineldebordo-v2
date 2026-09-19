@@ -2982,3 +2982,30 @@ main.loginpage{
     height:14px!important;
   }
 }
+
+
+/* V133 — ShipFinder como terceira fonte AIS */
+.ais-v125-provider-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+.ais-v125-provider-card.shipfinder{border-color:#4a68b8;background:#111d3a}
+.ais-v125-provider-card.shipfinder .ais-v125-provider-head>svg{color:#8fb0ff}
+.ais-v125-provider-card.shipfinder .ais-v125-provider-head em{color:#9bb9ff}
+.ais-v125-provider-card.shipfinder .ais-v125-search-row{border-color:#355396;background:#0c1730}
+.ais-v125-provider-card.shipfinder .ais-v125-search-row>svg{color:#89aaff}
+.ais-v125-provider-card.shipfinder .ais-v125-search-row button{background:#3d6fd6;color:#f5f8ff}
+.ais-v125-provider-card.shipfinder .ais-v125-search-row button:disabled{opacity:.45}
+.ais-v125-mobile-search-card.shipfinder{border-color:#3d5fa8;background:#101d3a}
+.ais-v125-mobile-search-card.shipfinder .ais-v125-mobile-search-title>svg{color:#8fb0ff}
+.ais-v125-mobile-search-card.shipfinder .ais-v70-mobile-input{border-color:#345392;background:#0a1530}
+.ais-v125-mobile-search-card.shipfinder .ais-v70-mobile-input button{background:#3d6fd6!important;color:#f7f9ff!important}
+.ais-v125-mobile-search-card.shipfinder .ais-v70-mobile-input button:disabled{opacity:.45}
+.ais-v119-map-card.shipfinder{border-color:#4f76cf!important}
+.ais-v119-map-card.shipfinder .ais-v95-map-card-head small{color:#9bb9ff!important}
+
+@media(max-width:980px) and (min-width:761px){
+  .ais-v125-provider-cards{grid-template-columns:1fr 1fr}
+  .ais-v125-provider-card.shipfinder{grid-column:1/-1}
+}
+@media(max-width:760px){
+  .ais-v125-provider-cards{grid-template-columns:1fr}
+  .ais-v125-provider-card.shipfinder{grid-column:auto}
+}
