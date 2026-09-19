@@ -454,7 +454,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [matches, setMatches] = useState<VesselMatch[]>([]);
   const [matchTotal, setMatchTotal] = useState(0);
   const [tracked, setTracked] = useState<Vessel | null>(null);
-  const [showEmptyHint, setShowEmptyHint] = useState(true);
+  const [showEmptyHint, setShowEmptyHint] = useState(false);
   const [status, setStatus] = useState<AisStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Digite o nome do barco para localizar");
   const [credits, setCredits] = useState<number | null>(null);
@@ -911,9 +911,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       centerOn(selected.lat, selected.lon, 8);
       setStatus("ready");
       setStatusMessage(
-        isFree
-          ? `${rows.length} barco(s) AIS Free encontrado(s) · ${String(data?.provider || data?.source || "Marinesia/fallback")} · 0 créditos`
-          : `${rows.length} barco(s) Premium encontrado(s) em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s)`
+        rows.length
+          ? (isFree
+              ? `${rows.length} barco(s) AIS Free · ${String(data?.provider || data?.source || "Marinesia/fallback")} · 0 créditos`
+              : `${rows.length} barco(s) Premium em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s)`)
+          : ""
       );
       if (!isFree) await refreshCredits();
     } catch {
@@ -1401,8 +1403,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         setMatchTotal(Number(data?.total) || rows.length);
 
         if (!rows.length) {
-          setStatus("ready");
-          setStatusMessage("Nenhuma embarcação encontrada na ShipFinder.");
+          setStatus("idle");
+          setStatusMessage("");
           return;
         }
         if (rows.length === 1) {
@@ -1475,8 +1477,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       await refreshCredits();
 
       if (!rows.length) {
-        setStatus("ready");
-        setStatusMessage("Nenhuma embarcação encontrada com esse nome.");
+        setStatus("idle");
+        setStatusMessage("");
         return;
       }
 
