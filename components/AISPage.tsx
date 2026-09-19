@@ -368,8 +368,11 @@ function sourceInfo(dataSource?: string) {
   if (/shipfinder/i.test(source)) {
     return { title: "ShipFinder AIS", short: "SHIPFINDER", className: "shipfinder" };
   }
-  if (/premium/i.test(source) || /aprs\.fi|aprsfi/i.test(source)) {
+  if (/premium|data docked|datadocked/i.test(source)) {
     return { title: "AIS Premium", short: "PREMIUM", className: "premium" };
+  }
+  if (/aprs\.fi|aprsfi|ais free/i.test(source)) {
+    return { title: "AIS Free", short: "FREE", className: "free" };
   }
   if (/aisstream/i.test(source)) {
     return { title: "AISStream", short: "STREAM", className: "terrestrial" };
@@ -427,6 +430,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const areaRadiusRef = useRef<50>(50);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
+  // V139: trava síncrona para impedir clique duplo antes do React atualizar o estado loading.
+  // FREE e PREMIUM mantêm travas independentes e nunca compartilham o mesmo fluxo.
+  const freeSearchInFlightRef = useRef(false);
+  const premiumSearchInFlightRef = useRef(false);
 
   const [freeSearchQuery, setFreeSearchQuery] = useState("");
   const [freeSearchLoading, setFreeSearchLoading] = useState(false);
@@ -1201,7 +1208,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setFreeSearchError("Digite nome, MMSI ou IMO.");
       return;
     }
+    if (freeSearchInFlightRef.current) return;
 
+    freeSearchInFlightRef.current = true;
     setFreeSearchLoading(true);
     try {
       const response = await aisFetch(`/api/ais-free?action=search&q=${encodeURIComponent(query)}`);
@@ -1220,17 +1229,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
       setFreeSearchResults(rows);
       setStatus(rows.length ? "ready" : "idle");
-      setStatusMessage(rows.length ? `${rows.length} resultado(s) na busca FREE` : "");
+      if (rows.length) {
+        setStatusMessage(`${rows.length} resultado(s) na busca FREE`);
+      } else {
+        setStatusMessage("Nenhuma embarcação encontrada na busca FREE.");
+        setFreeSearchError("Nenhuma embarcação encontrada na fonte gratuita.");
+      }
     } catch {
       setFreeSearchError("Falha de rede na busca FREE.");
     } finally {
+      freeSearchInFlightRef.current = false;
       setFreeSearchLoading(false);
     }
   }
 
   async function openFreeResult(match: VesselMatch, force = false) {
+    if (freeSearchInFlightRef.current) return;
     const id = vesselIdentifier(match);
     const provider = match.freeProvider || "aprsfi";
+    freeSearchInFlightRef.current = true;
     setFreeSearchError("");
     setFreeSearchLoading(true);
 
@@ -1265,6 +1282,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     } catch {
       setFreeSearchError("Falha de rede ao consultar a posição FREE.");
     } finally {
+      freeSearchInFlightRef.current = false;
       setFreeSearchLoading(false);
     }
   }
@@ -1278,7 +1296,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setPremiumSearchError("Digite nome, MMSI ou IMO.");
       return;
     }
+    if (premiumSearchInFlightRef.current) return;
 
+    premiumSearchInFlightRef.current = true;
     setPremiumSearchLoading(true);
     try {
       const response = await aisFetch(`/api/ais-premium?action=search&q=${encodeURIComponent(query)}`);
@@ -1302,16 +1322,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
       setPremiumSearchResults(rows);
       setStatus(rows.length ? "ready" : "idle");
-      setStatusMessage(rows.length ? `${rows.length} resultado(s) na busca PREMIUM` : "");
+      if (rows.length) {
+        setStatusMessage(`${rows.length} resultado(s) na busca PREMIUM`);
+      } else {
+        setStatusMessage("Nenhuma embarcação encontrada na busca PREMIUM.");
+        setPremiumSearchError("Nenhuma embarcação encontrada na fonte Premium.");
+      }
       await refreshCredits();
     } catch {
       setPremiumSearchError("Falha de rede na busca PREMIUM.");
     } finally {
+      premiumSearchInFlightRef.current = false;
       setPremiumSearchLoading(false);
     }
   }
 
   async function openPremiumResult(match: VesselMatch, force = false) {
+    if (premiumSearchInFlightRef.current) return;
     const id = vesselIdentifier(match);
     const operationCredits = force ? aisPricing.updateCredits : aisPricing.locateCredits;
     const operationBrl = formatBrl(operationCredits * creditUnitPrice);
@@ -1320,6 +1347,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     );
     if (!confirmed) return;
 
+    premiumSearchInFlightRef.current = true;
     setPremiumSearchError("");
     setPremiumSearchLoading(true);
 
@@ -1362,6 +1390,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     } catch {
       setPremiumSearchError("Falha de rede ao consultar a posição PREMIUM.");
     } finally {
+      premiumSearchInFlightRef.current = false;
       setPremiumSearchLoading(false);
     }
   }
