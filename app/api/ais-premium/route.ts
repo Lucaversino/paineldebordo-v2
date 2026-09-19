@@ -153,11 +153,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "search") {
-      debug("verificando créditos");
-      const access = await assertCanUse(user, "ais_single");
       const query = text(searchParams.get("q"));
       if (query.length < 2) return NextResponse.json({ error: "Digite nome, MMSI ou IMO." }, { status: 400 });
 
+      debug("verificando créditos");
+      const access = await assertCanUse(user, "ais_single");
       const digits = query.replace(/\D/g, "");
       if (digits.length === 7 || digits.length === 9) {
         const item = {
