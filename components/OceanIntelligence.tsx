@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, BrainCircuit, Droplets, MapPin, MoonStar, Pencil, RefreshCw, RotateCcw, Thermometer, Waves, Wind, X } from "lucide-react";
+import { Activity, BrainCircuit, Crosshair, Droplets, MapPin, MoonStar, Pencil, RefreshCw, RotateCcw, Thermometer, Waves, Wind, X } from "lucide-react";
 
 const n = (v: any, d = 1) => v == null || Number.isNaN(Number(v)) ? "—" : new Intl.NumberFormat("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(Number(v));
 const tm = (v?: string | null) => v ? new Date(v).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
@@ -42,6 +42,30 @@ function formatDmm(value: any, axis: "lat" | "lon") {
   const hemi = axis === "lat" ? (raw < 0 ? "S" : "N") : (raw < 0 ? "W" : "E");
   const degreeWidth = axis === "lon" ? 3 : 2;
   return `${String(degrees).padStart(degreeWidth, "0")}º ${minutes.toFixed(3).replace(".", ",")} ${hemi}`;
+}
+
+function quickCoordinateDigits(value: any) {
+  const raw = String(value ?? "").replace(/\D/g, "").slice(0, 6);
+  return raw;
+}
+
+function quickCoordinateDisplay(value: any, direction: "S" | "W" | "N" | "E") {
+  const digits = quickCoordinateDigits(value);
+  if (!digits) return "";
+  const degrees = digits.slice(0, 2);
+  const minutes = digits.slice(2);
+  return `${degrees}${digits.length > 2 ? "º " : ""}${minutes}${digits.length >= 2 ? ` ${direction}` : ""}`;
+}
+
+function decimalToQuickCoordinate(value: any, axis: "lat" | "lon") {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return "";
+  const abs = Math.abs(raw);
+  const degrees = Math.floor(abs);
+  const minutes = (abs - degrees) * 60;
+  const direction = axis === "lat" ? (raw < 0 ? "S" : "N") : (raw < 0 ? "W" : "E");
+  const digits = `${String(degrees).padStart(2, "0")}${String(Math.round(minutes * 100)).padStart(4, "0").slice(0, 4)}`;
+  return quickCoordinateDisplay(digits, direction);
 }
 
 function parseMarineCoordinate(input: string, axis: "lat" | "lon") {
@@ -88,6 +112,8 @@ export default function OceanIntelligence() {
   const [latInput, setLatInput] = useState("");
   const [lonInput, setLonInput] = useState("");
   const [positionError, setPositionError] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState("");
 
   const loadOcean = async (manual = false, override?: ManualPosition) => {
     if (manual) setRefreshing(true);
@@ -124,10 +150,52 @@ export default function OceanIntelligence() {
 
   const openPositionEditor = () => {
     const p = data?.environment?.position;
-    setLatInput(p?.lat != null ? formatDmm(p.lat, "lat") : "");
-    setLonInput(p?.lon != null ? formatDmm(p.lon, "lon") : "");
+    setLatInput(p?.lat != null ? decimalToQuickCoordinate(p.lat, "lat") : "");
+    setLonInput(p?.lon != null ? decimalToQuickCoordinate(p.lon, "lon") : "");
     setPositionError("");
+    setGpsStatus("");
     setPositionEditor(true);
+  };
+
+  const updateQuickCoordinate = (raw: string, axis: "lat" | "lon") => {
+    const existingDirection = (raw.toUpperCase().match(/[NSEW]/)?.[0] || (axis === "lat" ? "S" : "W")) as "S" | "W" | "N" | "E";
+    const display = quickCoordinateDisplay(raw, existingDirection);
+    if (axis === "lat") setLatInput(display);
+    else setLonInput(display);
+    setPositionError("");
+    setGpsStatus("");
+  };
+
+  const useCurrentGpsPosition = () => {
+    setPositionError("");
+    setGpsStatus("");
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setPositionError("GPS/localização não está disponível neste aparelho ou navegador.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        setLatInput(decimalToQuickCoordinate(latitude, "lat"));
+        setLonInput(decimalToQuickCoordinate(longitude, "lon"));
+        setGpsStatus(`GPS capturado · precisão aproximada ±${Math.round(accuracy || 0)} m`);
+        setLocating(false);
+      },
+      (error) => {
+        setLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          setPositionError("Localização bloqueada. Permita o acesso ao GPS para este site e tente novamente.");
+        } else if (error.code === error.TIMEOUT) {
+          setPositionError("O GPS demorou para responder. Vá para uma área com melhor sinal e tente novamente.");
+        } else {
+          setPositionError("Não foi possível obter a localização atual do celular.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+    );
   };
 
   const applyPosition = async () => {
@@ -208,9 +276,32 @@ export default function OceanIntelligence() {
         <button type="button" className="ocean-position-close" onClick={() => setPositionEditor(false)} aria-label="Fechar"><X/></button>
         <small>POSIÇÃO PARA ANÁLISE</small>
         <h3>Alterar posição</h3>
-        <p>Essa posição será usada somente para calcular vento, mar, corrente, temperatura, lua e clorofila desta análise.</p>
-        <label>LATITUDE S<input value={latInput} onChange={e => setLatInput(e.target.value)} placeholder="25º 4565 S" inputMode="decimal"/></label>
-        <label>LONGITUDE W<input value={lonInput} onChange={e => setLonInput(e.target.value)} placeholder="46º 3545 W" inputMode="decimal"/></label>
+        <p>Digite somente os números, igual à Nova Largada. O painel formata automaticamente em graus/minutos. Ou use o GPS do celular.</p>
+        <button type="button" className="ocean-position-gps" onClick={useCurrentGpsPosition} disabled={locating}>
+          <Crosshair className={locating ? "spin" : ""}/>
+          <span><b>{locating ? "BUSCANDO GPS..." : "USAR LOCALIZAÇÃO ATUAL"}</b><small>Preencher latitude e longitude automaticamente</small></span>
+        </button>
+        {gpsStatus && <div className="ocean-position-gps-ok">{gpsStatus}</div>}
+        <label>LATITUDE
+          <input
+            value={latInput}
+            onChange={e => updateQuickCoordinate(e.target.value, "lat")}
+            placeholder="254565"
+            inputMode="numeric"
+            autoComplete="off"
+          />
+          <small className="ocean-position-input-hint">Ex.: 254565 → 25º 4565 S</small>
+        </label>
+        <label>LONGITUDE
+          <input
+            value={lonInput}
+            onChange={e => updateQuickCoordinate(e.target.value, "lon")}
+            placeholder="463545"
+            inputMode="numeric"
+            autoComplete="off"
+          />
+          <small className="ocean-position-input-hint">Ex.: 463545 → 46º 3545 W</small>
+        </label>
         {positionError && <div className="ocean-position-error">{positionError}</div>}
         <div className="ocean-position-modal-actions">
           <button type="button" className="secondary" onClick={() => setPositionEditor(false)}>Cancelar</button>
