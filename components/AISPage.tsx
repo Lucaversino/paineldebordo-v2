@@ -359,6 +359,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
 
+  useEffect(() => {
+    document.body.classList.add("ais-mobile-active");
+    return () => document.body.classList.remove("ais-mobile-active");
+  }, []);
+
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
   useEffect(() => { areaRadiusRef.current = 50; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, 50); }, [areaCenter]);
   const [matches, setMatches] = useState<VesselMatch[]>([]);

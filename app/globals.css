@@ -2141,3 +2141,138 @@ main.loginpage{
 /* V108 — referência geográfica e metragem/profundidade da posição */
 .position-location-details{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(220px,.75fr);gap:9px;margin:9px 0 10px}.position-location-details article{min-width:0;display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid #1f5056;border-radius:11px;background:#08272d}.position-location-details article>svg{width:21px;height:21px;color:#48dcb6;flex:none}.position-location-details article>span{display:grid;gap:2px;min-width:0}.position-location-details small{font-size:7px;font-weight:950;letter-spacing:.09em;color:#6f999e}.position-location-details b{font-size:13px;color:#eafffb;white-space:normal}.position-location-details em{font-size:7px;font-style:normal;color:#6c9298}.position-location-details article:last-child b{font-size:18px;color:#58e2bd}.app:not(.dark) .position-location-details article{background:#fff;border-color:#c5d9d6}.app:not(.dark) .position-location-details b{color:#173a41}.app:not(.dark) .position-location-details article:last-child b{color:#238d73}
 @media(max-width:760px){.position-location-details{grid-template-columns:1fr;gap:6px;margin:7px 0 9px}.position-location-details article{padding:9px 10px;gap:8px}.position-location-details article>svg{width:18px;height:18px}.position-location-details b{font-size:12px}.position-location-details article:last-child b{font-size:16px}.position-location-details em{font-size:6.5px}}
+
+
+/* V111 — correção de sobreposição dos botões AIS no celular */
+@media(max-width:760px){
+  /* Mantém os controles do mapa sempre clicáveis e fora da barra de créditos. */
+  .ais-page .ais-map-tools.ais-left-tools{
+    z-index:36!important;
+    top:10px!important;
+    left:10px!important;
+  }
+
+  /* A barra de saldo começa depois da coluna de zoom, sem esconder o botão "-". */
+  .ais-mobile-credit{
+    z-index:35!important;
+    top:58px!important;
+    left:70px!important;
+    right:10px!important;
+    width:auto!important;
+    min-height:48px;
+    justify-content:flex-end;
+    box-sizing:border-box;
+  }
+  .ais-mobile-credit>div{
+    min-width:0;
+    margin-right:auto;
+  }
+  .ais-mobile-credit button{
+    flex:0 0 auto;
+    min-width:58px;
+  }
+
+  /* Dock inferior: ocupa a área segura e todos os 4 botões ficam inteiros. */
+  .ais-v70-mobile-dock{
+    z-index:5200!important;
+    left:8px!important;
+    right:8px!important;
+    bottom:calc(8px + env(safe-area-inset-bottom,0px))!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    gap:4px!important;
+    padding:5px!important;
+  }
+  .ais-v70-mobile-dock button{
+    min-width:0!important;
+    width:100%!important;
+    height:50px!important;
+    padding:3px 2px!important;
+    overflow:visible!important;
+  }
+  .ais-v70-mobile-dock button span{
+    display:block!important;
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:7px!important;
+  }
+  .ais-v70-mobile-dock button em{
+    right:4px!important;
+    top:3px!important;
+  }
+
+  /* O painel de busca fica exatamente acima do dock e respeita a safe area. */
+  .ais-v70-mobile-panel{
+    z-index:5190!important;
+    left:8px!important;
+    right:8px!important;
+    bottom:calc(70px + env(safe-area-inset-bottom,0px))!important;
+    max-height:min(49dvh,430px)!important;
+    padding:10px!important;
+  }
+  .ais-v70-mobile-input{
+    grid-template-columns:26px minmax(0,1fr) auto!important;
+  }
+  .ais-v70-mobile-input button{
+    min-width:92px;
+    padding:0 9px!important;
+    white-space:nowrap;
+  }
+
+  /* FISH AI sai de cima dos botões do AIS e fica no canto superior direito do mapa. */
+  body.ais-mobile-active .fish-ai{
+    top:176px!important;
+    right:10px!important;
+    bottom:auto!important;
+    z-index:5100!important;
+  }
+  body.ais-mobile-active .fish-ai-trigger{
+    width:48px!important;
+    min-width:48px!important;
+    height:48px!important;
+  }
+  body.ais-mobile-active .fish-ai-trigger-icon{
+    width:38px!important;
+    height:38px!important;
+    flex-basis:38px!important;
+  }
+  body.ais-mobile-active .fish-ai-trigger-icon svg{
+    width:19px!important;
+    height:19px!important;
+  }
+  body.ais-mobile-active .fish-ai-panel{
+    top:58px!important;
+    right:6px!important;
+    bottom:auto!important;
+    height:min(72dvh,650px)!important;
+  }
+
+  .ais-page .ais-bottom-status{
+    bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;
+  }
+}
+
+@media(max-width:430px){
+  .ais-mobile-credit{
+    left:66px!important;
+    right:7px!important;
+    gap:4px!important;
+    padding:5px!important;
+  }
+  .ais-mobile-credit button{
+    min-width:52px!important;
+    height:28px!important;
+    padding:0 6px!important;
+    font-size:7px!important;
+  }
+  .ais-mobile-credit b{font-size:10px!important}
+  .ais-v70-mobile-input button{
+    min-width:82px;
+    font-size:7px!important;
+  }
+  body.ais-mobile-active .fish-ai{
+    top:170px!important;
+    right:8px!important;
+  }
+}
