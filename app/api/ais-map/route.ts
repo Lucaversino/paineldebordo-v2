@@ -486,42 +486,25 @@ async function fetchKpler(lat: number, lon: number): Promise<MapVessel[]> {
 async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
   let vessels: MapVessel[] = [];
   let source: CacheValue["source"] = "Nenhuma";
-  let fallbackUsed = false;
+  let fallbackUsed = true;
 
-  let streamAvailable = false;
+  // AISStream foi retirado da camada automática. APRS.fi é usado apenas
+  // na busca manual por alvo específico; ele não oferece busca por bounding box.
+  let vesselApiAvailable = false;
   try {
-    vessels = await collectAisStream(lat, lon);
-    streamAvailable = true;
-    source = "AISStream";
+    vessels = await fetchVesselApi(lat, lon);
+    vesselApiAvailable = true;
+    source = "VesselAPI Free";
   } catch {
     vessels = [];
   }
 
-  // O fallback só entra quando o AISStream realmente está indisponível
-  // (chave ausente/recusada, falha de conexão ou assinatura não confirmada).
-  // Uma região sem mensagens no intervalo não é tratada como falha e não gasta
-  // a cota mensal reduzida do plano VesselAPI Free.
-  if (!streamAvailable) {
-    fallbackUsed = true;
-    let vesselApiAvailable = false;
+  if (!vesselApiAvailable) {
     try {
-      vessels = await fetchVesselApi(lat, lon);
-      vesselApiAvailable = true;
-      source = "VesselAPI Free";
+      vessels = await fetchKpler(lat, lon);
+      source = "Kpler Maritime";
     } catch {
       vessels = [];
-    }
-
-    // Terceira fonte: Kpler Maritime 2.0 (GraphQL).
-    // Só é usada quando AISStream e VesselAPI não estão disponíveis,
-    // evitando consumo desnecessário de cota/contrato Kpler.
-    if (!vesselApiAvailable) {
-      try {
-        vessels = await fetchKpler(lat, lon);
-        source = "Kpler Maritime";
-      } catch {
-        vessels = [];
-      }
     }
   }
 
@@ -531,8 +514,8 @@ async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
     source,
     fallbackUsed,
     updatedAt: now,
-    expiresAt: now + ((source === "VesselAPI Free" || source === "Kpler Maritime") ? 5 * 60_000 : FRESH_TTL_MS),
-    staleUntil: now + ((source === "VesselAPI Free" || source === "Kpler Maritime") ? 15 * 60_000 : STALE_TTL_MS),
+    expiresAt: now + 5 * 60_000,
+    staleUntil: now + 15 * 60_000,
   };
 }
 
