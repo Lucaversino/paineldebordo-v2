@@ -816,13 +816,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     if (closeMobilePanel) setMobilePanel(null);
   }
 
-  function marinesiaCooldownMessage() {
-    const until = Math.max(marinesiaCooldownUntil, readMarinesiaCooldown());
-    if (!until || until <= Date.now()) return "";
-    const minutes = Math.max(1, Math.ceil((until - Date.now()) / 60000));
-    return `AIS Free aguardando a próxima janela da Marinesia — cerca de ${minutes} min. O fallback gratuito do mapa continua disponível.`;
-  }
-
   async function searchArea(provider: SearchProvider = searchProvider, forceFreeRefresh = false) {
     const selected = areaCenter || center;
     if (!selected) return;
@@ -844,20 +837,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatus("loading");
     setStatusMessage(isFree ? "Buscando barcos no AIS Free da região..." : `Pesquisando embarcações Premium em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
-
-    if (isFree && !forceFreeRefresh) {
-      const cachedFree = readMarinesiaAreaCache(selected);
-      if (cachedFree?.length) {
-        const cachedRows = dedupeVessels(cachedFree as Vessel[]);
-        setAreaVessels(cachedRows);
-        setAreaCost(0);
-        drawAreaVessels(cachedRows);
-        centerOn(selected.lat, selected.lon, 8);
-        setStatus("ready");
-        setStatusMessage(`${cachedRows.length} barco(s) AIS Free carregado(s) do cache · 0 créditos`);
-        return;
-      }
-    }
 
     const toRows = (data: any, freeFallback = false): Vessel[] => (
       (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
@@ -881,33 +860,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     );
 
     try {
-      const cooldownMessage = isFree ? marinesiaCooldownMessage() : "";
-      let response: Response;
-      let data: any;
-
-      if (isFree && cooldownMessage) {
-        setStatusMessage(cooldownMessage);
-        response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
-        data = await response.json();
-      } else {
-        response = await aisFetch(
-          `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
-        );
-        data = await response.json();
-      }
+      let response = await aisFetch(
+        `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
+      );
+      let data: any = await response.json().catch(() => ({}));
 
       if (!response.ok && isFree) {
-        if (response.status === 429) {
-          const retrySeconds = Number(data?.retryAfterSeconds || 1800);
-          setMarinesiaCooldownUntil(writeMarinesiaCooldown(retrySeconds));
-        }
-        setStatusMessage(
-          response.status === 429
-            ? "Marinesia atingiu o limite do plano grátis. Complementando com AIS Free do mapa..."
-            : "Marinesia não respondeu. Complementando com AIS Free do mapa..."
-        );
-        response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
-        data = await response.json();
+        setStatusMessage("AIS Free por área indisponível. Usando a camada gratuita do mapa...");
+        response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}&refresh=${forceFreeRefresh ? "1" : "0"}`);
+        data = await response.json().catch(() => ({}));
       }
 
       if (!response.ok) {
@@ -932,7 +893,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setAreaVessels(rows);
       setAreaCost(isFree ? 0 : (Number(data?.creditCost) || aisPricing.areaCredits));
       drawAreaVessels(rows);
-      if (isFree && rows.length) writeMarinesiaAreaCache(selected, rows);
 
       if (!isFree && rows.length) {
         void fetch("/api/ais-library", {
