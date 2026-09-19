@@ -452,7 +452,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapSource, setFreeMapSource] = useState("AIS automático");
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
-  const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
@@ -889,7 +888,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       drawAreaVessels(rows);
 
       if (!isFree && rows.length) {
-        void fetch("/api/ais-library", {
+        void aisFetch("/api/ais-library", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "save-area", vessels: rows }),
@@ -925,7 +924,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function refreshCredits() {
     try {
-      const response = await aisFetch("/api/ais?action=credits");
+      const response = await aisFetch("/api/ais-premium?action=status");
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) {
@@ -935,7 +934,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
-      setMarinesiaConfigured(Boolean(data?.marinesiaConfigured));
       if (Number.isFinite(Number(data?.creditUnitPrice))) setCreditUnitPrice(Math.max(0.01, Number(data.creditUnitPrice)));
       if (data?.pricing) setAisPricing({
         locateCredits: Number.isFinite(Number(data.pricing.locateCredits)) ? Number(data.pricing.locateCredits) : 2,
@@ -964,7 +962,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   async function loadAisLibrary() {
     setLibraryLoading(true);
     try {
-      const response = await fetch("/api/ais-library", { cache: "no-store" });
+      const response = await aisFetch("/api/ais-library", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) return;
       setSavedVessels(Array.isArray(data?.saved) ? data.saved : []);
@@ -989,7 +987,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
     if (!silent) setStatusMessage(`Salvando ${source.name || "embarcação"}...`);
     try {
-      const response = await fetch("/api/ais-library", {
+      const response = await aisFetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
         cache: "no-store",
@@ -1029,7 +1027,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function removeSavedVessel(key: string) {
     try {
-      const response = await fetch(`/api/ais-library?type=saved&key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      const response = await aisFetch(`/api/ais-library?type=saved&key=${encodeURIComponent(key)}`, { method: "DELETE" });
       if (!response.ok) return;
       setSavedVessels((current) => current.filter((item) => item.vesselKey !== key));
       setStatusMessage("Barco removido da pasta de salvos.");
@@ -1041,7 +1039,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   async function clearAisHistory() {
     if (!window.confirm("Limpar todo o histórico de consultas AIS desta conta?")) return;
     try {
-      const response = await fetch("/api/ais-library?type=history", { method: "DELETE" });
+      const response = await aisFetch("/api/ais-library?type=history", { method: "DELETE" });
       if (!response.ok) return;
       setHistoryItems([]);
       setStatusMessage("Histórico AIS limpo.");
@@ -1052,7 +1050,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function recordHistory(vessel: Vessel, creditsUsed = 0) {
     try {
-      await fetch("/api/ais-library", {
+      await aisFetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "history", vessel, creditsUsed }),
@@ -2274,10 +2272,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       )}
 
       <div className="ais-footnote ais-v61-footnote">
-        <b>AIS profissional · Vessel Free + Premium + Marinesia</b>
+        <b>AIS profissional · FREE e PREMIUM separados</b>
         <span>
-          A pesquisa manual por nome usa APRS.fi sem descontar créditos. O APRS.fi exige busca por alvo específico, então digite o nome exato do barco. Fonte:{" "}
-          <a href="https://aprs.fi" target="_blank" rel="noreferrer">aprs.fi</a>. A busca por área continua separada e todas as chaves ficam somente no backend.
+          A busca FREE usa somente fontes gratuitas pelo endpoint próprio. A busca PREMIUM usa somente Data Docked, valida créditos e cobra apenas conforme a regra atual após retorno válido. Todas as chaves permanecem no backend.
         </span>
       </div>
     </section>
