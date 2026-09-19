@@ -1294,8 +1294,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Aplicar meu GPS</button>}
             </div>
             <div className="ais-v74-manual-coords">
-              <div className="ais-v74-coordinate-field"><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></div>
-              <div className="ais-v74-coordinate-field"><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></div>
+              <div className="ais-v74-coordinate-field"><span>Latitude Sul</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLatDigits} onChange={(e) => { setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="254530" /></div>
+              <div className="ais-v74-coordinate-field"><span>Longitude Oeste</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLonDigits} onChange={(e) => { setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="462550" /></div>
               <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> USAR LAT/LONG</button>
             </div>
             {manualCoordError && <p className="ais-v74-coordinate-error">{manualCoordError}</p>}
@@ -1449,8 +1449,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                       {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Usar GPS encontrado</button>}
                     </div>
                     <div className="ais-v74-mobile-coordinates">
-                      <label><span>Latitude Sul</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLatDigits, "S")} onChange={(e) => setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="254530" /></label>
-                      <label><span>Longitude Oeste</span><input inputMode="numeric" value={coordinateDigitsDisplay(manualLonDigits, "W")} onChange={(e) => setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="462550" /></label>
+                      <label><span>Latitude Sul</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLatDigits} onChange={(e) => { setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="254530" /></label>
+                      <label><span>Longitude Oeste</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLonDigits} onChange={(e) => { setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="462550" /></label>
                       <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar lat/long</button>
                     </div>
                     {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}

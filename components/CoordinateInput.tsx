@@ -16,14 +16,16 @@ export default function CoordinateInput({ name, direction, defaultDecimal }: {
   defaultDecimal?: number | null;
 }) {
   const [digits, setDigits] = useState(() => decimalToDigits(defaultDecimal));
-  const display = digits ? `${digits.slice(0, 2)}${digits.length > 2 ? "º" : ""}${digits.slice(2)} ${direction}` : "";
 
   return <input
     name={name}
     required
+    type="text"
     inputMode="numeric"
+    pattern="[0-9]*"
+    maxLength={6}
     autoComplete="off"
-    value={display}
+    value={digits}
     placeholder={direction === "S" ? "254530" : "462550"}
     onChange={(event) => setDigits(event.target.value.replace(/\D/g, "").slice(0, 6))}
   />;

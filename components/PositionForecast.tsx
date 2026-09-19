@@ -61,18 +61,23 @@ function CoordinateField({ label, direction, value, onChange }: {
   value: string;
   onChange: (value: string) => void;
 }) {
-  const display = value ? `${value.slice(0, 2)}${value.length > 2 ? "º" : ""}${value.slice(2)} ${direction}` : "";
+  const preview = value.length === 6
+    ? `${value.slice(0, 2)}º ${value.slice(2, 4)},${value.slice(4)}' ${direction}`
+    : "";
   return (
     <label className="position-coordinate">
       <span>{label} <small>{direction === "S" ? "Sul" : "Oeste"}</small></span>
       <input
+        type="text"
         inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={6}
         autoComplete="off"
-        value={display}
+        value={value}
         placeholder={direction === "S" ? "252178" : "474769"}
         onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
       />
-      <em>Digite somente números</em>
+      <em>{preview ? `Formato: ${preview}` : "Digite somente números — pode apagar e digitar novamente"}</em>
     </label>
   );
 }
@@ -475,8 +480,8 @@ export default function PositionForecast() {
           <div><LocateFixed /><span><b>Informe a posição</b><small>Mesmo formato usado nas largadas</small></span></div>
         </div>
         <div className="position-coordinate-grid">
-          <CoordinateField label="Latitude" direction="S" value={latDigits} onChange={(value) => { setLatDigits(value); setGpsStatus(""); }} />
-          <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={(value) => { setLonDigits(value); setGpsStatus(""); }} />
+          <CoordinateField label="Latitude" direction="S" value={latDigits} onChange={(value) => { setLatDigits(value); setGpsStatus(""); setError(""); setNotice(""); }} />
+          <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={(value) => { setLonDigits(value); setGpsStatus(""); setError(""); setNotice(""); }} />
         </div>
 
         <button type="button" className="position-use-gps" onClick={useCurrentLocation} disabled={busy || locating}>

@@ -63,9 +63,8 @@ function decimalToQuickCoordinate(value: any, axis: "lat" | "lon") {
   const abs = Math.abs(raw);
   const degrees = Math.floor(abs);
   const minutes = (abs - degrees) * 60;
-  const direction = axis === "lat" ? (raw < 0 ? "S" : "N") : (raw < 0 ? "W" : "E");
   const digits = `${String(degrees).padStart(2, "0")}${String(Math.round(minutes * 100)).padStart(4, "0").slice(0, 4)}`;
-  return quickCoordinateDisplay(digits, direction);
+  return digits;
 }
 
 function parseMarineCoordinate(input: string, axis: "lat" | "lon") {
@@ -80,7 +79,13 @@ function parseMarineCoordinate(input: string, axis: "lat" | "lon") {
   const pieces = cleaned.split(/\s+/).filter(Boolean);
   let value: number;
 
-  if (pieces.length >= 2) {
+  const compact = cleaned.replace(/\D/g, "");
+  if (/^\d{6}$/.test(compact)) {
+    const deg = Number(compact.slice(0, 2));
+    const minutes = Number(`${compact.slice(2, 4)}.${compact.slice(4)}`);
+    if (!Number.isFinite(deg) || !Number.isFinite(minutes) || minutes >= 60) return null;
+    value = deg + minutes / 60;
+  } else if (pieces.length >= 2) {
     const deg = Number(pieces[0]);
     let minutesText = pieces[1];
     let minutes = Number(minutesText);
@@ -158,10 +163,9 @@ export default function OceanIntelligence() {
   };
 
   const updateQuickCoordinate = (raw: string, axis: "lat" | "lon") => {
-    const existingDirection = (raw.toUpperCase().match(/[NSEW]/)?.[0] || (axis === "lat" ? "S" : "W")) as "S" | "W" | "N" | "E";
-    const display = quickCoordinateDisplay(raw, existingDirection);
-    if (axis === "lat") setLatInput(display);
-    else setLonInput(display);
+    const digits = quickCoordinateDigits(raw);
+    if (axis === "lat") setLatInput(digits);
+    else setLonInput(digits);
     setPositionError("");
     setGpsStatus("");
   };
@@ -284,23 +288,29 @@ export default function OceanIntelligence() {
         {gpsStatus && <div className="ocean-position-gps-ok">{gpsStatus}</div>}
         <label>LATITUDE
           <input
+            type="text"
             value={latInput}
             onChange={e => updateQuickCoordinate(e.target.value, "lat")}
             placeholder="254565"
             inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
             autoComplete="off"
           />
-          <small className="ocean-position-input-hint">Ex.: 254565 → 25º 4565 S</small>
+          <small className="ocean-position-input-hint">{latInput.length === 6 ? `Formato: ${quickCoordinateDisplay(latInput, "S")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         <label>LONGITUDE
           <input
+            type="text"
             value={lonInput}
             onChange={e => updateQuickCoordinate(e.target.value, "lon")}
             placeholder="463545"
             inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
             autoComplete="off"
           />
-          <small className="ocean-position-input-hint">Ex.: 463545 → 46º 3545 W</small>
+          <small className="ocean-position-input-hint">{lonInput.length === 6 ? `Formato: ${quickCoordinateDisplay(lonInput, "W")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         {positionError && <div className="ocean-position-error">{positionError}</div>}
         <div className="ocean-position-modal-actions">

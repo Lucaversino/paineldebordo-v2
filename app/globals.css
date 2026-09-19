@@ -2276,3 +2276,26 @@ main.loginpage{
     right:8px!important;
   }
 }
+
+
+/* V113 — coordenadas livres: digitação crua, sem máscara travando o cursor */
+.coords input[inputmode="numeric"],
+.position-coordinate input[inputmode="numeric"],
+.ocean-position-modal input[inputmode="numeric"],
+.ais-v74-coordinate-field input[inputmode="numeric"],
+.ais-v74-mobile-coordinates input[inputmode="numeric"]{
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.06em;
+  caret-color:#2bd4aa;
+}
+@media(max-width:760px){
+  .coords input[inputmode="numeric"],
+  .position-coordinate input[inputmode="numeric"],
+  .ocean-position-modal input[inputmode="numeric"],
+  .ais-v74-coordinate-field input[inputmode="numeric"],
+  .ais-v74-mobile-coordinates input[inputmode="numeric"]{
+    font-size:18px!important;
+    min-height:48px;
+    touch-action:manipulation;
+  }
+}
