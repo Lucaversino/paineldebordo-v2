@@ -640,7 +640,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         mmsi: String(raw?.mmsi || ""), imo: String(raw?.imo || ""), name: raw?.name || "SEM NOME",
         lat: Number(raw?.lat), lon: Number(raw?.lon), sog: raw?.sog == null ? null : Number(raw.sog),
         cog: raw?.cog == null ? null : Number(raw.cog), heading: raw?.heading == null ? null : Number(raw.heading),
-        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: raw?.dataSource || data?.provider || "Terrestrial Area",
+        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: `Premium 50 km · ${raw?.dataSource || data?.provider || "AIS"}`,
         positionReceived: raw?.positionReceived || raw?.updateTime || "",
         updateTime: raw?.updateTime || raw?.positionReceived || "",
         receivedAt: Number(raw?.receivedAt) || Date.now(),
