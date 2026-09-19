@@ -120,6 +120,7 @@ export const aisSavedVessels = pgTable("ais_saved_vessels", {
   country: text("country"),
   vesselType: text("vessel_type"),
   callsign: text("callsign"),
+  folder: text("folder").notNull().default("premium"),
   lastLatitude: doublePrecision("last_latitude"),
   lastLongitude: doublePrecision("last_longitude"),
   lastSog: doublePrecision("last_sog"),
