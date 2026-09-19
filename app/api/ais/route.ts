@@ -207,10 +207,16 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
     Number(process.env.MARINESIA_MIN_INTERVAL_SECONDS || 1800) * 1000,
   );
   if (minInterval > 0 && marinesiaState.lastCallAt && now - marinesiaState.lastCallAt < minInterval) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((minInterval - (now - marinesiaState.lastCallAt)) / 1000));
+    console.info("[Marinesia] bloqueio local do plano grátis", {
+      path,
+      retryAfterSeconds,
+    });
     throw Object.assign(new Error("Marinesia em intervalo de proteção do plano grátis."), {
       status: 429,
       provider: "marinesia",
       localRateLimit: true,
+      retryAfterSeconds,
     });
   }
 
@@ -228,6 +234,17 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
     });
     let body: any = null;
     try { body = await response.json(); } catch { body = null; }
+
+    const returnedCount = Array.isArray(body?.data) ? body.data.length : body?.data ? 1 : Array.isArray(body) ? body.length : 0;
+    console.info("[Marinesia] resposta da API", {
+      path,
+      status: response.status,
+      ok: response.ok,
+      apiError: Boolean(body?.error),
+      message: textOrEmpty(body?.message || body?.error),
+      returnedCount,
+    });
+
     if (!response.ok || body?.error === true) {
       throw Object.assign(new Error(marinesiaProviderMessage(body, response.status)), {
         status: response.status || 502,
@@ -795,14 +812,17 @@ export async function GET(request: NextRequest) {
         );
       }
       if (status === 429) {
+        const retryAfterSeconds = Number(error?.retryAfterSeconds || 0);
+        const retryMinutes = retryAfterSeconds > 0 ? Math.max(1, Math.ceil(retryAfterSeconds / 60)) : null;
         return NextResponse.json(
           {
             error: error?.localRateLimit
-              ? "Marinesia protegida pelo intervalo do plano grátis. O painel mantém cache para evitar estourar a cota."
-              : "Limite da Marinesia atingido. No plano grátis a documentação informa 1 requisição a cada 30 minutos.",
+              ? `AIS Free aguardando a próxima janela da Marinesia${retryMinutes ? ` — tente novamente em cerca de ${retryMinutes} min` : ""}.`
+              : "Limite da Marinesia atingido pelo provedor. O painel usará o fallback gratuito quando possível.",
             code: "marinesia_rate_limit",
+            retryAfterSeconds: retryAfterSeconds || null,
           },
-          { status: 429 },
+          { status: 429, headers: retryAfterSeconds ? { "Retry-After": String(retryAfterSeconds) } : undefined },
         );
       }
       return NextResponse.json(
