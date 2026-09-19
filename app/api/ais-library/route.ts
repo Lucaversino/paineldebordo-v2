@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "save-area") {
     const rawVessels = Array.isArray(body?.vessels) ? body.vessels : [];
-    const vessels = rawVessels.slice(0, 250);
+    const vessels = rawVessels.slice(0, 80);
     const now = new Date().toISOString();
     let savedCount = 0;
 
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
         lastHeading: numberOrNull(source?.heading),
         lastDestination: text(source?.destination) || null,
         lastStatus: text(source?.navStatusText) || null,
-        lastDataSource: text(source?.dataSource) || "Premium 50 km",
+        lastDataSource: text(source?.dataSource) ? `Premium 50 km · ${text(source?.dataSource)}` : "Premium 50 km",
         lastPositionReceived: text(source?.positionReceived) || null,
         lastUpdateTime: text(source?.updateTime) || null,
         updatedAt: now,
