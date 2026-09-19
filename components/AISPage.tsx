@@ -37,6 +37,8 @@ import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
 const DHN_WMS_URL = "https://idem.dhn.mar.mil.br/geoserver/wms";
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
+// V140: cartas da Marinha/DHN foram retiradas da interface AIS.
+const ENABLE_DHN_CHARTS = false;
 
 type Props = {
   defaultLat?: number | null;
@@ -1110,6 +1112,45 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
   }
 
+  // V140: toda embarcação salva com posição válida volta automaticamente para o mapa.
+  // Inclui barcos salvos individualmente e resultados persistidos da busca Premium de 50 km.
+  function savedItemToVessel(item: SavedVessel): Vessel | null {
+    const lat = Number(item.lastLatitude);
+    const lon = Number(item.lastLongitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    const folder = String(item.folder || "premium").toLowerCase();
+    const fallbackSource = folder === "area50"
+      ? "Premium 50 km"
+      : folder === "marinesia"
+        ? "Marinesia AIS"
+        : folder === "shipfinder"
+          ? "Vessel Free"
+          : "Premium";
+    const receivedAt = new Date(
+      item.lastPositionReceived || item.lastUpdateTime || item.updatedAt || item.savedAt || Date.now(),
+    ).getTime();
+
+    return {
+      mmsi: item.mmsi || "",
+      imo: item.imo || "",
+      name: item.name,
+      lat,
+      lon,
+      sog: item.lastSog,
+      cog: item.lastCog,
+      heading: item.lastHeading,
+      destination: item.lastDestination || "",
+      callsign: item.callsign || "",
+      vesselType: item.vesselType || "",
+      navStatusText: item.lastStatus || "",
+      dataSource: item.lastDataSource || fallbackSource,
+      positionReceived: item.lastPositionReceived || "",
+      updateTime: item.lastUpdateTime || "",
+      receivedAt: Number.isFinite(receivedAt) ? receivedAt : Date.now(),
+    };
+  }
+
   function openSavedVessel(item: SavedVessel) {
     if (item.lastLatitude == null || item.lastLongitude == null) {
       setStatusMessage("Barco salvo sem posição armazenada. Use ATUALIZAR para consultar a posição.");
@@ -1599,6 +1640,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
+    // V140: não carregar catálogo/WMS da Marinha enquanto a função estiver retirada.
+    if (!ENABLE_DHN_CHARTS) return;
     let cancelled = false;
 
     (async () => {
@@ -1701,6 +1744,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     refreshCredits();
     loadAisLibrary();
   }, []);
+
+  // V140: mantém no mapa todos os barcos persistidos na biblioteca do usuário.
+  useEffect(() => {
+    const persisted = savedVessels
+      .map(savedItemToVessel)
+      .filter((vessel): vessel is Vessel => Boolean(vessel));
+    if (persisted.length) upsertMapVessels(persisted);
+  }, [savedVessels]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -1900,15 +1951,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
             <span>VESSEL FREE</span>
           </button>
-          <button
-            type="button"
-            className={`ais-v137-chart-toggle ${baseMode === "dhn" ? "active" : ""}`}
-            onClick={toggleFishingChart}
-            title="Carta de pesca DHN"
-          >
-            <MapPinned />
-            <span>CARTA</span>
-          </button>
+          {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
 
         <div className="ais-v138-free-header">
@@ -1952,7 +1995,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           )}
         </div>
 
-        {dhnPanelOpen && (
+        {ENABLE_DHN_CHARTS && dhnPanelOpen && (
           <div className="ais-v137-chart-panel">
             <div className="ais-v137-chart-head">
               <span><MapPinned /><b>CARTA DE PESCA</b></span>
@@ -2005,7 +2048,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVessels.length}</span>
           <span className="ais-v119-layer marinesia"><i /> AIS Free</span>
           <span className="ais-v119-layer premium"><i /> Premium</span>
-          {baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
+          {ENABLE_DHN_CHARTS && baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 
