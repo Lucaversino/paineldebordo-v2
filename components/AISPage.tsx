@@ -1760,8 +1760,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function setMapMode(mode: BaseMode) {
     setBaseMode(mode);
-    streetLayerRef.current?.setVisible(mode === "map" || mode === "dhn");
+    streetLayerRef.current?.setVisible(true);
     dhnLayerRef.current?.setVisible(mode === "dhn" && Boolean(selectedDhnChart));
+  }
+
+  function toggleFishingChart() {
+    if (baseMode === "dhn") {
+      setMapMode("map");
+      setDhnPanelOpen(false);
+      return;
+    }
+    setMapMode("dhn");
+    setDhnPanelOpen(true);
+    if (!selectedDhnChart && dhnCharts.length) {
+      const automatic = chooseDhnChart(dhnCharts, center.lon, center.lat, zoom) || dhnCharts[0];
+      if (automatic) setSelectedDhnChart(automatic.number);
+    }
   }
 
   useEffect(() => {
@@ -1769,7 +1783,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const street = new TileLayer({ visible: true, source: new OSM() });
     const dhn = new TileLayer({
       visible: false,
-      opacity: 1,
+      opacity: 0.58,
       source: new XYZ({
         url: `${DHN_TILE_BASE}/__nenhuma__/{z}/{x}/{y}.png`,
         attributions: "Carta Raster DHN/CHM",
@@ -1790,10 +1804,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }),
     });
     const view = new View({ center: fromLonLat([fallbackLon, fallbackLat]), zoom: 10.5, minZoom: 3, maxZoom: 18 });
+    street.setZIndex(0);
+    dhn.setZIndex(5);
+    areaLayer.setZIndex(10);
+    freeVesselLayer.setZIndex(20);
+    vesselLayer.setZIndex(30);
+    positionLayer.setZIndex(40);
+
     const map = new Map({
       target: hostRef.current,
       controls: [],
-      layers: [street, areaLayer, freeVesselLayer, vesselLayer, positionLayer],
+      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer],
       view,
     });
 
