@@ -300,10 +300,10 @@ function sourceInfo(dataSource?: string) {
     return { title: "AISStream", short: "STREAM", className: "terrestrial" };
   }
   if (/vesselapi/i.test(source)) {
-    return { title: "VesselAPI Free", short: "VAPI", className: "terrestrial" };
+    return { title: "VesselAPI Free", short: "VESSEL FREE", className: "free" };
   }
   if (/kpler/i.test(source)) {
-    return { title: "Kpler Maritime", short: "KPLER", className: "satellite" };
+    return { title: "Kpler · camada automática", short: "AUTO", className: "free" };
   }
   if (/marinesia/i.test(source)) {
     return { title: "Marinesia AIS", short: "MARINESIA", className: "terrestrial" };
@@ -416,7 +416,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       ? "#24c98c"
       : source.includes("vesselapi") || source.includes("free")
         ? "#2f8cff"
-        : "#d8aa3f";
+        : source.includes("kpler")
+          ? "#2f8cff"
+          : "#d8aa3f";
     return new Style({
       image: new RegularShape({
         points: 3,
@@ -440,7 +442,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function buildFreeVesselStyle(vessel: Vessel, currentZoom: number) {
-    const speed = Number(vessel.sog || 0);
     const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511
       ? Number(vessel.heading)
       : Number(vessel.cog || 0);
