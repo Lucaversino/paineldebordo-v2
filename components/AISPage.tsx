@@ -541,10 +541,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
-  async function loadFreeMapLayer(force = false) {
+  async function loadFreeMapLayer(force = false, targetCenter?: { lat: number; lon: number } | null) {
     const map = mapRef.current;
     if (!map) return;
-    const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+    const mapCenter = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+    const lat = targetCenter?.lat ?? mapCenter[1];
+    const lon = targetCenter?.lon ?? mapCenter[0];
     const key = `${(Math.round(lat * 4) / 4).toFixed(2)}:${(Math.round(lon * 4) / 4).toFixed(2)}`;
     const now = Date.now();
     if (!force && freeLayerRequestRef.current.key === key && now - freeLayerRequestRef.current.at < 40_000) return;
@@ -1759,6 +1761,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           >
             <RefreshCw className={status === "loading" ? "spin" : ""} />
             <span>AIS FREE</span>
+          </button>
+          <button
+            type="button"
+            className="ais-v129-vessel-free-refresh"
+            onClick={() => void loadFreeMapLayer(true, areaCenter)}
+            disabled={freeMapStatus === "loading"}
+            title="Atualizar Vessel Free na região do círculo de 50 km"
+          >
+            <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
+            <span>VESSEL FREE</span>
           </button>
         </div>
 
