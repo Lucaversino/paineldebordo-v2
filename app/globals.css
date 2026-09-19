@@ -3009,3 +3009,109 @@ main.loginpage{
   .ais-v125-provider-cards{grid-template-columns:1fr}
   .ais-v125-provider-card.shipfinder{grid-column:auto}
 }
+
+
+/* V135 — três lupas AIS separadas no rodapé mobile */
+@media(max-width:760px){
+  .ais-v135-dock{
+    grid-template-columns:repeat(6,minmax(0,1fr))!important;
+    gap:3px!important;
+    padding:5px!important;
+  }
+  .ais-v135-dock button{
+    min-width:0!important;
+    height:52px!important;
+    padding:3px 1px!important;
+    border-radius:9px!important;
+    font-size:5.6px!important;
+    line-height:1!important;
+    gap:2px!important;
+  }
+  .ais-v135-dock button svg{
+    width:17px!important;
+    height:17px!important;
+  }
+  .ais-v135-dock button span{
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .ais-v135-dock .premium-search{
+    color:#d9b75b!important;
+    border-color:#5e4b20!important;
+    background:#211b0f!important;
+  }
+  .ais-v135-dock .premium-search.active{
+    color:#ffdf80!important;
+    border-color:#c99b3d!important;
+    background:#3a2e14!important;
+    box-shadow:0 0 0 1px #c99b3d55 inset;
+  }
+  .ais-v135-dock .free-search{
+    color:#6fd8b9!important;
+    border-color:#245f50!important;
+    background:#0a2721!important;
+  }
+  .ais-v135-dock .free-search.active{
+    color:#8af4d3!important;
+    border-color:#2f9f78!important;
+    background:#103b30!important;
+    box-shadow:0 0 0 1px #2f9f7855 inset;
+  }
+  .ais-v135-dock .shipfinder-search{
+    color:#8fb8ff!important;
+    border-color:#31538d!important;
+    background:#0d1c38!important;
+  }
+  .ais-v135-dock .shipfinder-search.active{
+    color:#b7d0ff!important;
+    border-color:#4e79d8!important;
+    background:#142b55!important;
+    box-shadow:0 0 0 1px #4e79d855 inset;
+  }
+  .ais-v135-dock .area,
+  .ais-v135-dock .saved,
+  .ais-v135-dock .history{
+    color:#86a7ad!important;
+  }
+  .ais-v135-provider-panel{
+    display:grid;
+    gap:9px;
+    padding:8px;
+    border:1px solid #294d55;
+    border-radius:11px;
+    background:#071d23;
+  }
+  .ais-v135-provider-panel.premium{
+    border-color:#7b612a;
+    background:#211b0f;
+  }
+  .ais-v135-provider-panel.free{
+    border-color:#276b58;
+    background:#0a2b24;
+  }
+  .ais-v135-provider-panel.shipfinder{
+    border-color:#3c5fa8;
+    background:#101d3a;
+  }
+  .ais-v135-provider-head{
+    display:grid;
+    grid-template-columns:28px minmax(0,1fr);
+    align-items:center;
+    gap:8px;
+  }
+  .ais-v135-provider-head>svg{
+    width:20px;
+    height:20px;
+  }
+  .ais-v135-provider-panel.premium .ais-v135-provider-head>svg{color:#e1b94f}
+  .ais-v135-provider-panel.free .ais-v135-provider-head>svg{color:#65ddb9}
+  .ais-v135-provider-panel.shipfinder .ais-v135-provider-head>svg{color:#8eb3ff}
+  .ais-v135-provider-head span{display:grid;min-width:0}
+  .ais-v135-provider-head b{font-size:9px}
+  .ais-v135-provider-head small{font-size:6.5px;color:#8ca6ac}
+  .ais-v135-provider-panel.premium .ais-v70-mobile-input button{background:#c99b3d!important;color:#201704!important}
+  .ais-v135-provider-panel.free .ais-v70-mobile-input button{background:#29c99e!important;color:#04271f!important}
+  .ais-v135-provider-panel.shipfinder .ais-v70-mobile-input button{background:#3d6fd6!important;color:#f6f8ff!important}
+}
