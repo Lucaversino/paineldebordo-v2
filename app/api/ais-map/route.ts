@@ -95,9 +95,10 @@ function clamp(value: number, min: number, max: number) {
 function queryBox(lat: number, lon: number, zoom = 10) {
   // Vessel Free acompanha o zoom: quanto mais aproxima, menor e mais focada
   // fica a caixa consultada. Mantém os limites aceitos pela VesselAPI.
-  const centerLat = Math.round(lat * 4) / 4;
-  const centerLon = Math.round(lon * 4) / 4;
   const z = clamp(Math.round(zoom || 10), 3, 18);
+  const grid = z >= 14 ? 0.02 : z >= 12 ? 0.05 : z >= 10 ? 0.10 : 0.25;
+  const centerLat = Math.round(lat / grid) * grid;
+  const centerLon = Math.round(lon / grid) * grid;
   const latHalf = z >= 14 ? 0.10 : z >= 12 ? 0.22 : z >= 10 ? 0.45 : z >= 8 ? 0.75 : 1.0;
   const lonHalf = z >= 14 ? 0.14 : z >= 12 ? 0.30 : z >= 10 ? 0.60 : z >= 8 ? 1.0 : 1.0;
   return {
@@ -596,8 +597,8 @@ async function loadSnapshot(lat: number, lon: number, zoom = 10): Promise<CacheV
     source,
     fallbackUsed,
     updatedAt: now,
-    expiresAt: now + 5 * 60_000,
-    staleUntil: now + 15 * 60_000,
+    expiresAt: now + FRESH_TTL_MS,
+    staleUntil: now + STALE_TTL_MS,
   };
 }
 
@@ -611,6 +612,7 @@ export async function GET(request: NextRequest) {
   const lat = numberOrNull(searchParams.get("lat"));
   const lon = numberOrNull(searchParams.get("lon"));
   const zoom = clamp(numberOrNull(searchParams.get("zoom")) ?? 10, 3, 18);
+  const forceRefresh = searchParams.get("refresh") === "1";
   if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
     return NextResponse.json({ error: "Centro do mapa inválido." }, { status: 400 });
   }
@@ -618,7 +620,7 @@ export async function GET(request: NextRequest) {
   const key = cacheKey(lat, lon, zoom);
   const now = Date.now();
   const cached = state.cache.get(key);
-  if (cached && cached.expiresAt > now) {
+  if (!forceRefresh && cached && cached.expiresAt > now) {
     return NextResponse.json({
       vessels: cached.vessels,
       total: cached.vessels.length,
@@ -627,10 +629,12 @@ export async function GET(request: NextRequest) {
       cached: true,
       updatedAt: new Date(cached.updatedAt).toISOString(),
       creditsUsed: 0,
+      zoom,
+      forceRefresh,
     });
   }
 
-  let task = state.inflight.get(key);
+  let task = forceRefresh ? undefined : state.inflight.get(key);
   if (!task) {
     task = loadSnapshot(lat, lon, zoom)
       .then((result) => {
@@ -648,6 +652,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await task;
+    console.info("[Vessel Free] mapa atualizado", {
+      source: result.source,
+      total: result.vessels.length,
+      zoom,
+      forceRefresh,
+      key,
+    });
     return NextResponse.json({
       vessels: result.vessels,
       total: result.vessels.length,
@@ -656,6 +667,8 @@ export async function GET(request: NextRequest) {
       cached: false,
       updatedAt: new Date(result.updatedAt).toISOString(),
       creditsUsed: 0,
+      zoom,
+      forceRefresh,
     });
   } catch {
     if (cached && cached.staleUntil > now) {
@@ -678,6 +691,8 @@ export async function GET(request: NextRequest) {
       cached: false,
       updatedAt: new Date().toISOString(),
       creditsUsed: 0,
+      zoom,
+      forceRefresh,
     });
   }
 }
