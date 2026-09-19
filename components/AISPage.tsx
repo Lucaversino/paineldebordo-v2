@@ -110,6 +110,75 @@ type DhnChart = {
   source?: "wms" | "local";
 };
 
+type DhnCatalogEntry = {
+  group: string;
+  number: string;
+  title: string;
+  kapUrl?: string;
+  geotiffUrl?: string;
+};
+
+function directChildByLocalName(element: Element, localName: string) {
+  return Array.from(element.children).find((child) => child.localName === localName) || null;
+}
+
+function directChildText(element: Element, localName: string) {
+  return directChildByLocalName(element, localName)?.textContent?.trim() || "";
+}
+
+function parseDhnCapabilities(xml: string, catalog: DhnCatalogEntry[]) {
+  const documentXml = new DOMParser().parseFromString(xml, "application/xml");
+  if (documentXml.querySelector("parsererror")) return [] as DhnChart[];
+
+  const charts = new Map<string, DhnChart>();
+
+  Array.from(documentXml.getElementsByTagNameNS("*", "Layer")).forEach((layer) => {
+    const layerName = directChildText(layer, "Name");
+    const title = directChildText(layer, "Title");
+    if (!layerName || !title) return;
+
+    const numberTokens = ((layerName + " " + title).match(/\b\d{2,5}\b/g) || []);
+    const entry = catalog.find((item) => numberTokens.includes(item.number));
+    if (!entry || charts.has(entry.number)) return;
+
+    let bounds: [number, number, number, number] | null = null;
+    const geo = directChildByLocalName(layer, "EX_GeographicBoundingBox");
+    if (geo) {
+      const west = Number(directChildText(geo, "westBoundLongitude"));
+      const east = Number(directChildText(geo, "eastBoundLongitude"));
+      const south = Number(directChildText(geo, "southBoundLatitude"));
+      const north = Number(directChildText(geo, "northBoundLatitude"));
+      if ([west, south, east, north].every(Number.isFinite)) bounds = [west, south, east, north];
+    }
+
+    if (!bounds) {
+      const latLon = directChildByLocalName(layer, "LatLonBoundingBox");
+      if (latLon) {
+        const west = Number(latLon.getAttribute("minx"));
+        const south = Number(latLon.getAttribute("miny"));
+        const east = Number(latLon.getAttribute("maxx"));
+        const north = Number(latLon.getAttribute("maxy"));
+        if ([west, south, east, north].every(Number.isFinite)) bounds = [west, south, east, north];
+      }
+    }
+
+    const scaleMatch = title.match(/1\s*:\s*([\d.]+)/);
+    const scale = scaleMatch ? Number(scaleMatch[1].replace(/\./g, "")) : null;
+    charts.set(entry.number, {
+      number: entry.number,
+      title: entry.title || title,
+      groups: [entry.group],
+      scale: Number.isFinite(scale) ? scale : null,
+      bounds,
+      files: [entry.kapUrl || "", entry.geotiffUrl || ""].filter(Boolean),
+      layerName,
+      source: "wms",
+    });
+  });
+
+  return Array.from(charts.values()).sort((a, b) => Number(a.number) - Number(b.number));
+}
+
 type VesselMatch = {
   name: string;
   mmsi: string;
@@ -479,6 +548,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [dhnCharts, setDhnCharts] = useState<DhnChart[]>([]);
   const [dhnAuto, setDhnAuto] = useState(true);
   const [selectedDhnChart, setSelectedDhnChart] = useState("");
+  const [dhnOpacity, setDhnOpacity] = useState(0.58);
+  const [dhnPanelOpen, setDhnPanelOpen] = useState(false);
   const [dhnLoadMessage, setDhnLoadMessage] = useState("Conectando ao serviço oficial IDEM-DHN...");
   const [clockNow, setClockNow] = useState(() => new Date());
   const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
