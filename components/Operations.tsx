@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
+import SetWeatherAnalysis from "./SetWeatherAnalysis";
 import BackupImporter from "./BackupImporter";
 import { OFFLINE_SYNC_EVENT, cacheOfflineManage, getOfflineManage } from "../lib/offlinePanel";
 const localDateTime = (value?: string | null) => {
@@ -88,6 +89,7 @@ export default function Operations({ view, onDashboard }: Props) {
     [saving, setSaving] = useState(false),
     [selectedFinishedTripId, setSelectedFinishedTripId] = useState<number | null>(null),
     [openSetTripIds, setOpenSetTripIds] = useState<number[]>([]),
+    [weatherSet, setWeatherSet] = useState<{ set: any; trip: any } | null>(null),
     [envSyncing, setEnvSyncing] = useState(false),
     [envSyncMsg, setEnvSyncMsg] = useState(""),
     [msg, setMsg] = useState("");
@@ -598,6 +600,9 @@ export default function Operations({ view, onDashboard }: Props) {
                                     <span className="offline-row-pending">AGUARDANDO SINCRONIZAÇÃO</span>
                                   ) : (
                                     <div className="rowactions">
+                                      <button type="button" className="weatherbtn" onClick={() => setWeatherSet({ set: x, trip })}>
+                                        <BarChart3 /> Meteorologia
+                                      </button>
                                       <button
                                         className="editbtn"
                                         onClick={async () => {
@@ -913,6 +918,13 @@ export default function Operations({ view, onDashboard }: Props) {
             <button type="button" disabled={sharing} onClick={() => { setPdfFile(null); setPdfError(""); }}>Alterar datas</button>
           </div>
         </div>
+      )}
+      {weatherSet && (
+        <SetWeatherAnalysis
+          fishingSet={weatherSet.set}
+          trip={weatherSet.trip}
+          onClose={() => setWeatherSet(null)}
+        />
       )}
       {editing?._type === "trip" && (
         <div className="overlay">
