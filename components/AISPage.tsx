@@ -46,7 +46,7 @@ type Props = {
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
-type MobilePanel = "search" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
+type MobilePanel = "search" | "premiumSearch" | "freeSearch" | "shipfinderSearch" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
 
 const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
@@ -2008,40 +2008,55 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           )}
         </div>
 
-        <div className="ais-v70-mobile-dock ais-v119-dock">
-          <button type="button" className={mobilePanel === "search" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "search" ? null : "search")}><Search /><span>Buscar</span></button>
+        <div className="ais-v70-mobile-dock ais-v119-dock ais-v135-dock">
+          <button type="button" className={mobilePanel === "premiumSearch" ? "active premium-search" : "premium-search"} onClick={() => { const open = mobilePanel !== "premiumSearch"; setMobilePanel(open ? "premiumSearch" : null); if (open) { setSearchProvider("premium"); setMatches([]); setMatchTotal(0); } }}><Search /><span>Premium</span></button>
+          <button type="button" className={mobilePanel === "freeSearch" ? "active free-search" : "free-search"} onClick={() => { const open = mobilePanel !== "freeSearch"; setMobilePanel(open ? "freeSearch" : null); if (open) { setSearchProvider("marinesia"); setMatches([]); setMatchTotal(0); } }}><Search /><span>AIS Free</span></button>
+          <button type="button" className={mobilePanel === "shipfinderSearch" ? "active shipfinder-search" : "shipfinder-search"} onClick={() => { const open = mobilePanel !== "shipfinderSearch"; setMobilePanel(open ? "shipfinderSearch" : null); if (open) { setSearchProvider("shipfinder"); setMatches([]); setMatchTotal(0); } }}><Search /><span>ShipFinder</span></button>
           <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>50 km</span></button>
-          <button type="button" className={mobilePanel === "saved" ? "active premium" : "premium"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{premiumSavedVessels.length}</em></button>
-          <button type="button" className={mobilePanel === "history" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
+          <button type="button" className={mobilePanel === "saved" ? "active saved" : "saved"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{premiumSavedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "history" ? "active history" : "history"} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Hist.</span><em>{historyItems.length}</em></button>
         </div>
 
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "search" ? "Buscar barco" : mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
+              <b>{mobilePanel === "premiumSearch" ? "Premium · Data Docked" : mobilePanel === "freeSearch" ? "AIS Free · Marinesia" : mobilePanel === "shipfinderSearch" ? "ShipFinder AIS" : mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
-            {mobilePanel === "search" && (
-              <div className="ais-v70-mobile-search ais-v127-simple-search">
-                <div className="ais-v125-mobile-search-stack">
-                  <section className="ais-v125-mobile-search-card premium">
-                    <div className="ais-v125-mobile-search-title"><Radio /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição</small></span></div>
-                    <div className="ais-v70-mobile-input"><Search /><input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Buscar</button></div>
-                  </section>
-
-                  <section className="ais-v125-mobile-search-card free">
-                    <div className="ais-v125-mobile-search-title"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando janela · cache/fallback ativo" : "0 créditos"}</small></span></div>
-                    <div className="ais-v70-mobile-input"><Search /><input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" /><button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>Buscar</button></div>
-                  </section>
-
-                  <section className="ais-v125-mobile-search-card shipfinder">
-                    <div className="ais-v125-mobile-search-title"><Ship /><span><b>SHIPFINDER AIS</b><small>{shipFinderConfigured ? "API conectada" : "Falta configurar a chave"}</small></span></div>
-                    <div className="ais-v70-mobile-input"><Search /><input value={shipFinderQuery} onChange={(e) => setShipFinderQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("shipfinder"); setNameQuery(shipFinderQuery); void searchByName(undefined, "shipfinder", shipFinderQuery); }} disabled={status === "loading" || !shipFinderConfigured}>Buscar</button></div>
-                  </section>
+            {mobilePanel === "premiumSearch" && (
+              <div className="ais-v135-provider-panel premium">
+                <div className="ais-v135-provider-head"><Search /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição válida</small></span></div>
+                <div className="ais-v70-mobile-input">
+                  <Search />
+                  <input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" />
+                  <button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Buscar</button>
                 </div>
+                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"premium-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "premium"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>PREMIUM</em></button>)}</div>}
+              </div>
+            )}
 
-                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : searchProvider === "shipfinder" ? "SHIPFINDER" : "GRÁTIS"}</em></button>)}</div>}
+            {mobilePanel === "freeSearch" && (
+              <div className="ais-v135-provider-panel free">
+                <div className="ais-v135-provider-head"><Search /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando próxima janela · fallback ativo" : "0 créditos"}</small></span></div>
+                <div className="ais-v70-mobile-input">
+                  <Search />
+                  <input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" />
+                  <button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>Buscar</button>
+                </div>
+                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"free-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "marinesia"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>GRÁTIS</em></button>)}</div>}
+              </div>
+            )}
+
+            {mobilePanel === "shipfinderSearch" && (
+              <div className="ais-v135-provider-panel shipfinder">
+                <div className="ais-v135-provider-head"><Search /><span><b>SHIPFINDER AIS</b><small>{shipFinderConfigured ? "API conectada · busca independente" : "Configure SHIPFINDER_API_KEY"}</small></span></div>
+                <div className="ais-v70-mobile-input">
+                  <Search />
+                  <input value={shipFinderQuery} onChange={(e) => setShipFinderQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" />
+                  <button type="button" onClick={() => { setSearchProvider("shipfinder"); setNameQuery(shipFinderQuery); void searchByName(undefined, "shipfinder", shipFinderQuery); }} disabled={status === "loading" || !shipFinderConfigured}>Buscar</button>
+                </div>
+                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"shipfinder-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "shipfinder"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>SHIPFINDER</em></button>)}</div>}
               </div>
             )}
 
