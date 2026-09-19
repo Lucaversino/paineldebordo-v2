@@ -2831,3 +2831,52 @@ main.loginpage{
   .ais-v119-wallet-copy small{display:none}
   .ais-v119-wallet-menu{width:190px}
 }
+
+
+/* V125 — buscas AIS separadas e mobile-first */
+.ais-v125-provider-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.ais-v125-provider-card{border:1px solid #294d55;border-radius:12px;background:#071d23;padding:10px;display:grid;gap:8px}
+.ais-v125-provider-card.premium{border-color:#8a6b2d;background:#211c10}
+.ais-v125-provider-card.free{border-color:#256c59;background:#0b2c25}
+.ais-v125-provider-head{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:8px}
+.ais-v125-provider-head>svg{width:18px;height:18px}
+.ais-v125-provider-head span{display:grid;min-width:0}
+.ais-v125-provider-head b{font-size:10px;letter-spacing:.03em}
+.ais-v125-provider-head small{font-size:7px;color:#8da8ad}
+.ais-v125-provider-head em{font:900 8px system-ui}
+.ais-v125-provider-card.premium .ais-v125-provider-head em{color:#f2cb69}
+.ais-v125-provider-card.free .ais-v125-provider-head em{color:#72e0c4}
+.ais-v125-search-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:7px;border:1px solid #294d55;border-radius:9px;background:#06171d;padding:5px}
+.ais-v125-search-row>svg{width:16px;color:#6fbfb0}
+.ais-v125-search-row input{min-width:0;height:34px;border:0;outline:0;background:transparent;color:#effffb;font:800 11px system-ui;text-transform:uppercase}
+.ais-v125-search-row button{height:34px;padding:0 12px;border:0;border-radius:8px;font:950 8px system-ui;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.ais-v125-provider-card.premium .ais-v125-search-row button{background:#c99b3d;color:#211704}
+.ais-v125-provider-card.free .ais-v125-search-row button{background:#27c89e;color:#03261f}
+.ais-v125-note{font-size:7px;color:#829da2}
+.ais-v125-area-actions{display:flex;gap:7px;flex-wrap:wrap}
+.ais-v125-area-actions button{min-height:38px;padding:0 12px;border-radius:8px;border:1px solid #2a4f57;font:900 8px system-ui;display:flex;align-items:center;gap:6px}
+.ais-v125-area-actions button.premium{background:#3a2e14;color:#f4d27b;border-color:#8c6a28}
+.ais-v125-area-actions button.free{background:#103b30;color:#74e7b9;border-color:#2e8f6c}
+.ais-v125-mobile-search-stack{display:grid;gap:8px}
+.ais-v125-mobile-search-card{display:grid;gap:6px;border:1px solid #294d55;border-radius:11px;padding:8px;background:#071d23}
+.ais-v125-mobile-search-card.premium{border-color:#7c612a;background:#211c10}
+.ais-v125-mobile-search-card.free{border-color:#276c59;background:#0a2b24}
+.ais-v125-mobile-search-title{display:flex;align-items:center;gap:7px}
+.ais-v125-mobile-search-title>svg{width:16px;height:16px}
+.ais-v125-mobile-search-title span{display:grid;min-width:0}
+.ais-v125-mobile-search-title b{font-size:8px}
+.ais-v125-mobile-search-title small{font-size:6px;color:#86a4aa}
+.ais-v125-mobile-area-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ais-v125-mobile-area-actions button{height:42px;border-radius:9px;border:1px solid #2a5058;font:900 8px system-ui;display:flex;align-items:center;justify-content:center;gap:6px}
+.ais-v125-mobile-area-actions button.premium{background:#3a2e14;color:#f4d27b;border-color:#8c6a28}
+.ais-v125-mobile-area-actions button.free{background:#103b30;color:#74e7b9;border-color:#2e8f6c}
+
+@media(max-width:760px){
+  .ais-v125-provider-cards{grid-template-columns:1fr}
+  .ais-v125-provider-card{padding:8px}
+  .ais-v125-provider-head{grid-template-columns:22px minmax(0,1fr) auto}
+  .ais-v125-search-row{grid-template-columns:24px minmax(0,1fr) auto}
+  .ais-v125-search-row button{padding:0 9px;font-size:7px}
+  .ais-v125-mobile-search-card .ais-v70-mobile-input{grid-template-columns:24px minmax(0,1fr) 84px!important}
+  .ais-v125-mobile-search-card .ais-v70-mobile-input button{min-width:84px!important}
+}
