@@ -17,6 +17,7 @@ import {
   Search,
   Ship,
   Trash2,
+  WalletCards,
 } from "lucide-react";
 import Map from "ol/Map";
 import View from "ol/View";
@@ -375,6 +376,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
+  const [creditMenuOpen, setCreditMenuOpen] = useState(false);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -1506,10 +1508,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 
-        <div className={`ais-mobile-credit ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"}`}>
-          <div><small>{credits != null && credits <= 0 ? "SEM CRÉDITOS" : "SALDO"}</small><b className="ais-mobile-credit-value">{credits != null ? formatBrl(credits * creditUnitPrice) : "—"}</b></div>
-          <button type="button" onClick={() => openCreditPack(5)}>+ R$ 5</button>
-          <button type="button" onClick={() => openCreditPack(10)}>+ R$ 10</button>
+        <div className={`ais-v119-wallet ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"} ${creditMenuOpen ? "open" : ""}`}>
+          <button type="button" className="ais-v119-wallet-main" onClick={() => setCreditMenuOpen((open) => !open)} aria-expanded={creditMenuOpen}>
+            <span className="ais-v119-wallet-icon"><WalletCards /></span>
+            <span className="ais-v119-wallet-copy">
+              <small>CRÉDITOS</small>
+              <b>{credits != null ? formatBrl(credits * creditUnitPrice) : "—"}</b>
+            </span>
+            <em>{credits != null ? `${credits} CR` : "..."}</em>
+          </button>
+          <button type="button" className="ais-v119-wallet-plus" onClick={() => setCreditMenuOpen((open) => !open)} aria-label="Comprar créditos" title="Comprar créditos"><Plus /></button>
+          {creditMenuOpen && (
+            <div className="ais-v119-wallet-menu">
+              <span>ADICIONAR CRÉDITOS</span>
+              <button type="button" onClick={() => openCreditPack(5)}><b>+ R$ 5</b><small>comprar</small></button>
+              <button type="button" onClick={() => openCreditPack(10)}><b>+ R$ 10</b><small>comprar</small></button>
+            </div>
+          )}
         </div>
 
         <div className="ais-v70-mobile-dock ais-v119-dock">
