@@ -49,6 +49,7 @@ type MobilePanel = "search" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia";
 
 const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
+const MARINESIA_AREA_CACHE_KEY = "painel-marinesia-area-cache-v1";
 
 function readMarinesiaCooldown() {
   if (typeof window === "undefined") return 0;
@@ -61,6 +62,34 @@ function writeMarinesiaCooldown(seconds = 1800) {
   const until = Date.now() + Math.max(1, seconds) * 1000;
   window.localStorage.setItem(MARINESIA_COOLDOWN_KEY, String(until));
   return until;
+}
+
+function readMarinesiaAreaCache(center: { lat: number; lon: number }) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(MARINESIA_AREA_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (!cached?.createdAt || Date.now() - Number(cached.createdAt) > 30 * 60_000) return null;
+    const dLat = Math.abs(Number(cached.lat) - center.lat);
+    const dLon = Math.abs(Number(cached.lon) - center.lon);
+    if (dLat > 0.45 || dLon > 0.55) return null;
+    return Array.isArray(cached.vessels) ? cached.vessels : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMarinesiaAreaCache(center: { lat: number; lon: number }, vessels: unknown[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MARINESIA_AREA_CACHE_KEY, JSON.stringify({
+      lat: center.lat,
+      lon: center.lon,
+      createdAt: Date.now(),
+      vessels,
+    }));
+  } catch {}
 }
 
 type DhnChart = {
@@ -668,6 +697,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(isFree ? "Buscando barcos no AIS Free da região..." : `Pesquisando embarcações Premium em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
 
+    if (isFree) {
+      const cachedFree = readMarinesiaAreaCache(selected);
+      if (cachedFree?.length) {
+        const cachedRows = cachedFree as Vessel[];
+        setAreaVessels(cachedRows);
+        setAreaCost(0);
+        drawAreaVessels(cachedRows);
+        centerOn(selected.lat, selected.lon, 8);
+        setStatus("ready");
+        setStatusMessage(`${cachedRows.length} barco(s) AIS Free carregado(s) do cache · 0 créditos`);
+        return;
+      }
+    }
+
     const toRows = (data: any, freeFallback = false): Vessel[] => (
       (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
         mmsi: String(raw?.mmsi || ""),
@@ -741,6 +784,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setAreaVessels(rows);
       setAreaCost(isFree ? 0 : (Number(data?.creditCost) || aisPricing.areaCredits));
       drawAreaVessels(rows);
+      if (isFree && rows.length) writeMarinesiaAreaCache(selected, rows);
 
       if (!isFree && rows.length) {
         void fetch("/api/ais-library", {

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sql } from "drizzle-orm";
+import { getDb } from "../../../db";
 import {
   assertCanUse,
   debitCreditsAfterSuccess,
@@ -191,6 +193,119 @@ function marinesiaProviderMessage(body: any, status: number) {
   );
 }
 
+let marinesiaLimiterReady = false;
+let marinesiaLimiterPromise: Promise<void> | null = null;
+
+function rowsFromExecute(result: any) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.rows)) return result.rows;
+  return [];
+}
+
+async function ensureMarinesiaLimiterTable() {
+  if (marinesiaLimiterReady) return;
+  if (!marinesiaLimiterPromise) {
+    marinesiaLimiterPromise = (async () => {
+      const db = getDb();
+      await db.execute(sql`
+        create table if not exists public.ais_provider_rate_limits (
+          provider text primary key,
+          next_allowed_at timestamptz not null default now(),
+          last_status integer,
+          last_limit integer,
+          last_remaining integer,
+          last_reset_epoch bigint,
+          updated_at timestamptz not null default now()
+        )
+      `);
+      marinesiaLimiterReady = true;
+    })().catch((error) => {
+      marinesiaLimiterPromise = null;
+      marinesiaLimiterReady = false;
+      throw error;
+    });
+  }
+  await marinesiaLimiterPromise;
+}
+
+async function claimMarinesiaSlot(intervalSeconds: number) {
+  await ensureMarinesiaLimiterTable();
+  const db = getDb();
+  const result: any = await db.execute(sql`
+    with claimed as (
+      insert into public.ais_provider_rate_limits (
+        provider, next_allowed_at, updated_at
+      )
+      values (
+        'marinesia',
+        now() + make_interval(secs => ${intervalSeconds}),
+        now()
+      )
+      on conflict (provider) do update
+        set next_allowed_at = now() + make_interval(secs => ${intervalSeconds}),
+            updated_at = now()
+        where public.ais_provider_rate_limits.next_allowed_at <= now()
+      returning next_allowed_at
+    )
+    select true as acquired, next_allowed_at from claimed
+    union all
+    select false as acquired, next_allowed_at
+    from public.ais_provider_rate_limits
+    where provider = 'marinesia'
+      and not exists (select 1 from claimed)
+    limit 1
+  `);
+  const row = rowsFromExecute(result)[0] || {};
+  const acquired = row.acquired === true || row.acquired === "t";
+  const nextAllowedAt = row.next_allowed_at ? new Date(row.next_allowed_at).getTime() : Date.now() + intervalSeconds * 1000;
+  const retryAfterSeconds = Math.max(1, Math.ceil((nextAllowedAt - Date.now()) / 1000));
+  return { acquired, nextAllowedAt, retryAfterSeconds };
+}
+
+async function updateMarinesiaLimiter(input: {
+  status?: number;
+  limit?: number | null;
+  remaining?: number | null;
+  resetEpoch?: number | null;
+  fallbackSeconds?: number;
+}) {
+  try {
+    await ensureMarinesiaLimiterTable();
+    const db = getDb();
+    const resetEpoch = Number(input.resetEpoch);
+    const fallbackSeconds = Math.max(1, Number(input.fallbackSeconds || 1800));
+    const nextAllowedAt = Number.isFinite(resetEpoch) && resetEpoch > 0
+      ? new Date(resetEpoch * 1000)
+      : new Date(Date.now() + fallbackSeconds * 1000);
+
+    await db.execute(sql`
+      insert into public.ais_provider_rate_limits (
+        provider, next_allowed_at, last_status, last_limit, last_remaining, last_reset_epoch, updated_at
+      )
+      values (
+        'marinesia',
+        ${nextAllowedAt},
+        ${input.status ?? null},
+        ${input.limit ?? null},
+        ${input.remaining ?? null},
+        ${Number.isFinite(resetEpoch) && resetEpoch > 0 ? Math.floor(resetEpoch) : null},
+        now()
+      )
+      on conflict (provider) do update
+        set next_allowed_at = excluded.next_allowed_at,
+            last_status = excluded.last_status,
+            last_limit = excluded.last_limit,
+            last_remaining = excluded.last_remaining,
+            last_reset_epoch = excluded.last_reset_epoch,
+            updated_at = now()
+    `);
+  } catch (error) {
+    console.warn("[Marinesia] não foi possível atualizar o limitador persistente", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function callMarinesia(path: string, params: URLSearchParams, apiKey: string, timeoutMs = 8000) {
   params.set("key", apiKey);
   const safeParams = new URLSearchParams(params);
@@ -200,24 +315,39 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
   const now = Date.now();
   if (cached && cached.expiresAt > now) return { ...cached.body, __cached: true };
 
-  // Proteção para o plano grátis mostrado no painel: 1 chamada a cada 30 min.
-  // Ao trocar de plano, reduza MARINESIA_MIN_INTERVAL_SECONDS na Vercel.
-  const minInterval = Math.max(
+  // A chave Free é compartilhada pelo projeto inteiro. Como a Vercel usa várias
+  // instâncias serverless, um contador só em memória não protege a cota.
+  // O banco faz o bloqueio global/atômico entre todos os usuários e instâncias.
+  const minIntervalSeconds = Math.max(
     0,
-    Number(process.env.MARINESIA_MIN_INTERVAL_SECONDS || 1800) * 1000,
+    Number(process.env.MARINESIA_MIN_INTERVAL_SECONDS || 1800),
   );
+  const minInterval = minIntervalSeconds * 1000;
+
   if (minInterval > 0 && marinesiaState.lastCallAt && now - marinesiaState.lastCallAt < minInterval) {
     const retryAfterSeconds = Math.max(1, Math.ceil((minInterval - (now - marinesiaState.lastCallAt)) / 1000));
-    console.info("[Marinesia] bloqueio local do plano grátis", {
-      path,
-      retryAfterSeconds,
-    });
     throw Object.assign(new Error("Marinesia em intervalo de proteção do plano grátis."), {
       status: 429,
       provider: "marinesia",
       localRateLimit: true,
       retryAfterSeconds,
     });
+  }
+
+  if (minIntervalSeconds > 0) {
+    const slot = await claimMarinesiaSlot(minIntervalSeconds);
+    if (!slot.acquired) {
+      console.info("[Marinesia] cota protegida pelo limitador global", {
+        path,
+        retryAfterSeconds: slot.retryAfterSeconds,
+      });
+      throw Object.assign(new Error("Marinesia em intervalo de proteção do plano grátis."), {
+        status: 429,
+        provider: "marinesia",
+        localRateLimit: true,
+        retryAfterSeconds: slot.retryAfterSeconds,
+      });
+    }
   }
 
   const controller = new AbortController();
@@ -236,6 +366,10 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
     try { body = await response.json(); } catch { body = null; }
 
     const returnedCount = Array.isArray(body?.data) ? body.data.length : body?.data ? 1 : Array.isArray(body) ? body.length : 0;
+    const rateLimit = numberOrNull(response.headers.get("x-ratelimit-limit"));
+    const rateRemaining = numberOrNull(response.headers.get("x-ratelimit-remaining"));
+    const rateReset = numberOrNull(response.headers.get("x-ratelimit-reset"));
+
     console.info("[Marinesia] resposta da API", {
       path,
       status: response.status,
@@ -243,18 +377,40 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
       apiError: Boolean(body?.error),
       message: textOrEmpty(body?.message || body?.error),
       returnedCount,
+      rateLimit,
+      rateRemaining,
+      rateReset,
     });
 
     if (!response.ok || body?.error === true) {
+      await updateMarinesiaLimiter({
+        status: response.status || 502,
+        limit: rateLimit,
+        remaining: rateRemaining,
+        resetEpoch: rateReset,
+        fallbackSeconds: response.status === 429 ? minIntervalSeconds || 1800 : response.status >= 500 ? 60 : 300,
+      });
+
+      const retryAfterSeconds = rateReset
+        ? Math.max(1, Math.ceil(rateReset - Date.now() / 1000))
+        : response.status === 429 ? minIntervalSeconds || 1800 : undefined;
+
       throw Object.assign(new Error(marinesiaProviderMessage(body, response.status)), {
         status: response.status || 502,
         provider: "marinesia",
         providerBody: body,
+        retryAfterSeconds,
       });
     }
 
-    // Só começa o intervalo local depois que a Marinesia respondeu com sucesso.
-    // Antes, qualquer erro/timeout também bloqueava o AIS Free por 30 minutos.
+    await updateMarinesiaLimiter({
+      status: response.status,
+      limit: rateLimit,
+      remaining: rateRemaining,
+      resetEpoch: rateReset,
+      fallbackSeconds: minIntervalSeconds || 1800,
+    });
+
     marinesiaState.lastCallAt = Date.now();
     marinesiaState.cache.set(cacheKey, { body, expiresAt: Date.now() + MARINESIA_FREE_TTL_MS });
     if (marinesiaState.cache.size > 40) {
@@ -264,6 +420,7 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
     return body;
   } catch (error: any) {
     if (error?.name === "AbortError") {
+      await updateMarinesiaLimiter({ status: 504, fallbackSeconds: 60 });
       throw Object.assign(new Error("A Marinesia demorou para responder."), { status: 504, provider: "marinesia" });
     }
     throw error;
