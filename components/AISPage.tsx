@@ -405,7 +405,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
   const [manualLatDigits, setManualLatDigits] = useState("");
