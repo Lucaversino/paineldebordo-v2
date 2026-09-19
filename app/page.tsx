@@ -28,6 +28,16 @@ import {
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
 import DailyDataUsage from "../components/DailyDataUsage";
+import {
+  OFFLINE_QUEUE_EVENT,
+  cacheOfflineDashboard,
+  cacheOfflineManage,
+  clearOfflinePanelData,
+  flushOfflineQueue,
+  getOfflineDashboard,
+  getOfflineQueueCount,
+  queueDashboardMutation,
+} from "../lib/offlinePanel";
 
 const ModuleLoading = () => <section className="content"><div className="emptydash"><h2>Carregando módulo…</h2></div></section>;
 const Operations = dynamic(() => import("../components/Operations"), { ssr: false, loading: ModuleLoading });
@@ -79,7 +89,17 @@ export default function Home() {
     [dark, setDark] = useState(true),
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(""),
-    [billing, setBilling] = useState<any>(null);
+    [billing, setBilling] = useState<any>(null),
+    [offlinePending, setOfflinePending] = useState(0),
+    [offlineSyncing, setOfflineSyncing] = useState(false);
+  const primeOfflineManage = async () => {
+    if (!navigator.onLine) return;
+    try {
+      const response = await fetch("/api/manage", { cache: "no-store", signal: AbortSignal.timeout(10000) });
+      if (response.ok) cacheOfflineManage(await response.json());
+    } catch {}
+  };
+
   const load = async () => {
     setLoadError("");
     try {
@@ -90,15 +110,43 @@ export default function Home() {
       }
       if (!r.ok) throw Error("Não foi possível carregar os dados do painel.");
       const j = await r.json();
+      cacheOfflineDashboard(j);
       setData(j);
       setSetId(String(j.sets?.at(-1)?.id || ""));
       setOffline(false);
+      void primeOfflineManage();
     } catch (error) {
-      const timedOut = error instanceof DOMException && error.name === "TimeoutError";
-      setLoadError(timedOut ? "A conexão com o painel demorou demais. Tente novamente." : (error instanceof Error ? error.message : "Não foi possível carregar o painel."));
-      setOffline(!navigator.onLine);
+      const cached = getOfflineDashboard();
+      if (cached) {
+        setData(cached);
+        setSetId(String(cached.sets?.at(-1)?.id || ""));
+        setOffline(true);
+        setLoadError("");
+      } else {
+        const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+        setLoadError(timedOut ? "A conexão com o painel demorou demais. Tente novamente." : (error instanceof Error ? error.message : "Não foi possível carregar o painel."));
+        setOffline(!navigator.onLine);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const syncOfflineRecords = async () => {
+    if (!navigator.onLine || offlineSyncing) return;
+    const pendingBefore = getOfflineQueueCount();
+    setOfflinePending(pendingBefore);
+    if (!pendingBefore) return;
+    setOfflineSyncing(true);
+    try {
+      const result = await flushOfflineQueue();
+      setOfflinePending(result.pending);
+      if (result.synced > 0) {
+        await load();
+        await primeOfflineManage();
+      }
+    } finally {
+      setOfflineSyncing(false);
     }
   };
   useEffect(() => {
@@ -106,20 +154,35 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("view") === "credits") setView("Meus créditos");
     } catch {}
+    const cached = getOfflineDashboard();
+    if (cached && !navigator.onLine) {
+      setData(cached);
+      setSetId(String(cached.sets?.at(-1)?.id || ""));
+      setOffline(true);
+      setLoading(false);
+    }
+    setOfflinePending(getOfflineQueueCount());
     void load();
+    if (navigator.onLine) void syncOfflineRecords();
+    const queueChanged = () => setOfflinePending(getOfflineQueueCount());
+    window.addEventListener(OFFLINE_QUEUE_EVENT, queueChanged);
     const timer = window.setTimeout(() => {
       fetch("/api/session", { cache: "no-store", signal: AbortSignal.timeout(5000) })
         .then((r) => r.ok ? r.json() : null)
         .then((result) => result?.billing && setBilling(result.billing))
         .catch(() => null);
     }, 700);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(OFFLINE_QUEUE_EVENT, queueChanged);
+    };
   }, []);
 
   // V80: largadas novas continuam registrando ambiente automaticamente.
   // O backfill histórico pesado fica manual em Configurações para não disputar recursos no carregamento.
   async function logout() {
     await fetch("/api/session", { method: "DELETE" });
+    clearOfflinePanelData();
     window.location.replace("/login");
   }
   useEffect(() => {
@@ -133,7 +196,10 @@ export default function Home() {
   useEffect(() => {
     const f = () => {
       setOffline(!navigator.onLine);
-      if (navigator.onLine) load();
+      if (navigator.onLine) {
+        void syncOfflineRecords();
+        void load();
+      }
     };
     addEventListener("online", f);
     addEventListener("offline", f);
@@ -189,6 +255,24 @@ export default function Home() {
             discardSpeciesId: Number(formData?.get("discardSpeciesId") || 0),
             discardWeightKg: Number(String(formData?.get("discardWeightKg") || "").replace(",", ".")),
           };
+
+    const saveOffline = () => {
+      const queued = queueDashboardMutation(p, data);
+      setData(queued.dashboard);
+      setSetId(String(queued.dashboard?.sets?.at(-1)?.id || setId || ""));
+      setOfflinePending(queued.pending);
+      setOffline(true);
+      setModal(null);
+      setWeight("");
+      setBusy(false);
+      setSaveError("");
+    };
+
+    if (!navigator.onLine) {
+      saveOffline();
+      return;
+    }
+
     try {
       const r = await fetch("/api/dashboard", {
         method: "POST",
@@ -201,7 +285,11 @@ export default function Home() {
       }
       await load();
     } catch (error) {
-      if (!navigator.onLine) setOffline(true);
+      const networkFailure = !navigator.onLine || error instanceof TypeError || (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name));
+      if (networkFailure) {
+        saveOffline();
+        return;
+      }
       setSaveError(error instanceof Error ? error.message : "Não foi possível salvar.");
       setBusy(false);
       return;
@@ -342,9 +430,15 @@ export default function Home() {
             </h1>
           </div>
           <div className="headright">
-            <div className={offline ? "signal off" : "signal"}>
+            <div className={offline ? "signal off" : offlinePending > 0 ? "signal syncing" : "signal"}>
               <i />
-              {offline ? "SEM CONEXÃO" : "SISTEMA ONLINE"}
+              {offline
+                ? `OFFLINE${offlinePending ? ` • ${offlinePending} PENDENTE${offlinePending > 1 ? "S" : ""}` : ""}`
+                : offlineSyncing
+                  ? `SINCRONIZANDO • ${offlinePending}`
+                  : offlinePending > 0
+                    ? `ONLINE • ${offlinePending} PENDENTE${offlinePending > 1 ? "S" : ""}`
+                    : "SISTEMA ONLINE"}
             </div>
             <button className="icon" onClick={() => setDark(!dark)}>
               <Moon />

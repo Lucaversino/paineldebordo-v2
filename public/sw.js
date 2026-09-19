@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v7";
+const CACHE = "painel-bordo-v8";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -35,17 +35,34 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE)));
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          return (await caches.match(request))
+            || (await caches.match("/"))
+            || (await caches.match(OFFLINE));
+        })
+    );
     return;
   }
 
   event.respondWith(
-    fetch(request).then((response) => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, copy));
-      }
-      return response;
-    }).catch(() => caches.match(request))
+    caches.match(request).then((cached) => {
+      const network = fetch(request).then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      }).catch(() => cached);
+      return cached || network;
+    })
   );
 });

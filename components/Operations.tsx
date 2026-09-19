@@ -21,6 +21,7 @@ import {
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
 import BackupImporter from "./BackupImporter";
+import { OFFLINE_SYNC_EVENT, cacheOfflineManage, getOfflineManage } from "../lib/offlinePanel";
 const localDateTime = (value?: string | null) => {
   if (!value) return "";
   const date = new Date(value);
@@ -92,12 +93,25 @@ export default function Operations({ view, onDashboard }: Props) {
     [msg, setMsg] = useState("");
   const load = () => {
     setLoading(true);
-    fetch("/api/manage")
-      .then((r) => r.json())
-      .then(setS)
+    fetch("/api/manage", { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw Error("Falha ao carregar dados");
+        const result = await r.json();
+        cacheOfflineManage(result);
+        setS(result);
+      })
+      .catch(() => {
+        const cached = getOfflineManage();
+        if (cached) setS(cached);
+      })
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+  useEffect(() => {
+    const synced = () => load();
+    window.addEventListener(OFFLINE_SYNC_EVENT, synced);
+    return () => window.removeEventListener(OFFLINE_SYNC_EVENT, synced);
+  }, []);
   useEffect(() => setSelectedFinishedTripId(null), [view]);
   useEffect(() => {
     if (view !== "Largadas") return;
@@ -580,20 +594,24 @@ export default function Operations({ view, onDashboard }: Props) {
                                 </td>
                                 <td>{f(x.total)} kg</td>
                                 <td>
-                                  <div className="rowactions">
-                                    <button
-                                      className="editbtn"
-                                      onClick={async () => {
-                                        const r = await fetch(`/api/fishing-set?id=${x.id}`);
-                                        setEditing(r.ok ? await r.json() : x);
-                                      }}
-                                    >
-                                      <Pencil /> Editar
-                                    </button>
-                                    <button className="deletebtn" onClick={() => remove("set", x.id)}>
-                                      <Trash2 /> Excluir
-                                    </button>
-                                  </div>
+                                  {Number(x.id) < 0 || x.offlinePending ? (
+                                    <span className="offline-row-pending">AGUARDANDO SINCRONIZAÇÃO</span>
+                                  ) : (
+                                    <div className="rowactions">
+                                      <button
+                                        className="editbtn"
+                                        onClick={async () => {
+                                          const r = await fetch(`/api/fishing-set?id=${x.id}`);
+                                          setEditing(r.ok ? await r.json() : x);
+                                        }}
+                                      >
+                                        <Pencil /> Editar
+                                      </button>
+                                      <button className="deletebtn" onClick={() => remove("set", x.id)}>
+                                        <Trash2 /> Excluir
+                                      </button>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}
