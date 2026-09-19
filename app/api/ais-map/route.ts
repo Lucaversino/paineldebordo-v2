@@ -19,13 +19,13 @@ type MapVessel = {
   navStatusText?: string;
   positionReceived: string;
   updateTime: string;
-  dataSource: "AISStream" | "VesselAPI Free" | "Kpler Maritime";
+  dataSource: "AISStream" | "VesselAPI Free" | "Kpler Maritime" | "Marinesia AIS";
   receivedAt: number;
 };
 
 type CacheValue = {
   vessels: MapVessel[];
-  source: "AISStream" | "VesselAPI Free" | "Kpler Maritime" | "Nenhuma";
+  source: "AISStream" | "VesselAPI Free" | "Kpler Maritime" | "Marinesia AIS" | "Nenhuma";
   fallbackUsed: boolean;
   updatedAt: number;
   expiresAt: number;
@@ -36,6 +36,8 @@ type AisMapGlobal = {
   cache: Map<string, CacheValue>;
   inflight: Map<string, Promise<CacheValue>>;
   activeStreams: number;
+  marinesiaCache: Map<string, { vessels: MapVessel[]; expiresAt: number }>;
+  marinesiaLastCallAt: number;
 };
 
 const globalAisMap = globalThis as typeof globalThis & { __painelAisMap?: AisMapGlobal };
@@ -43,6 +45,8 @@ const state: AisMapGlobal = globalAisMap.__painelAisMap || {
   cache: new Map(),
   inflight: new Map(),
   activeStreams: 0,
+  marinesiaCache: new Map(),
+  marinesiaLastCallAt: 0,
 };
 globalAisMap.__painelAisMap = state;
 
@@ -483,6 +487,80 @@ async function fetchKpler(lat: number, lon: number): Promise<MapVessel[]> {
   }
 }
 
+function parseMarinesiaMapItem(raw: any): MapVessel | null {
+  const lat = numberOrNull(raw?.lat ?? raw?.latitude);
+  const lon = numberOrNull(raw?.lng ?? raw?.lon ?? raw?.longitude);
+  const mmsi = cleanText(raw?.mmsi).replace(/\D/g, "");
+  if (lat == null || lon == null || !mmsi || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const stamp = cleanText(raw?.ts || raw?.timestamp);
+  const iso = stamp && !Number.isNaN(new Date(stamp).getTime()) ? new Date(stamp).toISOString() : new Date().toISOString();
+  const heading = numberOrNull(raw?.hdt ?? raw?.heading);
+  return {
+    mmsi,
+    imo: cleanText(raw?.imo).replace(/\D/g, ""),
+    name: cleanText(raw?.name) || `MMSI ${mmsi}`,
+    lat,
+    lon,
+    sog: numberOrNull(raw?.sog),
+    cog: numberOrNull(raw?.cog),
+    heading: heading != null && heading < 511 ? heading : null,
+    vesselType: cleanText(raw?.type ?? raw?.ship_type) || "Embarcação AIS",
+    navStatusText: navStatusText(raw?.status),
+    positionReceived: iso,
+    updateTime: iso,
+    dataSource: "Marinesia AIS",
+    receivedAt: Date.now(),
+  };
+}
+
+async function fetchMarinesiaMap(lat: number, lon: number): Promise<MapVessel[]> {
+  const apiKey = (process.env.MARINESIA_API_KEY || "").trim();
+  if (!apiKey) throw Object.assign(new Error("MARINESIA_API_KEY não configurada."), { code: "not_configured" });
+
+  const box = queryBox(lat, lon);
+  const key = `${box.centerLat.toFixed(2)}:${box.centerLon.toFixed(2)}`;
+  const cached = state.marinesiaCache.get(key);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) return cached.vessels;
+
+  const minInterval = Math.max(0, Number(process.env.MARINESIA_MIN_INTERVAL_SECONDS || 1800) * 1000);
+  if (minInterval && state.marinesiaLastCallAt && now - state.marinesiaLastCallAt < minInterval) {
+    throw Object.assign(new Error("Marinesia em intervalo de proteção do plano grátis."), { code: "rate_protected" });
+  }
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    lat_min: box.south.toFixed(5),
+    lat_max: box.north.toFixed(5),
+    long_min: box.west.toFixed(5),
+    long_max: box.east.toFixed(5),
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  try {
+    state.marinesiaLastCallAt = now;
+    const response = await fetch(`https://api.marinesia.com/api/v2/vessel/area?${params.toString()}`, {
+      headers: { accept: "application/json", "user-agent": "Painel-de-Bordo/119" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body?.error === true) throw Object.assign(new Error(cleanText(body?.message) || `Marinesia ${response.status}`), { status: response.status });
+    const rows = (Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [])
+      .map(parseMarinesiaMapItem)
+      .filter(validVessel)
+      .slice(0, 20);
+    state.marinesiaCache.set(key, { vessels: rows, expiresAt: Date.now() + 30 * 60_000 });
+    if (state.marinesiaCache.size > 25) {
+      const first = state.marinesiaCache.keys().next().value;
+      if (first) state.marinesiaCache.delete(first);
+    }
+    return rows;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
   let vessels: MapVessel[] = [];
   let source: CacheValue["source"] = "Nenhuma";
@@ -499,12 +577,27 @@ async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
     vessels = [];
   }
 
-  if (!vesselApiAvailable) {
+  if (!vesselApiAvailable || vessels.length === 0) {
     try {
-      vessels = await fetchKpler(lat, lon);
-      source = "Kpler Maritime";
+      const kpler = await fetchKpler(lat, lon);
+      if (kpler.length) {
+        vessels = kpler;
+        source = "Kpler Maritime";
+      }
     } catch {
-      vessels = [];
+      if (!vesselApiAvailable) vessels = [];
+    }
+  }
+
+  if (vessels.length === 0) {
+    try {
+      const marinesia = await fetchMarinesiaMap(lat, lon);
+      if (marinesia.length) {
+        vessels = marinesia;
+        source = "Marinesia AIS";
+      }
+    } catch {
+      // Complemento grátis: falhar aqui nunca derruba o mapa.
     }
   }
 

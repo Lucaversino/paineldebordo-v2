@@ -299,6 +299,9 @@ function sourceInfo(dataSource?: string) {
   if (/kpler/i.test(source)) {
     return { title: "Kpler Maritime", short: "KPLER", className: "satellite" };
   }
+  if (/marinesia/i.test(source)) {
+    return { title: "Marinesia AIS", short: "MARINESIA", className: "terrestrial" };
+  }
   return { title: source ? `AIS · ${source}` : "FONTE AIS", short: "AIS", className: "unknown" };
 }
 
@@ -620,7 +623,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         mmsi: String(raw?.mmsi || ""), imo: String(raw?.imo || ""), name: raw?.name || "SEM NOME",
         lat: Number(raw?.lat), lon: Number(raw?.lon), sog: raw?.sog == null ? null : Number(raw.sog),
         cog: raw?.cog == null ? null : Number(raw.cog), heading: raw?.heading == null ? null : Number(raw.heading),
-        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: raw?.dataSource || "Terrestrial Area",
+        vesselType: raw?.vesselType || "", navStatusText: raw?.navStatusText || "", dataSource: raw?.dataSource || data?.provider || "Terrestrial Area",
+        positionReceived: raw?.positionReceived || raw?.updateTime || "",
+        updateTime: raw?.updateTime || raw?.positionReceived || "",
         receivedAt: Number(raw?.receivedAt) || Date.now(),
       })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon));
       setAreaVessels(rows);
@@ -885,7 +890,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(
       operationCredits > 0
         ? (force ? `Atualizando posição — ${aisPricing.updateCredits} crédito(s)...` : `Consultando posição — ${aisPricing.locateCredits} crédito(s)...`)
-        : (force ? "Atualizando posição gratuitamente via APRS.fi..." : "Consultando posição gratuitamente via APRS.fi...")
+        : (force ? "Atualizando posição via AIS complementar..." : "Consultando posição via APRS.fi + Marinesia (fallback)...")
     );
     try {
       const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`);

@@ -16,6 +16,21 @@ export const maxDuration = 30;
 
 const DATADOCKED_BASE_URL = "https://datadocked.com/api/vessels_operations";
 const APRSFI_BASE_URL = "https://api.aprs.fi/api/get";
+const MARINESIA_BASE_URL = "https://api.marinesia.com/api/v2";
+
+type MarinesiaState = {
+  cache: Map<string, { body: any; expiresAt: number }>;
+  lastCallAt: number;
+};
+
+const globalMarinesia = globalThis as typeof globalThis & { __painelMarinesia?: MarinesiaState };
+const marinesiaState: MarinesiaState = globalMarinesia.__painelMarinesia || {
+  cache: new Map(),
+  lastCallAt: 0,
+};
+globalMarinesia.__painelMarinesia = marinesiaState;
+
+const MARINESIA_FREE_TTL_MS = 30 * 60_000;
 
 function numberOrNull(value: unknown) {
   const n = Number(value);
@@ -168,6 +183,139 @@ function normalizeAprsVessel(raw: any) {
   };
 }
 
+function marinesiaProviderMessage(body: any, status: number) {
+  return (
+    textOrEmpty(body?.message) ||
+    textOrEmpty(body?.error) ||
+    `Erro Marinesia (${status}).`
+  );
+}
+
+async function callMarinesia(path: string, params: URLSearchParams, apiKey: string, timeoutMs = 8000) {
+  params.set("key", apiKey);
+  const safeParams = new URLSearchParams(params);
+  safeParams.set("key", "***");
+  const cacheKey = `${path}?${safeParams.toString()}`;
+  const cached = marinesiaState.cache.get(cacheKey);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) return { ...cached.body, __cached: true };
+
+  // Proteção para o plano grátis mostrado no painel: 1 chamada a cada 30 min.
+  // Ao trocar de plano, reduza MARINESIA_MIN_INTERVAL_SECONDS na Vercel.
+  const minInterval = Math.max(
+    0,
+    Number(process.env.MARINESIA_MIN_INTERVAL_SECONDS || 1800) * 1000,
+  );
+  if (minInterval > 0 && marinesiaState.lastCallAt && now - marinesiaState.lastCallAt < minInterval) {
+    throw Object.assign(new Error("Marinesia em intervalo de proteção do plano grátis."), {
+      status: 429,
+      provider: "marinesia",
+      localRateLimit: true,
+    });
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    marinesiaState.lastCallAt = now;
+    const response = await fetch(`${MARINESIA_BASE_URL}${path}?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        "user-agent": "Painel-de-Bordo/119",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    let body: any = null;
+    try { body = await response.json(); } catch { body = null; }
+    if (!response.ok || body?.error === true) {
+      throw Object.assign(new Error(marinesiaProviderMessage(body, response.status)), {
+        status: response.status || 502,
+        provider: "marinesia",
+        providerBody: body,
+      });
+    }
+    marinesiaState.cache.set(cacheKey, { body, expiresAt: Date.now() + MARINESIA_FREE_TTL_MS });
+    if (marinesiaState.cache.size > 40) {
+      const first = marinesiaState.cache.keys().next().value;
+      if (first) marinesiaState.cache.delete(first);
+    }
+    return body;
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw Object.assign(new Error("A Marinesia demorou para responder."), { status: 504, provider: "marinesia" });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeMarinesiaVessel(raw: any, fallbackName = "") {
+  const lat = numberOrNull(raw?.lat ?? raw?.latitude);
+  const lon = numberOrNull(raw?.lng ?? raw?.lon ?? raw?.longitude);
+  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const providerTime = textOrEmpty(raw?.ts || raw?.timestamp);
+  return {
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
+    name: textOrEmpty(raw?.name) || fallbackName,
+    lat,
+    lon,
+    sog: numberOrNull(raw?.sog),
+    cog: numberOrNull(raw?.cog),
+    heading: numberOrNull(raw?.hdt ?? raw?.heading),
+    draught: textOrEmpty(raw?.draught),
+    destination: textOrEmpty(raw?.dest ?? raw?.destination),
+    lastPort: "",
+    callsign: textOrEmpty(raw?.callsign),
+    vesselType: textOrEmpty(raw?.type ?? raw?.ship_type) || "Embarcação AIS",
+    navStatusText: navStatusText(raw?.status),
+    dataSource: "Marinesia AIS",
+    positionReceived: providerTime,
+    updateTime: providerTime,
+    receivedAt: providerTime && !Number.isNaN(new Date(providerTime).getTime()) ? new Date(providerTime).getTime() : Date.now(),
+    provider: "Marinesia",
+  };
+}
+
+async function getMarinesiaLatest(apiKey: string, input: { mmsi?: string; imo?: string; name?: string }) {
+  const mmsi = textOrEmpty(input.mmsi).replace(/\D/g, "");
+  const imo = textOrEmpty(input.imo).replace(/\D/g, "");
+  if (!mmsi && !imo) return null;
+  const params = new URLSearchParams();
+  if (mmsi) params.set("mmsi", mmsi);
+  else params.set("imo", imo);
+  const body = await callMarinesia("/vessel/location/latest", params, apiKey);
+  return normalizeMarinesiaVessel(body?.data ?? body, input.name || "");
+}
+
+function areaBox(latitude: number, longitude: number, radiusKm = 50) {
+  const latDelta = radiusKm / 111.32;
+  const cos = Math.max(0.15, Math.cos((latitude * Math.PI) / 180));
+  const lonDelta = radiusKm / (111.32 * cos);
+  return {
+    latMin: Math.max(-90, latitude - latDelta),
+    latMax: Math.min(90, latitude + latDelta),
+    lonMin: Math.max(-180, longitude - lonDelta),
+    lonMax: Math.min(180, longitude + lonDelta),
+  };
+}
+
+async function getMarinesiaArea(apiKey: string, latitude: number, longitude: number, radiusKm = 50) {
+  const box = areaBox(latitude, longitude, radiusKm);
+  const params = new URLSearchParams({
+    lat_min: box.latMin.toFixed(5),
+    lat_max: box.latMax.toFixed(5),
+    long_min: box.lonMin.toFixed(5),
+    long_max: box.lonMax.toFixed(5),
+  });
+  const body = await callMarinesia("/vessel/area", params, apiKey);
+  const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+  return rows.map((raw: any) => normalizeMarinesiaVessel(raw, textOrEmpty(raw?.name) || "SEM NOME")).filter(Boolean);
+}
+
 function dataDockedProviderMessage(body: any, status: number) {
   const detail = body?.detail;
   return (
@@ -257,6 +405,7 @@ export async function GET(request: NextRequest) {
   const admin = isSuperAdmin(user);
   const aprsApiKey = process.env.APRSFI_API_KEY?.trim();
   const dataDockedApiKey = process.env.DATADOCKED_API_KEY?.trim();
+  const marinesiaApiKey = process.env.MARINESIA_API_KEY?.trim();
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") || "credits";
 
@@ -268,6 +417,8 @@ export async function GET(request: NextRequest) {
         configured: Boolean(aprsApiKey),
         areaConfigured: Boolean(dataDockedApiKey),
         provider: "APRS.fi",
+        complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : null,
+        marinesiaConfigured: Boolean(marinesiaApiKey),
         credits: wallet.balance,
         creditUnitPrice: settings.CREDIT_UNIT_PRICE,
         balanceBrl: priceForCredits(settings, wallet.balance),
@@ -302,7 +453,10 @@ export async function GET(request: NextRequest) {
         ok: true,
         provider: "APRS.fi",
         configured: true,
-        areaProvider: dataDockedApiKey ? "Data Docked" : "não configurado",
+        areaProvider: dataDockedApiKey ? "Data Docked" : marinesiaApiKey ? "Marinesia AIS (fallback)" : "não configurado",
+        complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : "não configurado",
+        marinesiaConfigured: Boolean(marinesiaApiKey),
+        marinesiaPlanMode: "free-protected-30min",
         credits: dataDockedCredits,
       });
     }
@@ -350,106 +504,183 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "vessel") {
-      if (!aprsApiKey) {
-        return NextResponse.json(
-          { error: "APRSFI_API_KEY não configurada na Vercel.", configured: false },
-          { status: 503 },
-        );
-      }
-
       const id = (searchParams.get("id") || "").replace(/[^0-9]/g, "");
       const name = (searchParams.get("name") || "").trim();
       const target = name || id;
       if (!target) return NextResponse.json({ error: "Informe o nome, IMO ou MMSI." }, { status: 400 });
 
-      const data = await callAprsFi(target, aprsApiKey);
-      const entries = aprsEntries(data);
-      const selected =
-        (id
-          ? entries.find((entry: any) => {
-              const mmsi = textOrEmpty(entry?.mmsi).replace(/\D/g, "");
-              const imo = textOrEmpty(entry?.imo).replace(/\D/g, "");
-              return mmsi === id || imo === id;
-            })
-          : null) ||
-        entries[0];
+      let aprsError: any = null;
+      if (aprsApiKey) {
+        try {
+          const data = await callAprsFi(target, aprsApiKey);
+          const entries = aprsEntries(data);
+          const selected =
+            (id
+              ? entries.find((entry: any) => {
+                  const mmsi = textOrEmpty(entry?.mmsi).replace(/\D/g, "");
+                  const imo = textOrEmpty(entry?.imo).replace(/\D/g, "");
+                  return mmsi === id || imo === id;
+                })
+              : null) ||
+            entries[0];
 
-      const vessel = normalizeAprsVessel(selected);
-      if (!vessel) {
-        return NextResponse.json(
-          { error: "O APRS.fi não retornou uma posição AIS válida para esta embarcação. Nenhum crédito foi descontado." },
-          { status: 404 },
-        );
+          const vessel = normalizeAprsVessel(selected);
+          if (vessel) {
+            if (!vessel.name && name) vessel.name = name;
+            void logAisUsage({
+              userId: user.id,
+              action: searchParams.get("update") === "1" ? "update_aprsfi" : "locate_aprsfi",
+              vesselName: vessel.name || name || target,
+              providerCalls: 1,
+              creditsCharged: 0,
+              estimatedApiCostBrl: 0,
+              status: "success",
+            }).catch(() => null);
+            return NextResponse.json({
+              configured: true,
+              provider: "APRS.fi",
+              vessel,
+              creditCost: 0,
+              billing: { charged: 0, balanceUnchanged: true },
+              adminFree: false,
+            });
+          }
+          aprsError = new Error("APRS.fi não retornou posição válida.");
+        } catch (error) {
+          aprsError = error;
+        }
       }
-      if (!vessel.name && name) vessel.name = name;
 
-      void logAisUsage({
-        userId: user.id,
-        action: searchParams.get("update") === "1" ? "update_aprsfi" : "locate_aprsfi",
-        vesselName: vessel.name || name || target,
-        providerCalls: 1,
-        creditsCharged: 0,
-        estimatedApiCostBrl: 0,
-        status: "success",
-      }).catch(() => null);
+      // Marinesia entra como complemento/fallback quando o alvo tem MMSI/IMO.
+      if (marinesiaApiKey && id) {
+        try {
+          const isLikelyMmsi = id.length === 9;
+          const vessel = await getMarinesiaLatest(marinesiaApiKey, {
+            mmsi: isLikelyMmsi ? id : "",
+            imo: isLikelyMmsi ? "" : id,
+            name,
+          });
+          if (vessel) {
+            void logAisUsage({
+              userId: user.id,
+              action: searchParams.get("update") === "1" ? "update_marinesia" : "locate_marinesia",
+              vesselName: vessel.name || name || target,
+              providerCalls: 1,
+              creditsCharged: 0,
+              estimatedApiCostBrl: 0,
+              status: "success",
+            }).catch(() => null);
+            return NextResponse.json({
+              configured: true,
+              provider: "Marinesia",
+              fallbackUsed: true,
+              vessel,
+              creditCost: 0,
+              billing: { charged: 0, balanceUnchanged: true },
+              adminFree: false,
+            });
+          }
+        } catch (error: any) {
+          if (!error?.localRateLimit) aprsError = aprsError || error;
+        }
+      }
 
-      return NextResponse.json({
-        configured: true,
-        provider: "APRS.fi",
-        vessel,
-        creditCost: 0,
-        billing: { charged: 0, balanceUnchanged: true },
-        adminFree: false,
-      });
-    }
-
-    if (action === "area") {
-      if (!dataDockedApiKey) {
+      if (!aprsApiKey && !marinesiaApiKey) {
         return NextResponse.json(
-          { error: "A busca por área continua usando Data Docked e DATADOCKED_API_KEY não está configurada.", configured: false },
+          { error: "Nenhum provedor de posição individual está configurado. Adicione APRSFI_API_KEY ou MARINESIA_API_KEY na Vercel.", configured: false },
           { status: 503 },
         );
       }
 
+      return NextResponse.json(
+        {
+          error: id && marinesiaApiKey
+            ? "Nenhum dos provedores AIS retornou uma posição válida agora. APRS.fi foi tentado e a Marinesia ficou disponível como complemento quando a cota permite."
+            : (aprsError?.message || "Nenhuma posição AIS válida foi encontrada. Se tiver MMSI/IMO, a Marinesia pode ser usada como complemento."),
+          code: "ais_all_providers_no_position",
+        },
+        { status: 404 },
+      );
+    }
+
+    if (action === "area") {
       const latitude = numberOrNull(searchParams.get("latitude"));
       const longitude = numberOrNull(searchParams.get("longitude"));
       if (latitude == null || longitude == null || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
         return NextResponse.json({ error: "Latitude/longitude inválidas para a busca por área." }, { status: 400 });
       }
 
-      const access = await assertCanUse(user, "ais_area");
-      const params = new URLSearchParams({
-        latitude: String(Math.round(latitude * 10000) / 10000),
-        longitude: String(Math.round(longitude * 10000) / 10000),
-        circle_radius: "50",
-      });
+      if (!dataDockedApiKey && !marinesiaApiKey) {
+        return NextResponse.json(
+          { error: "Busca por área sem provedor configurado. Adicione DATADOCKED_API_KEY ou MARINESIA_API_KEY.", configured: false },
+          { status: 503 },
+        );
+      }
 
-      const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, dataDockedApiKey);
-      const source = detailOf(data);
-      const rawVessels = Array.isArray(source?.vessels) ? source.vessels : Array.isArray(source) ? source : [];
-      const vessels = rawVessels.map(normalizeAreaVessel).filter(Boolean);
+      const access = await assertCanUse(user, "ais_area");
+      let vessels: any[] = [];
+      let provider = "";
+      let providerCalls = 0;
+      let primaryError: any = null;
+
+      if (dataDockedApiKey) {
+        try {
+          const params = new URLSearchParams({
+            latitude: String(Math.round(latitude * 10000) / 10000),
+            longitude: String(Math.round(longitude * 10000) / 10000),
+            circle_radius: "50",
+          });
+          const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, dataDockedApiKey);
+          const source = detailOf(data);
+          const rawVessels = Array.isArray(source?.vessels) ? source.vessels : Array.isArray(source) ? source : [];
+          vessels = rawVessels.map(normalizeAreaVessel).filter(Boolean);
+          provider = "Data Docked";
+          providerCalls += 1;
+        } catch (error) {
+          primaryError = error;
+        }
+      }
+
+      if ((!provider || vessels.length === 0) && marinesiaApiKey) {
+        try {
+          const supplemental = await getMarinesiaArea(marinesiaApiKey, latitude, longitude, 50);
+          if (supplemental.length || !provider) {
+            vessels = supplemental;
+            provider = "Marinesia AIS";
+          }
+          providerCalls += 1;
+        } catch (error: any) {
+          if (!error?.localRateLimit && !primaryError) primaryError = error;
+        }
+      }
+
+      if (!provider) {
+        throw primaryError || Object.assign(new Error("Nenhum provedor AIS respondeu à consulta por área."), { status: 502 });
+      }
 
       const debit = await debitCreditsAfterSuccess({
         user,
         mode: "ais_area",
         description: "Busca AIS por área — 50 km",
         reference: `${latitude.toFixed(4)},${longitude.toFixed(4)}`,
-        metadata: { latitude, longitude, radiusKm: 50, vessels: vessels.length },
+        metadata: { latitude, longitude, radiusKm: 50, vessels: vessels.length, provider },
       });
 
       void logAisUsage({
         userId: user.id,
-        action: "area_50km",
+        action: provider.includes("Marinesia") ? "area_50km_marinesia" : "area_50km",
         vesselName: null,
-        providerCalls: 1,
+        providerCalls: Math.max(1, providerCalls),
         creditsCharged: debit.charged,
-        estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL,
+        estimatedApiCostBrl: provider.includes("Marinesia") ? 0 : access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL,
         status: "success",
       }).catch(() => null);
 
       return NextResponse.json({
         configured: true,
-        provider: "Data Docked",
+        provider,
+        fallbackUsed: provider.includes("Marinesia"),
+        providerNote: provider.includes("Marinesia") ? "Plano grátis Marinesia: retorno limitado e protegido por cache/intervalo." : null,
         center: { latitude, longitude },
         radiusKm: 50,
         vessels,
@@ -497,6 +728,30 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.json(
         { error: error?.message || "Falha temporária no APRS.fi.", code: "aprsfi_error" },
+        { status: status >= 500 ? status : 502 },
+      );
+    }
+
+    if (error?.provider === "marinesia") {
+      if (status === 401 || status === 403) {
+        return NextResponse.json(
+          { error: "A chave MARINESIA_API_KEY foi recusada pela Marinesia. Confira a chave na Vercel.", code: "marinesia_key_invalid" },
+          { status: 502 },
+        );
+      }
+      if (status === 429) {
+        return NextResponse.json(
+          {
+            error: error?.localRateLimit
+              ? "Marinesia protegida pelo intervalo do plano grátis. O painel mantém cache para evitar estourar a cota."
+              : "Limite da Marinesia atingido. No plano grátis a documentação informa 1 requisição a cada 30 minutos.",
+            code: "marinesia_rate_limit",
+          },
+          { status: 429 },
+        );
+      }
+      return NextResponse.json(
+        { error: error?.message || "Falha temporária na Marinesia.", code: "marinesia_error" },
         { status: status >= 500 ? status : 502 },
       );
     }
