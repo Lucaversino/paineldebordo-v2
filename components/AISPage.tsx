@@ -547,7 +547,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const mapCenter = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
     const lat = targetCenter?.lat ?? mapCenter[1];
     const lon = targetCenter?.lon ?? mapCenter[0];
-    const key = `${(Math.round(lat * 4) / 4).toFixed(2)}:${(Math.round(lon * 4) / 4).toFixed(2)}`;
+    const currentZoom = Math.max(3, Math.min(18, map.getView().getZoom() || 10));
+    const zoomBucket = Math.round(currentZoom);
+    const key = `${(Math.round(lat * 4) / 4).toFixed(2)}:${(Math.round(lon * 4) / 4).toFixed(2)}:z${zoomBucket}`;
     const now = Date.now();
     if (!force && freeLayerRequestRef.current.key === key && now - freeLayerRequestRef.current.at < 40_000) return;
 
@@ -557,7 +559,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setFreeMapStatus("loading");
 
     try {
-      const response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+      const response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=${encodeURIComponent(zoomBucket)}`);
       const data = await response.json();
       if (seq !== freeLayerRequestRef.current.seq) return;
       if (!response.ok) {
