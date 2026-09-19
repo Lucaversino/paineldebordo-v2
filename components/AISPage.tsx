@@ -1900,6 +1900,95 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setDhnLoadMessage("Carregando catálogo de cartas DHN...");
+        const [catalogResponse, capabilitiesResponse] = await Promise.all([
+          fetch("/data/dhn/catalog-rj-sp-pr-sc-rs.json", { cache: "force-cache" }),
+          fetch("/api/dhn-wms", { cache: "no-store" }),
+        ]);
+
+        if (!catalogResponse.ok) throw new Error("catalog");
+        const catalogData = await catalogResponse.json();
+        const catalog = (Array.isArray(catalogData?.charts) ? catalogData.charts : []) as DhnCatalogEntry[];
+
+        if (!capabilitiesResponse.ok) {
+          if (!cancelled) {
+            setDhnCharts([]);
+            setDhnLoadMessage("Serviço oficial DHN indisponível no momento.");
+          }
+          return;
+        }
+
+        const xml = await capabilitiesResponse.text();
+        const charts = parseDhnCapabilities(xml, catalog);
+        if (cancelled) return;
+
+        setDhnCharts(charts);
+        setDhnLoadMessage(
+          charts.length
+            ? `${charts.length} cartas DHN disponíveis para RJ, SP, PR, SC e RS.`
+            : "Catálogo carregado, mas nenhuma camada raster DHN foi localizada no WMS."
+        );
+
+        const automatic = chooseDhnChart(charts, center.lon, center.lat, zoom) || charts[0];
+        if (automatic) setSelectedDhnChart((current) => current || automatic.number);
+      } catch {
+        if (!cancelled) {
+          setDhnCharts([]);
+          setDhnLoadMessage("Não foi possível carregar as cartas DHN agora.");
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!dhnAuto || baseMode !== "dhn" || !dhnCharts.length) return;
+    const automatic = chooseDhnChart(dhnCharts, center.lon, center.lat, zoom);
+    if (automatic && automatic.number !== selectedDhnChart) setSelectedDhnChart(automatic.number);
+  }, [baseMode, center.lat, center.lon, dhnAuto, dhnCharts, selectedDhnChart, zoom]);
+
+  useEffect(() => {
+    const layer = dhnLayerRef.current;
+    if (!layer) return;
+
+    if (baseMode !== "dhn") {
+      layer.setVisible(false);
+      return;
+    }
+
+    const chart = dhnCharts.find((item) => item.number === selectedDhnChart);
+    if (!chart?.layerName) {
+      layer.setVisible(false);
+      return;
+    }
+
+    layer.setSource(new TileWMS({
+      url: DHN_WMS_URL,
+      params: {
+        LAYERS: chart.layerName,
+        TILED: true,
+        FORMAT: "image/png",
+        TRANSPARENT: true,
+        VERSION: "1.3.0",
+      },
+      crossOrigin: "anonymous",
+      transition: 0,
+    }));
+    layer.setOpacity(dhnOpacity);
+    layer.setVisible(true);
+    setDhnLoadMessage(`Carta ${chart.number} · ${chart.title}`);
+  }, [baseMode, dhnCharts, dhnOpacity, selectedDhnChart]);
+
+  useEffect(() => {
+    dhnLayerRef.current?.setOpacity(dhnOpacity);
+  }, [dhnOpacity]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setClockNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
