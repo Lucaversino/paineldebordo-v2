@@ -48,6 +48,21 @@ type SearchMode = "vessel" | "area";
 type MobilePanel = "search" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia";
 
+const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
+
+function readMarinesiaCooldown() {
+  if (typeof window === "undefined") return 0;
+  const value = Number(window.localStorage.getItem(MARINESIA_COOLDOWN_KEY) || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function writeMarinesiaCooldown(seconds = 1800) {
+  if (typeof window === "undefined") return 0;
+  const until = Date.now() + Math.max(1, seconds) * 1000;
+  window.localStorage.setItem(MARINESIA_COOLDOWN_KEY, String(until));
+  return until;
+}
+
 type DhnChart = {
   number: string;
   title: string;
@@ -358,6 +373,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
+  const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
   const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
@@ -378,6 +394,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
     return () => document.body.classList.remove("ais-mobile-active");
+  }, []);
+
+  useEffect(() => {
+    setMarinesiaCooldownUntil(readMarinesiaCooldown());
+    const timer = window.setInterval(() => {
+      const until = readMarinesiaCooldown();
+      if (until > Date.now()) {
+        setMarinesiaCooldownUntil(until);
+      } else {
+        setMarinesiaCooldownUntil(0);
+        if (until) window.localStorage.removeItem(MARINESIA_COOLDOWN_KEY);
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
@@ -609,6 +639,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     if (closeMobilePanel) setMobilePanel(null);
   }
 
+  function marinesiaCooldownMessage() {
+    const until = Math.max(marinesiaCooldownUntil, readMarinesiaCooldown());
+    if (!until || until <= Date.now()) return "";
+    const minutes = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+    return `AIS Free aguardando a próxima janela da Marinesia — cerca de ${minutes} min. O fallback gratuito do mapa continua disponível.`;
+  }
+
   async function searchArea(provider: SearchProvider = searchProvider) {
     const selected = areaCenter || center;
     if (!selected) return;
@@ -653,12 +690,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     );
 
     try {
-      let response = await aisFetch(
-        `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
-      );
-      let data = await response.json();
+      const cooldownMessage = isFree ? marinesiaCooldownMessage() : "";
+      let response: Response;
+      let data: any;
+
+      if (isFree && cooldownMessage) {
+        setStatusMessage(cooldownMessage);
+        response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
+        data = await response.json();
+      } else {
+        response = await aisFetch(
+          `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
+        );
+        data = await response.json();
+      }
 
       if (!response.ok && isFree) {
+        if (response.status === 429) {
+          const retrySeconds = Number(data?.retryAfterSeconds || 1800);
+          setMarinesiaCooldownUntil(writeMarinesiaCooldown(retrySeconds));
+        }
         setStatusMessage(
           response.status === 429
             ? "Marinesia atingiu o limite do plano grátis. Complementando com AIS Free do mapa..."
@@ -995,6 +1046,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}&provider=${encodeURIComponent(provider)}`);
       const data = await response.json();
       if (!response.ok) {
+        if (provider === "marinesia" && response.status === 429) {
+          const retrySeconds = Number(data?.retryAfterSeconds || 1800);
+          setMarinesiaCooldownUntil(writeMarinesiaCooldown(retrySeconds));
+        }
         if (response.status === 503) setStatus("config");
         else setStatus("error");
         setStatusMessage(response.status === 401 ? "Sua sessão expirou. Entre novamente no painel e tente de novo." : (data?.error || "Não foi possível localizar a embarcação."));
@@ -1424,7 +1479,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       <div className="ais-name-search-card ais-v70-search-card">
         <div className="ais-v119-provider-tabs">
           <button type="button" className={searchProvider === "premium" ? "active premium" : "premium"} onClick={() => setSearchProvider("premium")}><Radio /> Premium</button>
-          <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage("AIS Free ativo — digite nome/MMSI/IMO ou deixe vazio para buscar na região."); }}><Navigation /> AIS Free {marinesiaConfigured ? "" : "· fallback"}</button>
+          <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage(marinesiaCooldownMessage() || "AIS Free ativo — digite nome/MMSI/IMO ou deixe vazio para buscar na região."); }}><Navigation /> AIS Free {marinesiaCooldownUntil > Date.now() ? "· aguardando" : marinesiaConfigured ? "" : "· fallback"}</button>
         </div>
         <div className="ais-v70-search-tabs">
           <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => { setSearchMode("vessel"); setMobilePanel("search"); }}><Ship /> Barco</button>
@@ -1640,7 +1695,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <div className="ais-v70-mobile-search">
                 <div className="ais-v119-provider-tabs">
                   <button type="button" className={searchProvider === "premium" ? "active premium" : "premium"} onClick={() => setSearchProvider("premium")}><Radio /> Premium</button>
-                  <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage("AIS Free ativo — nome/MMSI/IMO ou busca na região."); }}><Navigation /> AIS Free {marinesiaConfigured ? "" : "· fallback"}</button>
+                  <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage(marinesiaCooldownMessage() || "AIS Free ativo — nome/MMSI/IMO ou busca na região."); }}><Navigation /> AIS Free {marinesiaCooldownUntil > Date.now() ? "· aguardando" : marinesiaConfigured ? "" : "· fallback"}</button>
                 </div>
                 <div className="ais-v70-search-tabs compact">
                   <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
