@@ -1004,7 +1004,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         method: "POST",
         headers: { "content-type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ action: "save", vessel: source, folder: folder || (String((source as Vessel)?.dataSource || "").toLowerCase().includes("marinesia") ? "marinesia" : "premium") }),
+        body: JSON.stringify({
+          action: "save",
+          vessel: source,
+          folder: folder || (() => {
+            const dataSource = String((source as Vessel)?.dataSource || "").toLowerCase();
+            if (dataSource.includes("marinesia")) return "marinesia";
+            if (dataSource.includes("shipfinder")) return "shipfinder";
+            return "premium";
+          })(),
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1889,7 +1898,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                       <div><b>{item.name}</b><small>MMSI {item.mmsi || "—"} · IMO {item.imo || "—"}</small><em>{item.lastPositionReceived || item.lastUpdateTime || "Posição ainda não consultada"}</em></div>
                     </button>
                     <div className="ais-saved-actions">
-                      <button type="button" className="update" title={item.folder === "marinesia" ? "Atualizar AIS Free" : `Atualizar dados · ${aisPricing.updateCredits} crédito(s)`} onClick={() => getVesselPosition(savedItemToMatch(item), true, item.folder === "marinesia" ? "marinesia" : "premium")}><RefreshCw /><span>{item.folder === "marinesia" ? "ATUALIZAR GRÁTIS" : `ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
+                      <button type="button" className="update" title={item.folder === "marinesia" ? "Atualizar AIS Free" : item.folder === "shipfinder" ? "Atualizar ShipFinder" : `Atualizar dados · ${aisPricing.updateCredits} crédito(s)`} onClick={() => getVesselPosition(savedItemToMatch(item), true, item.folder === "marinesia" ? "marinesia" : item.folder === "shipfinder" ? "shipfinder" : "premium")}><RefreshCw /><span>{item.folder === "marinesia" ? "ATUALIZAR GRÁTIS" : item.folder === "shipfinder" ? "ATUALIZAR SHIPFINDER" : `ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
                       <button type="button" className="danger" title="Remover dos salvos" onClick={() => removeSavedVessel(item.vesselKey)}><Trash2 /></button>
                     </div>
                   </article>
@@ -2076,7 +2085,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
             {mobilePanel === "saved" && <div className="ais-v70-mobile-list saved">{premiumSavedVessels.length ? premiumSavedVessels.slice(0, 30).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
               <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>
-              <button type="button" className="ais-mobile-saved-update" onClick={() => void getVesselPosition(savedItemToMatch(item), true, item.folder === "marinesia" ? "marinesia" : "premium")}><RefreshCw /><span>{item.folder === "marinesia" ? "ATUALIZAR GRÁTIS" : `ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
+              <button type="button" className="ais-mobile-saved-update" onClick={() => void getVesselPosition(savedItemToMatch(item), true, item.folder === "marinesia" ? "marinesia" : item.folder === "shipfinder" ? "shipfinder" : "premium")}><RefreshCw /><span>{item.folder === "marinesia" ? "ATUALIZAR GRÁTIS" : item.folder === "shipfinder" ? "ATUALIZAR SHIPFINDER" : `ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
             </article>) : <p>Nenhum barco salvo.</p>}</div>}
 
             {mobilePanel === "areaSaved" && <div className="ais-v70-mobile-list area-saved">{areaSavedVessels.length ? areaSavedVessels.slice(0, 80).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
