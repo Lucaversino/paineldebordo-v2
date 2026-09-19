@@ -421,7 +421,7 @@ export default function PositionForecast() {
       const file = new File([blob], `previsao-oceanica-${new Date().toISOString().slice(0, 10)}.pdf`, { type: "application/pdf" });
       const summary = [
         "PAINEL DE BORDO — PREVISÃO OCEÂNICA",
-        `Posição: ${Math.abs(Number(data.position.lat)).toFixed(4)}° S / ${Math.abs(Number(data.position.lon)).toFixed(4)}° W`,
+        `Posição: ${nauticalPosition(Number(data.position.lat), Number(data.position.lon))}`,
         `Vento: ${fmt(data.current.windSpeedKmh)} km/h ${data.current.windDirection} | rajadas ${fmt(data.current.gustKmh)} km/h`,
         `Ondas: ${fmt(data.current.waveHeightM)} m ${data.current.waveDirection} | período ${fmt(data.current.wavePeriodS)} s`,
         `Maré modelada: ${fmt(data.current.seaLevelMslM, 2)} m`,
@@ -526,7 +526,7 @@ export default function PositionForecast() {
       ) : (
         <>
           <div className="position-current-head">
-            <div><small>CONDIÇÕES AGORA</small><h3>{Math.abs(data.position.lat).toFixed(4)}° S · {Math.abs(data.position.lon).toFixed(4)}° W</h3><p className="position-nautical-label">{nauticalPosition(Number(data.position.lat), Number(data.position.lon))}</p></div>
+            <div className="position-current-coordinates"><small>CONDIÇÕES AGORA</small><p className="position-nautical-label position-nautical-main">{nauticalPosition(Number(data.position.lat), Number(data.position.lon))}</p></div>
             <div className="position-current-actions">
               <button className="position-save-current" onClick={() => startSave()}><Save /> Salvar previsão</button>
               <button onClick={exportPdf}><Download /> Exportar PDF</button>

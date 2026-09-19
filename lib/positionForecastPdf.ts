@@ -14,6 +14,16 @@ const when = (value?: string | null) => {
   return date.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
 
+function nauticalPositionPdf(lat: number, lon: number) {
+  const part = (value: number, direction: "S" | "W") => {
+    const absolute = Math.abs(Number(value));
+    const degrees = Math.floor(absolute);
+    const minutes = (absolute - degrees) * 60;
+    return `${degrees}° ${minutes.toFixed(2)}' ${direction}`;
+  };
+  return `${part(lat, "S")}   ·   ${part(lon, "W")}`;
+}
+
 export function createPositionForecastPdf(data: any) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const forecast = Array.isArray(data?.forecast) ? data.forecast : [];
@@ -32,16 +42,23 @@ export function createPositionForecastPdf(data: any) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(156, 201, 207);
-  doc.text(`Posicao: ${Math.abs(Number(data?.position?.lat || 0)).toFixed(4)} S | ${Math.abs(Number(data?.position?.lon || 0)).toFixed(4)} W`, 16, 34);
   doc.text(`Emitido em ${new Date().toLocaleString("pt-BR")}`, 281, 34, { align: "right" });
 
   doc.setTextColor(27, 54, 61);
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("POSICAO CONSULTADA", 16, 49);
+  doc.setFontSize(18);
+  doc.setTextColor(4, 52, 58);
+  doc.text(nauticalPositionPdf(Number(data?.position?.lat || 0), Number(data?.position?.lon || 0)), 16, 59);
+
+  doc.setTextColor(27, 54, 61);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("CONDICOES AGORA", 16, 50);
+  doc.text("CONDICOES AGORA", 16, 70);
 
   autoTable(doc, {
-    startY: 54,
+    startY: 74,
     margin: { left: 16, right: 16 },
     theme: "grid",
     head: [["Vento", "Rajadas", "Direcao", "Onda", "Periodo", "Mare modelada", "Temp. mar", "Clorofila"]],
