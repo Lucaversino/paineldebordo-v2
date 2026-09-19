@@ -13,6 +13,10 @@ import {
   Trash2,
   Waves,
   BarChart3,
+  Folder,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
@@ -82,6 +86,7 @@ export default function Operations({ view, onDashboard }: Props) {
     [pdfError, setPdfError] = useState(""),
     [saving, setSaving] = useState(false),
     [selectedFinishedTripId, setSelectedFinishedTripId] = useState<number | null>(null),
+    [openSetTripIds, setOpenSetTripIds] = useState<number[]>([]),
     [envSyncing, setEnvSyncing] = useState(false),
     [envSyncMsg, setEnvSyncMsg] = useState(""),
     [msg, setMsg] = useState("");
@@ -94,6 +99,12 @@ export default function Operations({ view, onDashboard }: Props) {
   };
   useEffect(load, []);
   useEffect(() => setSelectedFinishedTripId(null), [view]);
+  useEffect(() => {
+    if (view !== "Largadas") return;
+    const active = s.trips.find((trip) => trip.status === "IN_PROGRESS");
+    if (!active) return;
+    setOpenSetTripIds((currentIds) => currentIds.includes(Number(active.id)) ? currentIds : [Number(active.id), ...currentIds]);
+  }, [view, s.trips]);
   async function syncEnvironmentalHistory() {
     if (envSyncing) return;
     setEnvSyncing(true);
@@ -338,6 +349,18 @@ export default function Operations({ view, onDashboard }: Props) {
       </section>
     );
   const current = s.trips.find((x) => x.status === "IN_PROGRESS");
+  const setTrips = s.trips
+    .filter((trip) => trip.status === "IN_PROGRESS" || trip.status === "FINISHED" || s.sets.some((set) => Number(set.tripId) === Number(trip.id)))
+    .sort((a, b) => {
+      if (a.status === "IN_PROGRESS" && b.status !== "IN_PROGRESS") return -1;
+      if (b.status === "IN_PROGRESS" && a.status !== "IN_PROGRESS") return 1;
+      return Number(b.id) - Number(a.id);
+    });
+  const toggleSetTripFolder = (tripId: number) => {
+    setOpenSetTripIds((ids) => ids.includes(Number(tripId))
+      ? ids.filter((id) => id !== Number(tripId))
+      : [...ids, Number(tripId)]);
+  };
   const selectedFinishedTrip = s.trips.find(
     (x) => x.status === "FINISHED" && Number(x.id) === Number(selectedFinishedTripId),
   );
@@ -482,63 +505,113 @@ export default function Operations({ view, onDashboard }: Props) {
         </div>
       )}
       {view === "Largadas" && (
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Largada</th>
-                <th>Data</th>
-                <th>Horário inicial</th>
-                <th>Horário final</th>
-                <th>Profundidade</th>
-                <th>Posição inicial</th>
-                <th>Posição final</th>
-                <th>Captura</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.sets.map((x) => (
-                <tr key={x.id}>
-                  <td>
-                    <b>#{String(x.setNumber).padStart(2, "0")}</b>
-                  </td>
-                  <td>{new Date(x.startedAt).toLocaleDateString("pt-BR")}</td>
-                  <td>{new Date(x.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                  <td>{x.finishedAt ? new Date(x.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                  <td>{x.depthMeters != null ? `${f(x.depthMeters)} m` : "—"}</td>
-                  <td>
-                    <small>Lat. {dmm(x.startLatitude, true)}</small>
-                    <small>Long. {dmm(x.startLongitude, false)}</small>
-                  </td>
-                  <td>
-                    <small>Lat. {dmm(x.endLatitude, true)}</small>
-                    <small>Long. {dmm(x.endLongitude, false)}</small>
-                  </td>
-                  <td>{f(x.total)} kg</td>
-                  <td>
-                    <div className="rowactions">
-                      <button
-                        className="editbtn"
-                        onClick={async () => {
-                          const r = await fetch(`/api/fishing-set?id=${x.id}`);
-                          setEditing(r.ok ? await r.json() : x);
-                        }}
-                      >
-                        <Pencil /> Editar
-                      </button>
-                      <button
-                        className="deletebtn"
-                        onClick={() => remove("set", x.id)}
-                      >
-                        <Trash2 /> Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="set-trip-folders">
+          <div className="set-trip-folders-intro">
+            <FolderOpen />
+            <div>
+              <small>LARGADAS SEPARADAS POR VIAGEM</small>
+              <b>Cada viagem tem sua própria pasta</b>
+              <span>A viagem em andamento fica aberta. Viagens finalizadas ficam arquivadas em pastas separadas.</span>
+            </div>
+          </div>
+
+          {setTrips.map((trip) => {
+            const tripSets = s.sets.filter((set) => Number(set.tripId) === Number(trip.id));
+            const isOpen = openSetTripIds.includes(Number(trip.id));
+            const isCurrent = trip.status === "IN_PROGRESS";
+            const firstSet = tripSets.length
+              ? new Date(Math.min(...tripSets.map((set) => new Date(set.startedAt).getTime())))
+              : null;
+            const lastSet = tripSets.length
+              ? new Date(Math.max(...tripSets.map((set) => new Date(set.startedAt).getTime())))
+              : null;
+
+            return (
+              <section key={trip.id} className={`set-trip-folder ${isCurrent ? "current" : "finished"} ${isOpen ? "open" : ""}`}>
+                <button type="button" className="set-trip-folder-head" onClick={() => toggleSetTripFolder(Number(trip.id))}>
+                  <span className="set-trip-folder-icon">{isOpen ? <FolderOpen /> : <Folder />}</span>
+                  <span className="set-trip-folder-copy">
+                    <small>{isCurrent ? "VIAGEM EM ANDAMENTO" : "VIAGEM FINALIZADA"}</small>
+                    <b>{trip.name}</b>
+                    <em>
+                      {tripSets.length} {tripSets.length === 1 ? "largada" : "largadas"}
+                      {firstSet && lastSet ? ` • ${firstSet.toLocaleDateString("pt-BR")} → ${lastSet.toLocaleDateString("pt-BR")}` : ""}
+                    </em>
+                  </span>
+                  <span className={`set-trip-folder-status ${isCurrent ? "current" : "finished"}`}>
+                    {isCurrent ? "EM ANDAMENTO" : "FINALIZADA"}
+                  </span>
+                  <span className="set-trip-folder-chevron">{isOpen ? <ChevronDown /> : <ChevronRight />}</span>
+                </button>
+
+                {isOpen && (
+                  <div className="set-trip-folder-body">
+                    {tripSets.length ? (
+                      <div className="tablewrap set-trip-tablewrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Largada</th>
+                              <th>Data</th>
+                              <th>Horário inicial</th>
+                              <th>Horário final</th>
+                              <th>Profundidade</th>
+                              <th>Posição inicial</th>
+                              <th>Posição final</th>
+                              <th>Captura</th>
+                              <th>Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tripSets.map((x) => (
+                              <tr key={x.id}>
+                                <td><b>#{String(x.setNumber).padStart(2, "0")}</b></td>
+                                <td>{new Date(x.startedAt).toLocaleDateString("pt-BR")}</td>
+                                <td>{new Date(x.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
+                                <td>{x.finishedAt ? new Date(x.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                <td>{x.depthMeters != null ? `${f(x.depthMeters)} m` : "—"}</td>
+                                <td>
+                                  <small>Lat. {dmm(x.startLatitude, true)}</small>
+                                  <small>Long. {dmm(x.startLongitude, false)}</small>
+                                </td>
+                                <td>
+                                  <small>Lat. {dmm(x.endLatitude, true)}</small>
+                                  <small>Long. {dmm(x.endLongitude, false)}</small>
+                                </td>
+                                <td>{f(x.total)} kg</td>
+                                <td>
+                                  <div className="rowactions">
+                                    <button
+                                      className="editbtn"
+                                      onClick={async () => {
+                                        const r = await fetch(`/api/fishing-set?id=${x.id}`);
+                                        setEditing(r.ok ? await r.json() : x);
+                                      }}
+                                    >
+                                      <Pencil /> Editar
+                                    </button>
+                                    <button className="deletebtn" onClick={() => remove("set", x.id)}>
+                                      <Trash2 /> Excluir
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="set-trip-folder-empty">Nenhuma largada registrada nesta viagem.</div>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {!setTrips.length && (
+            <div className="set-trip-folder-empty standalone">Nenhuma viagem com largadas encontrada.</div>
+          )}
         </div>
       )}
       {view === "Capturas" && (
