@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { aisSavedVessels, aisSearchHistory } from "../../../db/schema";
-import { getPanelUser } from "../../../lib/panelAuth";
+import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,8 +101,8 @@ async function ensureTables(db: ReturnType<typeof getDb>) {
   await aisLibrarySchemaPromise;
 }
 
-export async function GET() {
-  const user = await getPanelUser();
+export async function GET(request: NextRequest) {
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
   await ensureTables(db);
@@ -122,7 +122,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getPanelUser();
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
   await ensureTables(db);
@@ -277,7 +277,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const user = await getPanelUser();
+  const user = await getPanelUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
   await ensureTables(db);
