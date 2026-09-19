@@ -2388,3 +2388,315 @@ main.loginpage{
 .weatherbtn{border-color:#2c7167!important;background:#0d3d38!important;color:#70e5c5!important}.weatherbtn svg{width:15px;height:15px}.set-weather-overlay{position:fixed;inset:0;z-index:12000;background:#021015e8;backdrop-filter:blur(8px);display:grid;place-items:center;padding:18px}.set-weather-panel{width:min(1180px,96vw);max-height:94dvh;overflow:auto;border:1px solid #23525a;border-radius:18px;background:#061b21;color:#eafffb;box-shadow:0 25px 80px #000a;padding:18px}.set-weather-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:4px 2px 14px;border-bottom:1px solid #173e46}.set-weather-head small{font-size:8px;font-weight:950;letter-spacing:.12em;color:#36d7ae}.set-weather-head h2{font-size:24px;margin:4px 0 3px}.set-weather-head p{margin:0;color:#83a7ac;font-size:11px}.set-weather-head>button{width:40px;height:40px;border:1px solid #2c5960;border-radius:11px;background:#0a2a31;color:#9fc0c4;display:grid;place-items:center}.set-weather-head>button svg{width:21px;height:21px}.set-weather-loading,.set-weather-error{min-height:300px;display:grid;place-items:center;align-content:center;gap:9px;text-align:center;color:#8eb0b5}.set-weather-loading svg,.set-weather-error>svg{width:36px;height:36px;color:#35d7ae}.set-weather-loading b,.set-weather-error b{font-size:16px;color:#eafffb}.set-weather-error button{margin-top:6px;min-height:40px;padding:0 15px;border:1px solid #2a6a60;border-radius:9px;background:#0d3b36;color:#74e2c2;font-weight:850;display:flex;align-items:center;gap:7px}.set-weather-location{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;margin:14px 0 10px;padding:11px 13px;border:1px solid #24535b;border-radius:12px;background:#08272d}.set-weather-location>svg{width:23px;height:23px;color:#36d7ae}.set-weather-location>div{display:grid;gap:2px}.set-weather-location small{font-size:7px;font-weight:950;letter-spacing:.1em;color:#6f999e}.set-weather-location b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}.set-weather-location span{font-size:8px;color:#72989e}.set-weather-source{padding:5px 8px;border:1px solid #2d7767;border-radius:999px;color:#6fe3c0!important;background:#103d35;font-weight:900;letter-spacing:.05em}.set-weather-source.historical{border-color:#5d6a43;background:#32351d;color:#d5d88b!important}.set-weather-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.set-weather-kpis article{min-width:0;display:grid;grid-template-columns:auto 1fr;grid-template-areas:"icon small" "icon strong" "span span";gap:2px 8px;padding:10px;border:1px solid #1d454d;border-radius:11px;background:#082229}.set-weather-kpis article>svg{grid-area:icon;width:20px;height:20px;color:#39d7ae;margin-top:2px}.set-weather-kpis small{grid-area:small;font-size:7px;font-weight:950;letter-spacing:.08em;color:#6f969c}.set-weather-kpis strong{grid-area:strong;font-size:16px;white-space:nowrap}.set-weather-kpis strong em{font-size:8px;font-style:normal;color:#7ca0a5}.set-weather-kpis span{grid-area:span;font-size:7px;color:#6f959b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.set-weather-analysis{display:flex;gap:11px;margin:10px 0;padding:12px 14px;border:1px solid #286052;border-radius:12px;background:#0b312d}.set-weather-analysis>svg{width:24px;height:24px;color:#4be0b8;flex:none}.set-weather-analysis>div{display:grid;gap:3px}.set-weather-analysis small{font-size:7px;font-weight:950;letter-spacing:.1em;color:#55d5b5}.set-weather-analysis h3{margin:0;font-size:14px}.set-weather-analysis p{margin:0;color:#91b0b4;font-size:10px;line-height:1.5}.set-weather-analysis b{color:#eafffb}.set-weather-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.set-weather-charts>article{min-width:0;border:1px solid #1e454d;border-radius:12px;background:#072127;padding:10px}.set-weather-chart-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px}.set-weather-chart-title small{font-size:7px;font-weight:950;letter-spacing:.1em;color:#5b9694}.set-weather-chart-title h3{font-size:13px;margin:2px 0 0}.set-weather-chart-title>svg{width:18px;height:18px;color:#39d7ae}.set-weather-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.set-weather-actions button{min-height:42px;border-radius:10px;padding:0 14px;font-weight:900;display:flex;align-items:center;gap:7px}.set-weather-actions button svg{width:17px;height:17px}.set-weather-refresh{border:1px solid #2c5960;background:#0b2930;color:#a0c2c5}.set-weather-pdf{border:1px solid #27b690;background:#1fcfa0;color:#05241e}.set-weather-disclaimer{margin:9px 2px 0;color:#638b91;font-size:7px}.app:not(.dark) .set-weather-panel{background:#f7fbfa;color:#173a41}.app:not(.dark) .set-weather-kpis article,.app:not(.dark) .set-weather-charts>article,.app:not(.dark) .set-weather-location{background:#fff}.app:not(.dark) .set-weather-analysis{background:#eefaf6}.app:not(.dark) .set-weather-loading b,.app:not(.dark) .set-weather-error b{color:#173a41}
 @media(max-width:900px){.set-weather-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.set-weather-overlay{padding:0;place-items:stretch}.set-weather-panel{width:100%;max-height:100dvh;border:0;border-radius:0;padding:12px 10px 90px}.set-weather-head{position:sticky;top:0;z-index:5;background:#061b21;padding:7px 2px 10px}.app:not(.dark) .set-weather-head{background:#f7fbfa}.set-weather-head h2{font-size:18px}.set-weather-head p{font-size:9px}.set-weather-location{grid-template-columns:auto minmax(0,1fr);padding:9px}.set-weather-source{grid-column:2/3;justify-self:start}.set-weather-location b{font-size:11px}.set-weather-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.set-weather-kpis article{padding:8px}.set-weather-kpis strong{font-size:14px}.set-weather-charts{grid-template-columns:1fr}.set-weather-charts>article{padding:8px}.set-weather-actions{position:sticky;bottom:0;background:#061b21;padding:8px 0 4px;display:grid;grid-template-columns:1fr}.app:not(.dark) .set-weather-actions{background:#f7fbfa}.set-weather-actions button{justify-content:center}.set-weather-analysis p{font-size:9px}.rowactions .weatherbtn{order:-1}}
+
+
+/* V119 — AIS full-map profissional: mapa como foco principal */
+.content:has(.ais-v119-page){
+  max-width:none!important;
+  width:100%!important;
+  height:calc(100dvh - 72px)!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+.content:has(.ais-v119-page)>.ais-v119-page{
+  width:100%!important;
+  max-width:none!important;
+}
+.ais-v119-page{
+  position:relative!important;
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  padding:0!important;
+  margin:0!important;
+  display:block!important;
+  overflow:hidden!important;
+  background:#061a20!important;
+}
+.ais-v119-page>.ais-topbar,
+.ais-v119-page>.ais-no-credit-warning,
+.ais-v119-page>.ais-name-search-card,
+.ais-v119-page>.ais-library-grid,
+.ais-v119-page>.ais-v67-recent-section,
+.ais-v119-page>.ais-footnote{
+  display:none!important;
+}
+.ais-v119-page .ais-shell.ais-v61-shell{
+  position:relative!important;
+  inset:auto!important;
+  width:100%!important;
+  max-width:none!important;
+  height:100%!important;
+  min-height:100%!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+  background:#071d25;
+}
+.ais-v119-page .ais-map{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+}
+
+/* controles laterais menores */
+.ais-v119-page .ais-map-tools.ais-left-tools{
+  top:14px!important;
+  left:14px!important;
+  gap:5px!important;
+  z-index:65!important;
+}
+.ais-v119-page .ais-map-tools button{
+  width:36px!important;
+  height:36px!important;
+  border-radius:9px!important;
+  background:#061a20e8!important;
+  border-color:#31545d!important;
+  box-shadow:0 5px 18px #00121966!important;
+}
+.ais-v119-page .ais-map-tools button:active{
+  transform:scale(.9);
+  transition:transform .09s ease;
+}
+.ais-v119-page .ais-map-tools svg{width:16px!important;height:16px!important}
+
+/* legenda/fonte no topo direito */
+.ais-v119-page .ais-v119-layerbar{
+  top:14px!important;
+  right:14px!important;
+  left:auto!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:5px!important;
+  z-index:64!important;
+  pointer-events:auto!important;
+}
+.ais-v119-page .ais-v119-layer{
+  height:30px!important;
+  padding:0 9px!important;
+  border:1px solid #2b5964!important;
+  border-radius:8px!important;
+  background:#061a20e9!important;
+  color:#d8edef!important;
+  font-size:8px!important;
+  font-weight:900!important;
+  letter-spacing:.02em!important;
+  box-shadow:0 5px 18px #00121955!important;
+  backdrop-filter:blur(10px);
+}
+.ais-v119-layer i{
+  width:7px;height:7px;border-radius:50%;display:inline-block;box-shadow:0 0 8px currentColor;
+}
+.ais-v119-layer.free{border-color:#3175bf!important;color:#75baff!important}
+.ais-v119-layer.free i{background:#2f8cff}
+.ais-v119-layer.marinesia{border-color:#2b8a69!important;color:#68e4b3!important}
+.ais-v119-layer.marinesia i{background:#24c98c}
+.ais-v119-layer.premium{border-color:#98772f!important;color:#f1cc73!important}
+.ais-v119-layer.premium i{background:#d8aa3f}
+.ais-v119-refresh-free{
+  width:30px;height:30px;border:1px solid #3175bf;border-radius:8px;background:#071d25e9;color:#74baff;display:grid;place-items:center;cursor:pointer;
+}
+.ais-v119-refresh-free:active{transform:scale(.9)}
+.ais-v119-refresh-free svg{width:14px;height:14px}
+
+/* saldo/compra permanece intacto, só em formato compacto sobre o mapa */
+.ais-v119-page .ais-mobile-credit{
+  display:flex;
+  position:absolute;
+  z-index:66;
+  top:58px;
+  left:60px;
+  right:auto;
+  width:auto;
+  min-width:260px;
+  min-height:42px;
+  padding:5px 6px;
+  border:1px solid #315861;
+  border-radius:10px;
+  background:#061b21e9;
+  box-shadow:0 7px 22px #00131d66;
+  backdrop-filter:blur(12px);
+}
+.ais-v119-page .ais-mobile-credit>div{margin-right:auto}
+.ais-v119-page .ais-mobile-credit button{height:29px!important;font-size:7px!important}
+
+/* pastas compactas */
+.ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+  display:grid!important;
+  position:absolute!important;
+  z-index:70!important;
+  left:60px!important;
+  right:auto!important;
+  bottom:14px!important;
+  width:430px!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  gap:4px!important;
+  padding:5px!important;
+  border:1px solid #315861!important;
+  border-radius:12px!important;
+  background:#061b21e8!important;
+  backdrop-filter:blur(14px)!important;
+  box-shadow:0 10px 30px #00131d80!important;
+}
+.ais-v119-page .ais-v119-dock button{
+  position:relative;
+  height:44px!important;
+  min-width:0!important;
+  border:1px solid transparent!important;
+  border-radius:9px!important;
+  background:transparent!important;
+  color:#8aaab1!important;
+  display:grid!important;
+  place-items:center!important;
+  align-content:center!important;
+  gap:1px!important;
+  font:850 7px system-ui!important;
+  cursor:pointer;
+}
+.ais-v119-page .ais-v119-dock button svg{width:16px!important;height:16px!important}
+.ais-v119-page .ais-v119-dock button em{
+  position:absolute;right:5px;top:4px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:#16323a;color:#c1d8dc;display:grid;place-items:center;font:900 6px system-ui;
+}
+.ais-v119-page .ais-v119-dock button.active{background:#103934!important;color:#71e1c5!important;border-color:#2b6e5d!important}
+.ais-v119-page .ais-v119-dock button.premium.active{background:#3b3018!important;color:#f3d37b!important;border-color:#9d7b32!important}
+.ais-v119-page .ais-v119-dock button.area.active{background:#392f19!important;color:#f0cc78!important;border-color:#8c7134!important}
+.ais-v119-page .ais-v119-dock button:active{transform:scale(.94)}
+
+/* painel abre como uma pasta, sem ocupar o mapa todo */
+.ais-v119-page .ais-v70-mobile-panel{
+  display:grid;
+  position:absolute;
+  z-index:69;
+  left:60px;
+  right:auto;
+  bottom:66px;
+  width:min(390px,calc(100% - 90px));
+  max-height:min(58vh,500px);
+  overflow:auto;
+  padding:9px;
+  border:1px solid #315b64;
+  border-radius:12px;
+  background:#061b21f2;
+  backdrop-filter:blur(16px);
+  box-shadow:0 14px 45px #001018aa;
+  gap:8px;
+}
+.ais-v119-page .ais-v70-mobile-panel-head b{font-size:10px!important}
+.ais-v119-page .ais-v70-mobile-panel-head button{width:27px!important;height:27px!important}
+.ais-v119-provider-tabs{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.ais-v119-provider-tabs button{
+  height:34px;border:1px solid #2a5058;border-radius:8px;background:#082229;color:#92afb5;font:900 8px system-ui;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+}
+.ais-v119-provider-tabs button svg{width:14px;height:14px}
+.ais-v119-provider-tabs button.premium.active{border-color:#a78133;background:#3b3018;color:#f4d27b}
+.ais-v119-provider-tabs button.marinesia.active{border-color:#2e8f6c;background:#103b30;color:#74e7b9}
+.ais-v119-page .ais-v70-mobile-input{height:40px!important}
+.ais-v119-page .ais-v70-mobile-input button{height:30px!important}
+.ais-v119-page .ais-v70-mobile-results,
+.ais-v119-page .ais-v70-mobile-list{max-height:300px!important}
+.ais-v119-page .ais-v70-mobile-results>button,
+.ais-v119-page .ais-v70-mobile-list>button,
+.ais-v119-page .ais-mobile-saved-row,
+.ais-v119-page .ais-mobile-history-row{min-height:40px!important;padding:5px!important;border-radius:8px!important}
+.ais-v119-page .ais-mobile-saved-update,
+.ais-v119-page .ais-mobile-history-save{height:30px!important;font-size:7px!important}
+
+/* card do barco: pequeno, próximo ao marcador */
+.ais-v119-page .ais-v95-map-card.ais-v119-map-card{
+  width:232px!important;
+  padding:7px!important;
+  gap:5px!important;
+  border-radius:10px!important;
+  background:#05191ff2!important;
+  box-shadow:0 12px 30px #00111888!important;
+  animation:aisV119BoatPress .18s cubic-bezier(.2,.85,.35,1.18);
+  transform-origin:18px 70%;
+}
+@keyframes aisV119BoatPress{
+  0%{transform:scale(.82);opacity:.45}
+  70%{transform:scale(1.035);opacity:1}
+  100%{transform:scale(1)}
+}
+.ais-v119-page .ais-v119-map-card.premium{border-color:#a98435!important;box-shadow:0 12px 30px #00111888,0 0 0 1px #d8aa3f22 inset!important}
+.ais-v119-page .ais-v119-map-card.marinesia{border-color:#2f8e6d!important;box-shadow:0 12px 30px #00111888,0 0 0 1px #24c98c22 inset!important}
+.ais-v119-page .ais-v119-map-card.free{border-color:#397cc0!important;box-shadow:0 12px 30px #00111888,0 0 0 1px #2f8cff22 inset!important}
+.ais-v119-page .ais-v95-map-card-head b{font-size:10px!important}
+.ais-v119-page .ais-v95-map-card-head small{font-size:6px!important}
+.ais-v119-page .ais-v95-map-card-head button{width:22px!important;height:22px!important;font-size:15px!important}
+.ais-v119-page .ais-v95-map-position{padding:6px 7px!important;border-radius:7px!important}
+.ais-v119-page .ais-v95-map-position>span{font-size:6px!important}
+.ais-v119-page .ais-v95-map-position>strong{font-size:14px!important;line-height:1.05!important}
+.ais-v119-page .ais-v95-map-time{gap:4px!important}
+.ais-v119-page .ais-v95-map-time>span,
+.ais-v119-page .ais-v95-map-mini>span{padding:5px 6px!important;border-radius:7px!important}
+.ais-v119-page .ais-v95-map-time small,
+.ais-v119-page .ais-v95-map-mini small{font-size:5.5px!important}
+.ais-v119-page .ais-v95-map-time b{font-size:9px!important}
+.ais-v119-page .ais-v95-map-mini{gap:4px!important}
+.ais-v119-page .ais-v95-map-mini b{font-size:8px!important}
+.ais-v119-page .ais-v119-map-card.premium .ais-v95-map-position>span{color:#e0b654!important}
+.ais-v119-page .ais-v119-map-card.marinesia .ais-v95-map-position>span{color:#41d59e!important}
+.ais-v119-page .ais-v119-map-card.free .ais-v95-map-position>span{color:#5aa8f8!important}
+
+.ais-v119-page .ais-v61-map-empty{
+  width:220px!important;
+  padding:10px!important;
+  left:50%!important;
+  top:50%!important;
+  transform:translate(-50%,-50%)!important;
+}
+.ais-v119-page .ais-bottom-status{bottom:68px!important}
+
+/* mobile: continua full map, pastas no rodapé e card pequeno */
+@media(max-width:760px){
+  .content:has(.ais-v119-page){height:calc(100dvh - 66px)!important}
+  .ais-v119-page .ais-mobile-credit{
+    display:flex!important;
+    top:58px!important;
+    left:66px!important;
+    right:8px!important;
+    min-width:0!important;
+    width:auto!important;
+  }
+  .ais-v119-page .ais-v119-layerbar{
+    top:8px!important;
+    right:8px!important;
+    max-width:calc(100% - 64px);
+    overflow-x:auto;
+    scrollbar-width:none;
+  }
+  .ais-v119-page .ais-v119-layer{height:28px!important;padding:0 7px!important;font-size:6.5px!important;white-space:nowrap}
+  .ais-v119-page .ais-v119-refresh-free{width:28px;height:28px;flex:0 0 auto}
+  .ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+    left:8px!important;
+    right:8px!important;
+    bottom:calc(8px + env(safe-area-inset-bottom,0px))!important;
+    width:auto!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  }
+  .ais-v119-page .ais-v70-mobile-panel{
+    left:8px!important;
+    right:8px!important;
+    bottom:calc(66px + env(safe-area-inset-bottom,0px))!important;
+    width:auto!important;
+    max-height:min(54dvh,460px)!important;
+  }
+  .ais-v119-page .ais-v119-map-card{
+    left:8px!important;
+    right:auto!important;
+    top:auto!important;
+    bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;
+    width:218px!important;
+  }
+  .ais-v119-page .ais-bottom-status{bottom:calc(66px + env(safe-area-inset-bottom,0px))!important}
+}
+
+@media(max-width:430px){
+  .ais-v119-page .ais-v119-layer.marinesia{display:none!important}
+  .ais-v119-page .ais-v119-map-card{width:205px!important}
+  .ais-v119-page .ais-v95-map-position>strong{font-size:13px!important}
+}
