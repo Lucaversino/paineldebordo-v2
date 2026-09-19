@@ -287,6 +287,9 @@ function sourceInfo(dataSource?: string) {
   if (/terrestrial|t-ais/i.test(source)) {
     return { title: "AIS TERRESTRE", short: "T-AIS", className: "terrestrial" };
   }
+  if (/aprs\.fi|aprsfi/i.test(source)) {
+    return { title: "APRS.fi AIS", short: "APRS", className: "terrestrial" };
+  }
   if (/aisstream/i.test(source)) {
     return { title: "AISStream", short: "STREAM", className: "terrestrial" };
   }
@@ -846,13 +849,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function getVesselPosition(match: VesselMatch, force = false) {
     const id = vesselIdentifier(match);
-    if (!id) {
+    const lookupKey = id || match.name.trim();
+    if (!lookupKey) {
       setStatus("error");
-      setStatusMessage("Este resultado não possui IMO ou MMSI válido.");
+      setStatusMessage("Este resultado não possui nome, IMO ou MMSI válido.");
       return;
     }
 
-    const cached = positionCacheRef.current.get(id);
+    const cached = positionCacheRef.current.get(lookupKey);
     if (cached && !force) {
       setTracked(cached);
       drawVessel(cached);
@@ -866,17 +870,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const operationBrl = formatBrl(operationCredits * creditUnitPrice);
     const operationLabel = force ? "ATUALIZAR OS DADOS" : "CONSULTAR A POSIÇÃO";
     const vesselLabel = match.name || id;
-    const confirmed = window.confirm(
-      `ATENÇÃO — CONSULTA AIS\n\nTem certeza que deseja ${operationLabel.toLowerCase()} de ${vesselLabel}?\n\nCUSTO: ${operationCredits} crédito(s) (${operationBrl})\n\nOs créditos serão descontados somente se uma posição válida for retornada.`
-    );
-    if (!confirmed) {
-      setStatus("idle");
-      setStatusMessage(`${force ? "Atualização" : "Consulta"} cancelada. Nenhum crédito foi descontado.`);
-      return;
+    if (operationCredits > 0) {
+      const confirmed = window.confirm(
+        `ATENÇÃO — CONSULTA AIS\n\nTem certeza que deseja ${operationLabel.toLowerCase()} de ${vesselLabel}?\n\nCUSTO: ${operationCredits} crédito(s) (${operationBrl})\n\nOs créditos serão descontados somente se uma posição válida for retornada.`
+      );
+      if (!confirmed) {
+        setStatus("idle");
+        setStatusMessage(`${force ? "Atualização" : "Consulta"} cancelada. Nenhum crédito foi descontado.`);
+        return;
+      }
     }
 
     setStatus("loading");
-    setStatusMessage(force ? `Atualizando posição — ${aisPricing.updateCredits} crédito(s)...` : `Consultando posição — ${aisPricing.locateCredits} crédito(s)...`);
+    setStatusMessage(
+      operationCredits > 0
+        ? (force ? `Atualizando posição — ${aisPricing.updateCredits} crédito(s)...` : `Consultando posição — ${aisPricing.locateCredits} crédito(s)...`)
+        : (force ? "Atualizando posição gratuitamente via APRS.fi..." : "Consultando posição gratuitamente via APRS.fi...")
+    );
     try {
       const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`);
       const data = await response.json();
@@ -912,7 +922,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         setStatusMessage("A API retornou o barco sem uma posição válida.");
         return;
       }
-      positionCacheRef.current.set(id, vessel);
+      positionCacheRef.current.set(lookupKey, vessel);
       setTracked(vessel);
       drawVessel(vessel);
       centerOn(vessel.lat, vessel.lon, 12);
@@ -947,7 +957,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
 
     setStatus("loading");
-    setStatusMessage("Buscando embarcações pelo nome — a cobrança só acontece quando a posição for obtida...");
+    setStatusMessage("Buscando no APRS.fi pelo nome exato do barco — consulta gratuita...");
     setMatches([]);
     setMatchTotal(0);
     try {
@@ -982,7 +992,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setStatusMessage(`${rows.length} resultados — escolha o barco certo para consultar a posição — ${aisPricing.locateCredits} crédito(s)`);
     } catch {
       setStatus("error");
-      setStatusMessage("Falha de rede ao consultar o Data Docked.");
+      setStatusMessage("Falha de rede ao consultar o APRS.fi.");
     }
   }
 
@@ -1625,8 +1635,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       )}
 
       <div className="ais-footnote ais-v61-footnote">
-        <b>Mapa automático: AISStream → VesselAPI Free → Kpler</b>
-        <span>A camada automática do mapa não usa créditos do usuário e nunca cria embarcações falsas. A pesquisa manual continua separada pela Data Docked e mantém a cobrança configurada. Todas as chaves ficam somente no backend.</span>
+        <b>Busca AIS: APRS.fi · Mapa automático: VesselAPI Free → Kpler</b>
+        <span>
+          A pesquisa manual por nome usa APRS.fi sem descontar créditos. O APRS.fi exige busca por alvo específico, então digite o nome exato do barco. Fonte:{" "}
+          <a href="https://aprs.fi" target="_blank" rel="noreferrer">aprs.fi</a>. A busca por área continua separada e todas as chaves ficam somente no backend.
+        </span>
       </div>
     </section>
   );
