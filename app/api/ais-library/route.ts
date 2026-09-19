@@ -34,6 +34,7 @@ async function ensureTables(db: ReturnType<typeof getDb>) {
     aisLibrarySchemaPromise = (async () => {
       try {
         await db.execute(sql`select 1 from public.ais_saved_vessels limit 1`);
+        await db.execute(sql`alter table public.ais_saved_vessels add column if not exists folder text not null default 'premium'`);
         await db.execute(sql`select credits_used from public.ais_search_history limit 1`);
       } catch (error: any) {
         const text = [error?.code, error?.message, error?.cause?.code, error?.cause?.message].filter(Boolean).join(" ").toUpperCase();
@@ -50,6 +51,7 @@ async function ensureTables(db: ReturnType<typeof getDb>) {
               country text,
               vessel_type text,
               callsign text,
+              folder text not null default 'premium',
               last_latitude double precision,
               last_longitude double precision,
               last_sog double precision,
@@ -141,6 +143,7 @@ export async function POST(request: NextRequest) {
       country: text(source?.country) || null,
       vesselType: text(source?.vesselType || source?.typeSpecific || source?.shipType) || null,
       callsign: text(source?.callsign) || null,
+      folder: text(body?.folder || source?.folder) || "premium",
       lastLatitude: numberOrNull(source?.lat),
       lastLongitude: numberOrNull(source?.lon),
       lastSog: numberOrNull(source?.sog),
@@ -162,6 +165,53 @@ export async function POST(request: NextRequest) {
       })
       .returning();
     return NextResponse.json({ saved: row });
+  }
+
+  if (action === "save-area") {
+    const rawVessels = Array.isArray(body?.vessels) ? body.vessels : [];
+    const vessels = rawVessels.slice(0, 250);
+    const now = new Date().toISOString();
+    let savedCount = 0;
+
+    for (const source of vessels) {
+      const key = vesselKey(source);
+      const lat = numberOrNull(source?.lat);
+      const lon = numberOrNull(source?.lon);
+      if (!key || lat == null || lon == null) continue;
+
+      const values = {
+        ownerId: user.id,
+        vesselKey: key,
+        name: text(source?.name) || text(source?.mmsi) || "Embarcação",
+        mmsi: text(source?.mmsi) || null,
+        imo: text(source?.imo) || null,
+        country: text(source?.country) || null,
+        vesselType: text(source?.vesselType || source?.typeSpecific || source?.shipType) || null,
+        callsign: text(source?.callsign) || null,
+        folder: "area50",
+        lastLatitude: lat,
+        lastLongitude: lon,
+        lastSog: numberOrNull(source?.sog),
+        lastCog: numberOrNull(source?.cog),
+        lastHeading: numberOrNull(source?.heading),
+        lastDestination: text(source?.destination) || null,
+        lastStatus: text(source?.navStatusText) || null,
+        lastDataSource: text(source?.dataSource) || "Premium 50 km",
+        lastPositionReceived: text(source?.positionReceived) || null,
+        lastUpdateTime: text(source?.updateTime) || null,
+        updatedAt: now,
+      };
+
+      await db.insert(aisSavedVessels)
+        .values({ ...values, savedAt: now })
+        .onConflictDoUpdate({
+          target: [aisSavedVessels.ownerId, aisSavedVessels.vesselKey],
+          set: values,
+        });
+      savedCount += 1;
+    }
+
+    return NextResponse.json({ ok: true, savedCount });
   }
 
   if (action === "history") {
@@ -189,6 +239,7 @@ export async function POST(request: NextRequest) {
       dataSource: text(vessel?.dataSource) || null,
       positionReceived: text(vessel?.positionReceived) || null,
       updateTime: text(vessel?.updateTime) || null,
+      creditsUsed: Math.max(0, Math.round(numberOrNull(body?.creditsUsed) ?? 0)),
       queriedAt: now,
     }).returning();
 
