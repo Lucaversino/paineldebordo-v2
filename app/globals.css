@@ -3303,3 +3303,92 @@ main.loginpage{
     border:1px solid #82652d;
   }
 }
+
+
+/* V137 — carta de pesca DHN sobreposta ao AIS */
+.ais-left-tools .ais-v137-chart-toggle{
+  width:auto!important;
+  min-width:58px!important;
+  padding:0 8px!important;
+  gap:5px!important;
+  border-color:#786b3f!important;
+  background:#2a2514!important;
+  color:#e6d58f!important;
+  font:950 7px system-ui!important;
+}
+.ais-left-tools .ais-v137-chart-toggle.active{
+  border-color:#d6b84d!important;
+  background:#4b3d16!important;
+  color:#fff0aa!important;
+  box-shadow:0 0 0 1px #d6b84d55 inset;
+}
+.ais-left-tools .ais-v137-chart-toggle span{display:inline!important;white-space:nowrap}
+.ais-left-tools .ais-v137-chart-toggle svg{width:15px!important;height:15px!important}
+
+.ais-v137-chart-panel{
+  position:absolute;
+  z-index:48;
+  left:72px;
+  top:82px;
+  width:min(310px,calc(100% - 96px));
+  padding:10px;
+  border:1px solid #6c613a;
+  border-radius:13px;
+  background:#0b1c20f2;
+  color:#eefaf7;
+  backdrop-filter:blur(14px);
+  box-shadow:0 14px 38px #001018aa;
+  display:grid;
+  gap:9px;
+}
+.ais-v137-chart-head{display:flex;align-items:center;justify-content:space-between}
+.ais-v137-chart-head>span{display:flex;align-items:center;gap:7px}
+.ais-v137-chart-head svg{width:17px;height:17px;color:#e0c76d}
+.ais-v137-chart-head b{font-size:10px;letter-spacing:.04em}
+.ais-v137-chart-head>button{
+  width:28px;height:28px;border:1px solid #35545a;border-radius:8px;
+  background:#092329;color:#aac5ca;font-size:18px;line-height:1
+}
+.ais-v137-auto{
+  height:38px;border:1px solid #3c5a5f;border-radius:9px;background:#0a262c;
+  color:#9db8bd;font:900 7px system-ui;display:flex;align-items:center;justify-content:center;gap:6px
+}
+.ais-v137-auto.active{border-color:#4f947b;background:#10382e;color:#83e8c8}
+.ais-v137-auto svg{width:14px;height:14px}
+.ais-v137-chart-select,.ais-v137-opacity{display:grid;gap:5px}
+.ais-v137-chart-select>span,.ais-v137-opacity>span{font:800 7px system-ui;color:#8da9ae}
+.ais-v137-chart-select select{
+  width:100%;height:38px;border:1px solid #38555b;border-radius:9px;
+  background:#06191f;color:#e7f8f4;padding:0 8px;font:800 8px system-ui
+}
+.ais-v137-opacity input{width:100%;accent-color:#d3b64e}
+.ais-v137-chart-panel>small{font-size:6.5px;color:#7f999e;line-height:1.4}
+.ais-v137-off{
+  height:34px;border:1px solid #6d4448;border-radius:8px;background:#361d20;
+  color:#f2a4aa;font:900 7px system-ui
+}
+.ais-v119-layer.chart{border-color:#7c6a2e!important;background:#352c15!important;color:#f1d778!important}
+.ais-v119-layer.chart i{background:#d8b849!important}
+
+@media(max-width:760px){
+  .ais-left-tools .ais-v137-chart-toggle{
+    min-width:54px!important;
+    height:36px!important;
+    padding:0 6px!important;
+    flex-direction:column!important;
+    gap:1px!important;
+    font-size:5.8px!important;
+    line-height:1!important;
+  }
+  .ais-left-tools .ais-v137-chart-toggle svg{width:14px!important;height:14px!important}
+  .ais-v137-chart-panel{
+    left:8px!important;
+    right:8px!important;
+    top:auto!important;
+    bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;
+    width:auto!important;
+    max-height:44dvh;
+    overflow:auto;
+    padding:9px!important;
+  }
+}
