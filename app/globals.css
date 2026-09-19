@@ -2329,3 +2329,45 @@ main.loginpage{
   .coord-free-input>input{padding-right:38px!important}
   .coord-degree{right:13px;font-size:20px}
 }
+
+
+/* V115 — alinha a posição atual no mobile */
+@media(max-width:760px){
+  .position-current-head{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    align-items:start!important;
+    gap:10px!important;
+    width:100%!important;
+  }
+  .position-current-coordinates{
+    width:100%!important;
+    min-width:0!important;
+    overflow:visible!important;
+  }
+  .position-current-coordinates>small{
+    display:block!important;
+    margin-bottom:6px!important;
+  }
+  .position-nautical-label.position-nautical-main{
+    display:block!important;
+    width:100%!important;
+    margin:0!important;
+    font-size:clamp(16px,4.6vw,21px)!important;
+    line-height:1.15!important;
+    letter-spacing:.01em!important;
+    white-space:nowrap!important;
+    overflow:visible!important;
+    text-overflow:clip!important;
+  }
+  .position-current-actions{
+    width:100%!important;
+    margin-top:2px!important;
+  }
+}
+@media(max-width:390px){
+  .position-nautical-label.position-nautical-main{
+    font-size:15px!important;
+    letter-spacing:0!important;
+  }
+}
