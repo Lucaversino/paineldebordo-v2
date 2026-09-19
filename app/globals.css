@@ -3747,3 +3747,21 @@ main.loginpage{
     max-height: 34vh;
   }
 }
+
+
+/* V140 — AIS: pastas desktop + 3 botões no dock */
+.ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+}
+@media(min-width:761px){
+  .ais-v119-page .ais-v70-mobile-panel{
+    display:grid!important;
+    pointer-events:auto!important;
+    z-index:90!important;
+  }
+}
+@media(max-width:760px){
+  .ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+}
