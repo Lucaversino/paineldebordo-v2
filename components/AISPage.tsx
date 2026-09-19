@@ -1159,479 +1159,251 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     showVesselFromLibrary(historyItemToVessel(item), `${item.name} aberto do histórico — 0 créditos`);
   }
 
-  async function getVesselPosition(match: VesselMatch, force = false, provider: SearchProvider = searchProvider) {
-    const id = vesselIdentifier(match);
-    const lookupKey = `${provider}:${id || match.name.trim()}`;
-    if (!lookupKey) {
-      setStatus("error");
-      setStatusMessage("Este resultado não possui nome, IMO ou MMSI válido.");
+  function vesselFromApi(raw: any, match: VesselMatch): Vessel | null {
+    const lat = Number(raw?.lat);
+    const lon = Number(raw?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return {
+      mmsi: String(raw?.mmsi || match.mmsi || ""),
+      imo: String(raw?.imo || match.imo || ""),
+      name: raw?.name || match.name,
+      lat,
+      lon,
+      sog: raw?.sog == null ? null : Number(raw.sog),
+      cog: raw?.cog == null ? null : Number(raw.cog),
+      heading: raw?.heading == null ? null : Number(raw.heading),
+      draught: raw?.draught || "",
+      destination: raw?.destination || "",
+      lastPort: raw?.lastPort || "",
+      callsign: raw?.callsign || match.callsign || "",
+      vesselType: raw?.vesselType || match.typeSpecific || match.shipType || "",
+      navStatusText: raw?.navStatusText || "",
+      dataSource: raw?.dataSource || "",
+      positionReceived: raw?.positionReceived || "",
+      updateTime: raw?.updateTime || "",
+      receivedAt: Number(raw?.receivedAt) || Date.now(),
+    };
+  }
+
+  async function applyLocatedVessel(vessel: Vessel, creditsUsed: number, folder: string, message: string) {
+    trackedRef.current = vessel;
+    setTracked(vessel);
+    drawVessel(vessel);
+    centerOn(vessel.lat, vessel.lon, 12);
+    window.setTimeout(() => anchorCardForVessel(vessel), 240);
+    setLastFetch(Date.now());
+    setStatus("ready");
+    setStatusMessage(message);
+    await Promise.all([
+      recordHistory(vessel, creditsUsed),
+      saveVessel(vessel, folder, true),
+    ]);
+  }
+
+  async function searchFreeVessel() {
+    const query = freeSearchQuery.trim();
+    setFreeSearchError("");
+    setFreeSearchResults([]);
+
+    if (query.length < 2) {
+      setFreeSearchError("Digite nome, MMSI ou IMO.");
       return;
     }
 
-    const cached = positionCacheRef.current.get(lookupKey);
-    if (cached && !force) {
-      trackedRef.current = cached;
-      setTracked(cached);
-      drawVessel(cached);
-      centerOn(cached.lat, cached.lon, 12);
-      window.setTimeout(() => anchorCardForVessel(cached), 220);
-      setStatus("ready");
-      setStatusMessage(`${cached.name || "Embarcação"} localizada do cache — 0 créditos`);
-      return;
-    }
-
-    const isFreeProvider = provider === "marinesia" || provider === "shipfinder";
-    const operationCredits = isFreeProvider ? 0 : (force ? aisPricing.updateCredits : aisPricing.locateCredits);
-    const operationBrl = formatBrl(operationCredits * creditUnitPrice);
-    const operationLabel = force ? "ATUALIZAR OS DADOS" : "CONSULTAR A POSIÇÃO";
-    const vesselLabel = match.name || id;
-    if (operationCredits > 0) {
-      const confirmed = window.confirm(
-        `ATENÇÃO — CONSULTA AIS\n\nTem certeza que deseja ${operationLabel.toLowerCase()} de ${vesselLabel}?\n\nCUSTO: ${operationCredits} crédito(s) (${operationBrl})\n\nOs créditos serão descontados somente se uma posição válida for retornada.`
-      );
-      if (!confirmed) {
-        setStatus("idle");
-        setStatusMessage(`${force ? "Atualização" : "Consulta"} cancelada. Nenhum crédito foi descontado.`);
-        return;
-      }
-    }
-
-    setStatus("loading");
-    setStatusMessage(
-      operationCredits > 0
-        ? (force ? `Atualizando posição — ${aisPricing.updateCredits} crédito(s)...` : `Consultando posição — ${aisPricing.locateCredits} crédito(s)...`)
-        : provider === "shipfinder"
-          ? (force ? "Atualizando posição pela ShipFinder..." : "Consultando posição pela ShipFinder...")
-          : (force ? "Atualizando AIS Free..." : "Consultando AIS Free · Marinesia/fallback...")
-    );
+    setFreeSearchLoading(true);
     try {
-      const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}&provider=${encodeURIComponent(provider)}`);
-      const data = await response.json();
+      const response = await aisFetch(`/api/ais-free?action=search&q=${encodeURIComponent(query)}`);
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (provider === "marinesia" && response.status === 429) {
-          const retrySeconds = Number(data?.retryAfterSeconds || 1800);
-          setMarinesiaCooldownUntil(writeMarinesiaCooldown(retrySeconds));
-        }
-        if (response.status === 503) setStatus("config");
-        else setStatus("error");
-        setStatusMessage(response.status === 401 ? "Sua sessão expirou. Entre novamente no painel e tente de novo." : (data?.error || "Não foi possível localizar a embarcação."));
-        return;
-      }
-      const raw = data?.vessel;
-      const vessel: Vessel = {
-        mmsi: String(raw?.mmsi || match.mmsi || ""),
-        imo: String(raw?.imo || match.imo || ""),
-        name: raw?.name || match.name,
-        lat: Number(raw?.lat),
-        lon: Number(raw?.lon),
-        sog: raw?.sog == null ? null : Number(raw.sog),
-        cog: raw?.cog == null ? null : Number(raw.cog),
-        heading: raw?.heading == null ? null : Number(raw.heading),
-        draught: raw?.draught || "",
-        destination: raw?.destination || "",
-        lastPort: raw?.lastPort || "",
-        callsign: raw?.callsign || match.callsign || "",
-        vesselType: raw?.vesselType || match.typeSpecific || match.shipType || "",
-        navStatusText: raw?.navStatusText || "",
-        dataSource: raw?.dataSource || "",
-        positionReceived: raw?.positionReceived || "",
-        updateTime: raw?.updateTime || "",
-        receivedAt: Number(raw?.receivedAt) || Date.now(),
-      };
-      if (!Number.isFinite(vessel.lat) || !Number.isFinite(vessel.lon)) {
-        setStatus("error");
-        setStatusMessage("A API retornou o barco sem uma posição válida.");
-        return;
-      }
-      positionCacheRef.current.set(lookupKey, vessel);
-      trackedRef.current = vessel;
-      setTracked(vessel);
-      drawVessel(vessel);
-      centerOn(vessel.lat, vessel.lon, 12);
-      window.setTimeout(() => anchorCardForVessel(vessel), 240);
-      setLastFetch(Date.now());
-      setStatus("ready");
-      setStatusMessage(`${vessel.name || "Embarcação"} localizada`);
-      await Promise.all([
-        refreshCredits(),
-        recordHistory(vessel, Number(data?.creditCost) || operationCredits),
-        saveVessel(vessel, provider === "marinesia" ? "marinesia" : provider === "shipfinder" ? "shipfinder" : "premium", true),
-      ]);
-    } catch {
-      setStatus("error");
-      setStatusMessage("Falha de rede ao consultar a posição AIS.");
-    }
-  }
-
-  function unifiedResultKey(match: VesselMatch) {
-    const mmsi = String(match.mmsi || "").replace(/\D/g, "");
-    const imo = String(match.imo || "").replace(/\D/g, "");
-    const name = String(match.name || "").trim().toLowerCase().replace(/\s+/g, " ");
-    if (mmsi) return `mmsi:${mmsi}`;
-    if (imo && imo !== "0") return `imo:${imo}`;
-    return `name:${name}`;
-  }
-
-  function sourceName(provider: SearchProvider) {
-    if (provider === "premium") return "Data Docked";
-    if (provider === "shipfinder") return "ShipFinder";
-    return "Marinesia";
-  }
-
-  async function searchAllProviders() {
-    const clean = unifiedQuery.trim();
-    if (clean.length < 2) {
-      setStatus("error");
-      setStatusMessage("Digite nome, MMSI ou IMO.");
-      return;
-    }
-
-    setUnifiedLoading(true);
-    setStatus("loading");
-    setStatusMessage("Buscando nas fontes AIS disponíveis...");
-    setUnifiedResults([]);
-    setMatches([]);
-    setMatchTotal(0);
-
-    try {
-      const digits = clean.replace(/\D/g, "");
-      if (digits.length === 7 || digits.length === 9) {
-        const providers: SearchProvider[] = [];
-        if (freeSearchConfigured) providers.push("marinesia");
-        if (shipFinderConfigured) providers.push("shipfinder");
-        if (premiumConfigured) providers.push("premium");
-
-        const match: VesselMatch = {
-          name: digits.length === 9 ? `MMSI ${digits}` : `IMO ${digits}`,
-          mmsi: digits.length === 9 ? digits : "",
-          imo: digits.length === 7 ? digits : "",
-          country: "",
-          countryIso: "",
-          shipType: "AIS",
-          typeSpecific: "",
-          callsign: "",
-        };
-
-        setUnifiedResults(providers.length ? [{ key: unifiedResultKey(match), match, providers }] : []);
-        setStatus(providers.length ? "ready" : "idle");
-        setStatusMessage("");
-        return;
-      }
-
-      const requests: Array<Promise<{ provider: SearchProvider; rows: VesselMatch[] }>> = [];
-
-      if (premiumConfigured) {
-        requests.push((async () => {
-          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=premium`);
-          const data = await response.json().catch(() => ({}));
-          return { provider: "premium" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
-        })());
-      }
-
-      if (freeSearchConfigured) {
-        requests.push((async () => {
-          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=marinesia`);
-          const data = await response.json().catch(() => ({}));
-          return { provider: "marinesia" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
-        })());
-      }
-
-      if (shipFinderConfigured) {
-        requests.push((async () => {
-          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=shipfinder`);
-          const data = await response.json().catch(() => ({}));
-          return { provider: "shipfinder" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
-        })());
-      }
-
-      const settled = await Promise.allSettled(requests);
-      const merged = new Map<string, UnifiedSearchResult>();
-
-      settled.forEach((result) => {
-        if (result.status !== "fulfilled") return;
-        const { provider, rows } = result.value;
-        rows.forEach((row) => {
-          const key = unifiedResultKey(row);
-          if (!key || key === "name:") return;
-          const current = merged.get(key);
-          if (!current) {
-            merged.set(key, { key, match: row, providers: [provider] });
-            return;
-          }
-
-          const providers = current.providers.includes(provider)
-            ? current.providers
-            : [...current.providers, provider];
-
-          merged.set(key, {
-            key,
-            providers,
-            match: {
-              ...current.match,
-              name: current.match.name || row.name,
-              mmsi: current.match.mmsi || row.mmsi,
-              imo: current.match.imo || row.imo,
-              country: current.match.country || row.country,
-              countryIso: current.match.countryIso || row.countryIso,
-              shipType: current.match.shipType || row.shipType,
-              typeSpecific: current.match.typeSpecific || row.typeSpecific,
-              callsign: current.match.callsign || row.callsign,
-            },
-          });
-        });
-      });
-
-      const normalized = Array.from(merged.values()).sort((a, b) => {
-        const aFree = a.providers.some((p) => p !== "premium") ? 0 : 1;
-        const bFree = b.providers.some((p) => p !== "premium") ? 0 : 1;
-        if (aFree !== bFree) return aFree - bFree;
-        return String(a.match.name || "").localeCompare(String(b.match.name || ""));
-      });
-
-      setUnifiedResults(normalized.slice(0, 12));
-      setStatus(normalized.length ? "ready" : "idle");
-      setStatusMessage("");
-    } catch {
-      setStatus("error");
-      setStatusMessage("Falha ao consultar as fontes AIS.");
-    } finally {
-      setUnifiedLoading(false);
-    }
-  }
-
-  async function openUnifiedResult(result: UnifiedSearchResult) {
-    const freeProvider = result.providers.includes("shipfinder")
-      ? "shipfinder"
-      : result.providers.includes("marinesia")
-        ? "marinesia"
-        : null;
-    const provider: SearchProvider = freeProvider || "premium";
-    setSearchProvider(provider);
-    await getVesselPosition(result.match, false, provider);
-    setMobilePanel(null);
-  }
-
-  async function searchByName(event?: FormEvent, providerOverride?: SearchProvider, queryOverride?: string) {
-    event?.preventDefault();
-    const provider = providerOverride || searchProvider;
-    const cleanName = (queryOverride ?? nameQuery).trim();
-
-    if (provider === "marinesia") {
-      if (!cleanName) {
-        await searchArea("marinesia");
-        return;
-      }
-
-      const digits = cleanName.replace(/\D/g, "");
-      if (digits.length === 7 || digits.length === 9) {
-        const match: VesselMatch = {
-          name: digits.length === 9 ? `MMSI ${digits}` : `IMO ${digits}`,
-          mmsi: digits.length === 9 ? digits : "",
-          imo: digits.length === 7 ? digits : "",
-          country: "",
-          countryIso: "",
-          shipType: "AIS Free",
-          typeSpecific: "Marinesia",
-          callsign: "",
-        };
-        setMatches([]);
-        setMatchTotal(0);
-        await getVesselPosition(match, false, "marinesia");
-        return;
-      }
-
-      if (cleanName.length < 2) {
-        setStatus("error");
-        setStatusMessage("Digite o nome, MMSI/IMO ou deixe vazio para buscar barcos na região.");
-        return;
-      }
-
-      setStatus("loading");
-      setStatusMessage("AIS Free: procurando o nome do barco...");
-      setMatches([]);
-      setMatchTotal(0);
-      try {
-        const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=${encodeURIComponent(provider)}`);
-        const data = await response.json();
-        if (!response.ok) {
-          setStatus(response.status === 503 ? "config" : "error");
-          setStatusMessage(data?.error || "Falha ao buscar o nome no AIS Free.");
-          return;
-        }
-        const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
-        setMatches(rows);
-        setMatchTotal(Number(data?.total) || rows.length);
-
-        if (!rows.length) {
-          setStatusMessage("Nome não encontrado. Buscando barcos AIS Free na região...");
-          await searchArea("marinesia");
-          return;
-        }
-        if (rows.length === 1) {
-          await getVesselPosition(rows[0], false, "marinesia");
-          return;
-        }
-        setStatus("ready");
-        setStatusMessage(`${rows.length} resultados AIS Free — escolha o barco para mostrar no mapa · 0 créditos`);
-        return;
-      } catch {
-        setStatusMessage("Busca por nome indisponível. Tentando AIS Free na região...");
-        await searchArea("marinesia");
-        return;
-      }
-    }
-
-    if (provider === "shipfinder") {
-      if (!shipFinderConfigured) {
-        setStatus("config");
-        setStatusMessage("ShipFinder ainda sem chave ativa. Configure SHIPFINDER_API_KEY na Vercel.");
-        return;
-      }
-
-      if (cleanName.length < 2) {
-        setStatus("error");
-        setStatusMessage("Digite nome, MMSI ou IMO para pesquisar na ShipFinder.");
-        return;
-      }
-
-      const shipDigits = cleanName.replace(/\D/g, "");
-      if (shipDigits.length === 9) {
-        const match: VesselMatch = {
-          name: `MMSI ${shipDigits}`,
-          mmsi: shipDigits,
-          imo: "",
-          country: "",
-          countryIso: "",
-          shipType: "ShipFinder AIS",
-          typeSpecific: "ShipFinder",
-          callsign: "",
-        };
-        setMatches([]);
-        setMatchTotal(0);
-        await getVesselPosition(match, false, "shipfinder");
-        return;
-      }
-
-      const cacheKey = `shipfinder:${cleanName.toLowerCase().replace(/\s+/g, " ")}`;
-      const cached = nameCacheRef.current.get(cacheKey);
-      if (cached) {
-        setMatches(cached);
-        setMatchTotal(cached.length);
-        setStatus("ready");
-        setStatusMessage(`${cached.length} resultado(s) ShipFinder do cache`);
-        if (cached.length === 1) await getVesselPosition(cached[0], false, "shipfinder");
-        return;
-      }
-
-      setStatus("loading");
-      setStatusMessage("ShipFinder: pesquisando embarcação...");
-      setMatches([]);
-      setMatchTotal(0);
-      try {
-        const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=shipfinder`);
-        const data = await response.json();
-        if (!response.ok) {
-          setStatus(response.status === 503 ? "config" : "error");
-          setStatusMessage(data?.error || "Falha na busca ShipFinder.");
-          return;
-        }
-        const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
-        nameCacheRef.current.set(cacheKey, rows);
-        setMatches(rows);
-        setMatchTotal(Number(data?.total) || rows.length);
-
-        if (!rows.length) {
-          setStatus("idle");
-          setStatusMessage("");
-          return;
-        }
-        if (rows.length === 1) {
-          await getVesselPosition(rows[0], false, "shipfinder");
-          return;
-        }
-        setStatus("ready");
-        setStatusMessage(`${rows.length} resultados ShipFinder — escolha o barco para mostrar no mapa`);
-        return;
-      } catch {
-        setStatus("error");
-        setStatusMessage("Falha de rede ao consultar a ShipFinder.");
-        return;
-      }
-    }
-
-    if (cleanName.length < 2) {
-      setStatus("error");
-      setStatusMessage("Digite pelo menos 2 caracteres do nome do barco.");
-      return;
-    }
-
-    const premiumDigits = cleanName.replace(/\D/g, "");
-    if (premiumDigits.length === 7 || premiumDigits.length === 9) {
-      const match: VesselMatch = {
-        name: premiumDigits.length === 9 ? `MMSI ${premiumDigits}` : `IMO ${premiumDigits}`,
-        mmsi: premiumDigits.length === 9 ? premiumDigits : "",
-        imo: premiumDigits.length === 7 ? premiumDigits : "",
-        country: "",
-        countryIso: "",
-        shipType: "AIS Premium",
-        typeSpecific: "Data Docked",
-        callsign: "",
-      };
-      setMatches([]);
-      setMatchTotal(0);
-      await getVesselPosition(match, false, "premium");
-      return;
-    }
-
-    const cacheKey = cleanName.toLowerCase().replace(/\s+/g, " ");
-    const cached = nameCacheRef.current.get(cacheKey);
-    if (cached) {
-      setMatches(cached);
-      setMatchTotal(cached.length);
-      setStatus("ready");
-      setStatusMessage(`${cached.length} resultado(s) do cache — 0 créditos`);
-      if (cached.length === 1) await getVesselPosition(cached[0], false, "premium");
-      return;
-    }
-
-    setStatus("loading");
-    setStatusMessage("Buscando o barco pelo nome — a cobrança ocorre somente ao abrir a posição Premium...");
-    setMatches([]);
-    setMatchTotal(0);
-    try {
-      const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=${encodeURIComponent(provider)}`);
-      const data = await response.json();
-      if (!response.ok) {
-        if (response.status === 503) setStatus("config");
-        else setStatus("error");
-        setStatusMessage(response.status === 401 ? "Sua sessão expirou. Entre novamente no painel e tente a busca AIS." : (data?.error || "Falha ao buscar embarcação pelo nome."));
+        setFreeSearchError(
+          response.status === 401
+            ? "Sua sessão expirou. Entre novamente."
+            : response.status === 504
+              ? "A busca FREE demorou para responder. Tente novamente."
+              : (data?.error || "Busca FREE indisponível.")
+        );
         return;
       }
 
       const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
-      nameCacheRef.current.set(cacheKey, rows);
-      setMatches(rows);
-      setMatchTotal(Number(data?.total) || rows.length);
-      await refreshCredits();
-
-      if (!rows.length) {
-        setStatus("idle");
-        setStatusMessage("");
-        return;
-      }
-
-      if (rows.length === 1) {
-        setStatusMessage(`1 barco encontrado — consultando posição (${aisPricing.locateCredits} crédito(s))...`);
-        await getVesselPosition(rows[0], false, "premium");
-        return;
-      }
-
-      setStatus("ready");
-      setStatusMessage(`${rows.length} resultados — escolha o barco certo para consultar a posição — ${aisPricing.locateCredits} crédito(s)`);
+      setFreeSearchResults(rows);
+      setStatus(rows.length ? "ready" : "idle");
+      setStatusMessage(rows.length ? `${rows.length} resultado(s) na busca FREE` : "");
     } catch {
-      setStatus("error");
-      setStatusMessage("Falha de rede ao consultar o AIS Premium.");
+      setFreeSearchError("Falha de rede na busca FREE.");
+    } finally {
+      setFreeSearchLoading(false);
     }
+  }
+
+  async function openFreeResult(match: VesselMatch, force = false) {
+    const id = vesselIdentifier(match);
+    const provider = match.freeProvider || "aprsfi";
+    setFreeSearchError("");
+    setFreeSearchLoading(true);
+
+    try {
+      const response = await aisFetch(
+        `/api/ais-free?action=position&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&provider=${encodeURIComponent(provider)}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setFreeSearchError(
+          response.status === 504
+            ? "A posição FREE demorou para responder."
+            : (data?.error || "Posição FREE indisponível.")
+        );
+        return;
+      }
+
+      const vessel = vesselFromApi(data?.vessel, match);
+      if (!vessel) {
+        setFreeSearchError("A fonte FREE retornou dados sem posição válida.");
+        return;
+      }
+
+      await applyLocatedVessel(
+        vessel,
+        0,
+        provider === "shipfinder" ? "shipfinder" : "marinesia",
+        `${vessel.name || "Embarcação"} localizada no AIS FREE`,
+      );
+      setFreeSearchResults([]);
+      if (!force) setFreeSearchQuery(vessel.name || freeSearchQuery);
+    } catch {
+      setFreeSearchError("Falha de rede ao consultar a posição FREE.");
+    } finally {
+      setFreeSearchLoading(false);
+    }
+  }
+
+  async function searchPremiumVessel() {
+    const query = premiumSearchQuery.trim();
+    setPremiumSearchError("");
+    setPremiumSearchResults([]);
+
+    if (query.length < 2) {
+      setPremiumSearchError("Digite nome, MMSI ou IMO.");
+      return;
+    }
+
+    setPremiumSearchLoading(true);
+    try {
+      const response = await aisFetch(`/api/ais-premium?action=search&q=${encodeURIComponent(query)}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 402) {
+          if (Number.isFinite(Number(data?.balance))) setCredits(Number(data.balance));
+          setPremiumSearchError(`Saldo insuficiente para a busca Premium. Necessário: ${Number(data?.required || aisPricing.locateCredits)} crédito(s).`);
+        } else {
+          setPremiumSearchError(
+            response.status === 401
+              ? "Sua sessão expirou. Entre novamente."
+              : response.status === 504
+                ? "A busca PREMIUM demorou para responder. Tente novamente."
+                : (data?.error || "Busca PREMIUM indisponível.")
+          );
+        }
+        return;
+      }
+
+      const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
+      setPremiumSearchResults(rows);
+      setStatus(rows.length ? "ready" : "idle");
+      setStatusMessage(rows.length ? `${rows.length} resultado(s) na busca PREMIUM` : "");
+      await refreshCredits();
+    } catch {
+      setPremiumSearchError("Falha de rede na busca PREMIUM.");
+    } finally {
+      setPremiumSearchLoading(false);
+    }
+  }
+
+  async function openPremiumResult(match: VesselMatch, force = false) {
+    const id = vesselIdentifier(match);
+    const operationCredits = force ? aisPricing.updateCredits : aisPricing.locateCredits;
+    const operationBrl = formatBrl(operationCredits * creditUnitPrice);
+    const confirmed = window.confirm(
+      `ATENÇÃO — AIS PREMIUM\n\n${force ? "Atualizar" : "Consultar"} ${match.name || id}?\n\nCUSTO: ${operationCredits} crédito(s) (${operationBrl})\n\nOs créditos serão descontados somente se uma posição válida for retornada.`
+    );
+    if (!confirmed) return;
+
+    setPremiumSearchError("");
+    setPremiumSearchLoading(true);
+
+    try {
+      const response = await aisFetch(
+        `/api/ais-premium?action=position&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 402) {
+          if (Number.isFinite(Number(data?.balance))) setCredits(Number(data.balance));
+          setPremiumSearchError(`Saldo insuficiente. Necessário: ${Number(data?.required || operationCredits)} crédito(s).`);
+        } else {
+          setPremiumSearchError(
+            response.status === 504
+              ? "A consulta PREMIUM demorou para responder."
+              : (data?.error || "Posição PREMIUM indisponível.")
+          );
+        }
+        return;
+      }
+
+      const vessel = vesselFromApi(data?.vessel, match);
+      if (!vessel) {
+        setPremiumSearchError("A fonte PREMIUM retornou dados sem posição válida.");
+        return;
+      }
+
+      const charged = Number(data?.creditCost) || 0;
+      if (Number.isFinite(Number(data?.balance))) setCredits(Number(data.balance));
+      await applyLocatedVessel(
+        vessel,
+        charged,
+        "premium",
+        `${vessel.name || "Embarcação"} localizada no AIS PREMIUM`,
+      );
+      setPremiumSearchResults([]);
+      if (!force) setPremiumSearchQuery(vessel.name || premiumSearchQuery);
+      await refreshCredits();
+    } catch {
+      setPremiumSearchError("Falha de rede ao consultar a posição PREMIUM.");
+    } finally {
+      setPremiumSearchLoading(false);
+    }
+  }
+
+  async function refreshSavedVessel(item: SavedVessel) {
+    const match = savedItemToMatch(item);
+    if ((item.folder || "premium") === "premium" || item.folder === "area50") {
+      await openPremiumResult(match, true);
+      return;
+    }
+
+    match.freeProvider = item.folder === "shipfinder" ? "shipfinder" : "aprsfi";
+    await openFreeResult(match, true);
+  }
+
+  async function refreshTrackedVessel() {
+    if (!tracked) return;
+    const match: VesselMatch = {
+      name: tracked.name || "",
+      mmsi: tracked.mmsi,
+      imo: tracked.imo || "",
+      country: "",
+      countryIso: "",
+      shipType: tracked.vesselType || "",
+      typeSpecific: tracked.vesselType || "",
+      callsign: tracked.callsign || "",
+    };
+    const source = String(tracked.dataSource || "").toLowerCase();
+    if (source.includes("data docked") || source.includes("premium 50 km")) {
+      await openPremiumResult(match, true);
+      return;
+    }
+    match.freeProvider = source.includes("shipfinder") ? "shipfinder" : "aprsfi";
+    await openFreeResult(match, true);
   }
 
   function locateDevice(forArea = false) {
