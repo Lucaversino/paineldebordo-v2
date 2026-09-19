@@ -92,13 +92,14 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function queryBox(lat: number, lon: number) {
-  // Janela focada para manter AISStream leve e respeitar o limite da busca
-  // por bounding box da VesselAPI (|dLat| + |dLon| <= 4 graus).
+function queryBox(lat: number, lon: number, zoom = 10) {
+  // Vessel Free acompanha o zoom: quanto mais aproxima, menor e mais focada
+  // fica a caixa consultada. Mantém os limites aceitos pela VesselAPI.
   const centerLat = Math.round(lat * 4) / 4;
   const centerLon = Math.round(lon * 4) / 4;
-  const latHalf = 0.75;
-  const lonHalf = 1.0;
+  const z = clamp(Math.round(zoom || 10), 3, 18);
+  const latHalf = z >= 14 ? 0.10 : z >= 12 ? 0.22 : z >= 10 ? 0.45 : z >= 8 ? 0.75 : 1.0;
+  const lonHalf = z >= 14 ? 0.14 : z >= 12 ? 0.30 : z >= 10 ? 0.60 : z >= 8 ? 1.0 : 1.0;
   return {
     centerLat,
     centerLon,
@@ -109,9 +110,9 @@ function queryBox(lat: number, lon: number) {
   };
 }
 
-function cacheKey(lat: number, lon: number) {
-  const box = queryBox(lat, lon);
-  return `${box.centerLat.toFixed(2)}:${box.centerLon.toFixed(2)}`;
+function cacheKey(lat: number, lon: number, zoom = 10) {
+  const box = queryBox(lat, lon, zoom);
+  return `${box.centerLat.toFixed(2)}:${box.centerLon.toFixed(2)}:z${clamp(Math.round(zoom || 10), 3, 18)}`;
 }
 
 function validVessel(vessel: MapVessel | null): vessel is MapVessel {
@@ -317,7 +318,7 @@ function parseVesselApiItem(raw: any): MapVessel | null {
   };
 }
 
-async function fetchVesselApi(lat: number, lon: number): Promise<MapVessel[]> {
+async function fetchVesselApi(lat: number, lon: number, zoom = 10): Promise<MapVessel[]> {
   const apiKey = (
     process.env.VESSELAPI_API_KEY ||
     process.env.VESSEL_API_KEY ||
@@ -326,7 +327,7 @@ async function fetchVesselApi(lat: number, lon: number): Promise<MapVessel[]> {
   ).trim();
   if (!apiKey) throw Object.assign(new Error("VESSELAPI_API_KEY não configurada."), { code: "not_configured" });
 
-  const box = queryBox(lat, lon);
+  const box = queryBox(lat, lon, zoom);
   const params = new URLSearchParams({
     "filter.latBottom": String(box.south),
     "filter.latTop": String(box.north),
@@ -401,7 +402,7 @@ function parseKplerItem(raw: any): MapVessel | null {
   };
 }
 
-async function fetchKpler(lat: number, lon: number): Promise<MapVessel[]> {
+async function fetchKpler(lat: number, lon: number, zoom = 10): Promise<MapVessel[]> {
   const apiKey = (
     process.env.KPLER_API_KEY ||
     process.env.KPLER_MARITIME_TOKEN ||
@@ -410,7 +411,7 @@ async function fetchKpler(lat: number, lon: number): Promise<MapVessel[]> {
   ).trim();
   if (!apiKey) throw Object.assign(new Error("KPLER_API_KEY não configurada."), { code: "not_configured" });
 
-  const box = queryBox(lat, lon);
+  const box = queryBox(lat, lon, zoom);
   const endpoint = (process.env.KPLER_GRAPHQL_URL || "https://api.sml.kpler.com/graphql").trim();
   const coords = [
     [box.west, box.south],
@@ -561,7 +562,7 @@ async function fetchMarinesiaMap(lat: number, lon: number): Promise<MapVessel[]>
   }
 }
 
-async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
+async function loadSnapshot(lat: number, lon: number, zoom = 10): Promise<CacheValue> {
   let vessels: MapVessel[] = [];
   let source: CacheValue["source"] = "Nenhuma";
   let fallbackUsed = true;
@@ -570,7 +571,7 @@ async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
   // na busca manual por alvo específico; ele não oferece busca por bounding box.
   let vesselApiAvailable = false;
   try {
-    vessels = await fetchVesselApi(lat, lon);
+    vessels = await fetchVesselApi(lat, lon, zoom);
     vesselApiAvailable = true;
     source = "VesselAPI Free";
   } catch {
@@ -579,7 +580,7 @@ async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
 
   if (!vesselApiAvailable || vessels.length === 0) {
     try {
-      const kpler = await fetchKpler(lat, lon);
+      const kpler = await fetchKpler(lat, lon, zoom);
       if (kpler.length) {
         vessels = kpler;
         source = "Kpler Maritime";
@@ -609,11 +610,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const lat = numberOrNull(searchParams.get("lat"));
   const lon = numberOrNull(searchParams.get("lon"));
+  const zoom = clamp(numberOrNull(searchParams.get("zoom")) ?? 10, 3, 18);
   if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
     return NextResponse.json({ error: "Centro do mapa inválido." }, { status: 400 });
   }
 
-  const key = cacheKey(lat, lon);
+  const key = cacheKey(lat, lon, zoom);
   const now = Date.now();
   const cached = state.cache.get(key);
   if (cached && cached.expiresAt > now) {
@@ -630,7 +632,7 @@ export async function GET(request: NextRequest) {
 
   let task = state.inflight.get(key);
   if (!task) {
-    task = loadSnapshot(lat, lon)
+    task = loadSnapshot(lat, lon, zoom)
       .then((result) => {
         state.cache.set(key, result);
         // Limita memória em instâncias quentes.
