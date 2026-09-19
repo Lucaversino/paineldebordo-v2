@@ -2945,3 +2945,40 @@ main.loginpage{
     height:14px!important;
   }
 }
+
+
+/* V129 — botão azul Vessel Free ao lado do AIS Free */
+.ais-left-tools .ais-v129-vessel-free-refresh{
+  width:auto!important;
+  min-width:72px!important;
+  padding:0 8px!important;
+  gap:5px!important;
+  border-color:#2f76c9!important;
+  background:#0d315c!important;
+  color:#8fc5ff!important;
+  font:950 7px system-ui!important;
+}
+.ais-left-tools .ais-v129-vessel-free-refresh span{
+  display:inline!important;
+  white-space:nowrap;
+}
+.ais-left-tools .ais-v129-vessel-free-refresh svg{
+  width:15px!important;
+  height:15px!important;
+}
+.ais-left-tools .ais-v129-vessel-free-refresh:disabled{opacity:.55}
+@media(max-width:760px){
+  .ais-left-tools .ais-v129-vessel-free-refresh{
+    min-width:58px!important;
+    height:36px!important;
+    padding:0 6px!important;
+    flex-direction:column!important;
+    gap:1px!important;
+    font-size:5.5px!important;
+    line-height:1!important;
+  }
+  .ais-left-tools .ais-v129-vessel-free-refresh svg{
+    width:14px!important;
+    height:14px!important;
+  }
+}
