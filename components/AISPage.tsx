@@ -394,6 +394,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
   const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
+  const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
@@ -529,16 +530,129 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
-  function drawFreeMapVessels(vessels: Vessel[]) {
-    const source = freeVesselSourceRef.current;
+  function normalizedVesselIds(vessel: Vessel) {
+    return {
+      mmsi: String(vessel?.mmsi || "").replace(/\D/g, ""),
+      imo: String(vessel?.imo || "").replace(/\D/g, ""),
+      name: String(vessel?.name || "").trim().toLowerCase().replace(/\s+/g, " "),
+    };
+  }
+
+  function vesselRegistryKey(vessel: Vessel) {
+    const ids = normalizedVesselIds(vessel);
+    if (ids.mmsi) return `mmsi:${ids.mmsi}`;
+    if (ids.imo && ids.imo !== "0") return `imo:${ids.imo}`;
+    return ids.name ? `name:${ids.name}` : "";
+  }
+
+  function sameRegistryVessel(a: Vessel, b: Vessel) {
+    const aa = normalizedVesselIds(a);
+    const bb = normalizedVesselIds(b);
+    if (aa.mmsi && bb.mmsi && aa.mmsi === bb.mmsi) return true;
+    if (aa.imo && aa.imo !== "0" && bb.imo && bb.imo !== "0" && aa.imo === bb.imo) return true;
+    return !aa.mmsi && !bb.mmsi && !aa.imo && !bb.imo && Boolean(aa.name && aa.name === bb.name);
+  }
+
+  function vesselDataTime(vessel: Vessel) {
+    const candidates = [vessel.positionReceived, vessel.updateTime];
+    for (const value of candidates) {
+      if (!value) continue;
+      const parsed = new Date(value).getTime();
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number(vessel.receivedAt || 0);
+  }
+
+  function findRegistryKey(vessel: Vessel) {
+    for (const [key, existing] of mapVesselRegistryRef.current.entries()) {
+      if (sameRegistryVessel(existing, vessel)) return key;
+    }
+    return vesselRegistryKey(vessel);
+  }
+
+  function renderVesselRegistry() {
+    const source = vesselSourceRef.current;
+    const freeSource = freeVesselSourceRef.current;
     if (!source) return;
+
+    // Um único layer desenha todos os barcos. Isso impede que o mesmo MMSI/IMO
+    // apareça duplicado em Premium, Marinesia e Vessel Free.
     source.clear();
-    vessels.forEach((vessel) => {
+    freeSource?.clear();
+
+    mapVesselRegistryRef.current.forEach((vessel) => {
       const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
-      feature.set("freeVessel", vessel);
-      feature.setStyle(() => buildFreeVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+      feature.set("vessel", vessel);
+      feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
       source.addFeature(feature);
     });
+  }
+
+  function upsertMapVessels(vessels: Vessel[]) {
+    const accepted: Vessel[] = [];
+    vessels.forEach((incoming) => {
+      if (!Number.isFinite(incoming.lat) || !Number.isFinite(incoming.lon)) return;
+
+      const foundKey = findRegistryKey(incoming);
+      const current = foundKey ? mapVesselRegistryRef.current.get(foundKey) : undefined;
+      const incomingTime = vesselDataTime(incoming);
+      const currentTime = current ? vesselDataTime(current) : 0;
+
+      const merged: Vessel = current
+        ? {
+            ...current,
+            ...incoming,
+            name: incoming.name || current.name,
+            mmsi: incoming.mmsi || current.mmsi,
+            imo: incoming.imo || current.imo,
+            dataSource: incoming.dataSource || current.dataSource,
+          }
+        : incoming;
+
+      // Uma resposta velha nunca cria outro barco nem move o marcador para trás.
+      if (current && incomingTime && currentTime && incomingTime < currentTime) {
+        accepted.push(current);
+        return;
+      }
+
+      let targetKey = foundKey || vesselRegistryKey(merged);
+      if (!targetKey) return;
+
+      // Se o barco ganhou MMSI depois, muda para a chave mais forte sem duplicar.
+      const strongestKey = vesselRegistryKey(merged);
+      if (strongestKey && strongestKey !== targetKey) {
+        mapVesselRegistryRef.current.delete(targetKey);
+        targetKey = strongestKey;
+      }
+      mapVesselRegistryRef.current.set(targetKey, merged);
+      accepted.push(merged);
+
+      const selected = trackedRef.current;
+      if (selected && sameRegistryVessel(selected, merged)) {
+        trackedRef.current = merged;
+        setTracked(merged);
+      }
+    });
+
+    renderVesselRegistry();
+    return accepted;
+  }
+
+  function dedupeVessels(vessels: Vessel[]) {
+    const unique: Vessel[] = [];
+    vessels.forEach((vessel) => {
+      const index = unique.findIndex((existing) => sameRegistryVessel(existing, vessel));
+      if (index < 0) {
+        unique.push(vessel);
+        return;
+      }
+      if (vesselDataTime(vessel) >= vesselDataTime(unique[index])) unique[index] = vessel;
+    });
+    return unique;
+  }
+
+  function drawFreeMapVessels(vessels: Vessel[]) {
+    upsertMapVessels(dedupeVessels(vessels));
   }
 
   async function loadFreeMapLayer(force = false, targetCenter?: { lat: number; lon: number } | null) {
@@ -584,12 +698,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         receivedAt: Number(raw?.receivedAt) || Date.now(),
       })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon) && Boolean(v.mmsi));
 
-      setFreeMapVessels(rows);
+      const uniqueRows = dedupeVessels(rows);
+      setFreeMapVessels(uniqueRows);
       setFreeMapSource(String(data?.source || "AIS automático"));
       setFreeMapUpdatedAt(data?.updatedAt ? new Date(data.updatedAt).getTime() : Date.now());
       setFreeMapStatus("ready");
-      drawFreeMapVessels(rows);
-      if (rows.length) setShowEmptyHint(false);
+      drawFreeMapVessels(uniqueRows);
+      if (uniqueRows.length) setShowEmptyHint(false);
     } catch {
       if (seq === freeLayerRequestRef.current.seq) setFreeMapStatus("error");
     }
@@ -601,13 +716,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function drawVessel(vessel: Vessel) {
-    const source = vesselSourceRef.current;
-    if (!source) return;
-    source.clear();
-    const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
-    feature.set("vessel", vessel);
-    feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
-    source.addFeature(feature);
+    upsertMapVessels([vessel]);
   }
 
   function centerOn(lat: number, lon: number, targetZoom = 11, mark = false) {
@@ -640,15 +749,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function drawAreaVessels(vessels: Vessel[]) {
-    const source = vesselSourceRef.current;
-    if (!source) return;
-    source.clear();
-    vessels.forEach((vessel) => {
-      const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
-      feature.set("vessel", vessel);
-      feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
-      source.addFeature(feature);
-    });
+    upsertMapVessels(dedupeVessels(vessels));
   }
 
   function chooseAreaCenterFromMap() {
@@ -708,7 +809,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     if (isFree && !forceFreeRefresh) {
       const cachedFree = readMarinesiaAreaCache(selected);
       if (cachedFree?.length) {
-        const cachedRows = cachedFree as Vessel[];
+        const cachedRows = dedupeVessels(cachedFree as Vessel[]);
         setAreaVessels(cachedRows);
         setAreaCost(0);
         drawAreaVessels(cachedRows);
@@ -1403,10 +1504,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       vesselSource.getFeatures().forEach((feature) => {
         const vessel = feature.get("vessel") as Vessel | undefined;
         if (vessel) feature.setStyle(() => buildVesselStyle(vessel, view.getZoom() || 10));
-      });
-      freeVesselSource.getFeatures().forEach((feature) => {
-        const vessel = feature.get("freeVessel") as Vessel | undefined;
-        if (vessel) feature.setStyle(() => buildFreeVesselStyle(vessel, view.getZoom() || 10));
       });
       const selected = trackedRef.current;
       if (selected) anchorCardForVessel(selected);
