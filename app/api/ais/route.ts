@@ -19,6 +19,7 @@ export const maxDuration = 30;
 const DATADOCKED_BASE_URL = "https://datadocked.com/api/vessels_operations";
 const APRSFI_BASE_URL = "https://api.aprs.fi/api/get";
 const MARINESIA_BASE_URL = "https://api.marinesia.com/api/v2";
+const SHIPFINDER_BASE_URL = "https://api.elaneglobal.com/v1/AIS";
 
 type MarinesiaState = {
   cache: Map<string, { body: any; expiresAt: number }>;
@@ -494,6 +495,96 @@ async function getMarinesiaArea(apiKey: string, latitude: number, longitude: num
   return rows.map((raw: any) => normalizeMarinesiaVessel(raw, textOrEmpty(raw?.name) || "SEM NOME")).filter(Boolean);
 }
 
+function shipFinderProviderMessage(body: any, status: number) {
+  return (
+    textOrEmpty(body?.msg) ||
+    textOrEmpty(body?.message) ||
+    textOrEmpty(body?.error) ||
+    `Erro ShipFinder (${status}).`
+  );
+}
+
+async function callShipFinder(path: string, params: URLSearchParams, apiKey: string, timeoutMs = 9000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const query = new URLSearchParams(params);
+    query.set("key", apiKey);
+    const response = await fetch(`${SHIPFINDER_BASE_URL}${path}?${query.toString()}`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        "user-agent": "Painel-de-Bordo/133",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    let body: any = null;
+    try { body = await response.json(); } catch { body = null; }
+
+    if (!response.ok || Number(body?.status) !== 0) {
+      const providerStatus = response.status >= 400 ? response.status : 502;
+      throw Object.assign(new Error(shipFinderProviderMessage(body, providerStatus)), {
+        status: providerStatus,
+        provider: "shipfinder",
+        providerBody: body,
+      });
+    }
+    return body;
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw Object.assign(new Error("A ShipFinder demorou para responder."), {
+        status: 504,
+        provider: "shipfinder",
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeShipFinderMatch(raw: any) {
+  return {
+    name: textOrEmpty(raw?.ship_name || raw?.name),
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
+    country: "",
+    countryIso: "",
+    shipType: textOrEmpty(raw?.ship_type) || "Embarcação AIS",
+    typeSpecific: textOrEmpty(raw?.ship_type) || "Embarcação AIS",
+    callsign: textOrEmpty(raw?.call_sign),
+  };
+}
+
+function normalizeShipFinderVessel(raw: any, fallbackName = "") {
+  const lat = numberOrNull(raw?.lat ?? raw?.latitude);
+  const lon = numberOrNull(raw?.lng ?? raw?.lon ?? raw?.longitude);
+  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const stamp = unixToIso(raw?.last_time);
+  return {
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
+    name: textOrEmpty(raw?.ship_name || raw?.name) || fallbackName,
+    lat,
+    lon,
+    sog: numberOrNull(raw?.sog),
+    cog: numberOrNull(raw?.cog),
+    heading: numberOrNull(raw?.hdg ?? raw?.heading),
+    draught: textOrEmpty(raw?.draught),
+    destination: textOrEmpty(raw?.dest ?? raw?.destination),
+    lastPort: "",
+    callsign: textOrEmpty(raw?.call_sign),
+    vesselType: textOrEmpty(raw?.ship_type) || "Embarcação AIS",
+    navStatusText: navStatusText(raw?.navistat),
+    dataSource: "ShipFinder AIS",
+    positionReceived: stamp,
+    updateTime: stamp,
+    receivedAt: stamp ? new Date(stamp).getTime() : Date.now(),
+    provider: "ShipFinder",
+  };
+}
+
 function dataDockedProviderMessage(body: any, status: number) {
   const detail = body?.detail;
   return (
@@ -626,6 +717,7 @@ export async function GET(request: NextRequest) {
   const aprsApiKey = process.env.APRSFI_API_KEY?.trim();
   const dataDockedApiKey = process.env.DATADOCKED_API_KEY?.trim();
   const marinesiaApiKey = process.env.MARINESIA_API_KEY?.trim();
+  const shipFinderApiKey = process.env.SHIPFINDER_API_KEY?.trim();
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") || "credits";
 
@@ -640,6 +732,7 @@ export async function GET(request: NextRequest) {
         complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : null,
         nameResolverFallback: Boolean(aprsApiKey),
         marinesiaConfigured: Boolean(marinesiaApiKey),
+        shipfinderConfigured: Boolean(shipFinderApiKey),
         credits: wallet.balance,
         creditUnitPrice: settings.CREDIT_UNIT_PRICE,
         balanceBrl: priceForCredits(settings, wallet.balance),
@@ -677,6 +770,7 @@ export async function GET(request: NextRequest) {
         areaProvider: "Data Docked",
         complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : "não configurado",
         marinesiaConfigured: Boolean(marinesiaApiKey),
+        shipfinderConfigured: Boolean(shipFinderApiKey),
         marinesiaPlanMode: "free-protected-30min",
         credits: dataDockedCredits,
       });
@@ -685,11 +779,51 @@ export async function GET(request: NextRequest) {
     if (action === "name") {
       const providerChoice = (searchParams.get("provider") || "premium").toLowerCase();
       const isFreeSearch = providerChoice === "marinesia" || providerChoice === "free";
+      const isShipFinderSearch = providerChoice === "shipfinder";
       const settings = await getBillingSettings();
       const rawName = (searchParams.get("name") || "").trim();
 
       if (rawName.length < 2) {
         return NextResponse.json({ error: "Digite pelo menos 2 caracteres do nome do barco." }, { status: 400 });
+      }
+
+      if (isShipFinderSearch) {
+        if (!shipFinderApiKey) {
+          return NextResponse.json(
+            { error: "SHIPFINDER_API_KEY não configurada na Vercel.", configured: false },
+            { status: 503 },
+          );
+        }
+
+        const params = new URLSearchParams({
+          keywords: rawName,
+          max: "8",
+        });
+        const data = await callShipFinder("/VesselSearch", params, shipFinderApiKey);
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const items = rows.map(normalizeShipFinderMatch).filter((item: any) => item.name || item.mmsi || item.imo);
+
+        void logAisUsage({
+          userId: user.id,
+          action: "name_search_shipfinder",
+          vesselName: rawName,
+          providerCalls: 1,
+          creditsCharged: 0,
+          estimatedApiCostBrl: 0,
+          status: items.length ? "success" : "not_found",
+        }).catch(() => null);
+
+        return NextResponse.json({
+          configured: true,
+          provider: "ShipFinder",
+          query: rawName,
+          exactSearch: true,
+          total: Number(data?.total) || items.length,
+          page: 1,
+          items,
+          finalQueryCredits: 0,
+          adminFree: false,
+        });
       }
 
       if (!isFreeSearch) {
@@ -772,10 +906,81 @@ export async function GET(request: NextRequest) {
       const name = (searchParams.get("name") || "").trim();
       const providerChoice = (searchParams.get("provider") || "premium").toLowerCase();
       const isFree = providerChoice === "marinesia" || providerChoice === "free";
+      const isShipFinder = providerChoice === "shipfinder";
       const isUpdate = searchParams.get("update") === "1";
       const target = id || name;
 
       if (!target) return NextResponse.json({ error: "Informe o nome, IMO ou MMSI." }, { status: 400 });
+
+      if (isShipFinder) {
+        if (!shipFinderApiKey) {
+          return NextResponse.json(
+            { error: "SHIPFINDER_API_KEY não configurada na Vercel.", configured: false },
+            { status: 503 },
+          );
+        }
+
+        let mmsi = id.length === 9 ? id : "";
+        let resolvedName = name;
+
+        if (!mmsi) {
+          const params = new URLSearchParams({
+            keywords: id || name,
+            max: "8",
+          });
+          const searchData = await callShipFinder("/VesselSearch", params, shipFinderApiKey);
+          const candidates = Array.isArray(searchData?.data) ? searchData.data : [];
+          const selected =
+            (id
+              ? candidates.find((row: any) => textOrEmpty(row?.imo).replace(/\D/g, "") === id || textOrEmpty(row?.mmsi).replace(/\D/g, "") === id)
+              : null) ||
+            candidates[0];
+
+          mmsi = textOrEmpty(selected?.mmsi).replace(/\D/g, "");
+          resolvedName = textOrEmpty(selected?.ship_name) || name;
+        }
+
+        if (!mmsi) {
+          return NextResponse.json(
+            { error: "ShipFinder não encontrou um MMSI válido para esse barco." },
+            { status: 404 },
+          );
+        }
+
+        const data = await callShipFinder(
+          "/VesselPositionSingle",
+          new URLSearchParams({ mmsi }),
+          shipFinderApiKey,
+        );
+        const vessel = normalizeShipFinderVessel(data?.data, resolvedName);
+
+        if (!vessel) {
+          return NextResponse.json(
+            { error: "ShipFinder não retornou uma posição válida." },
+            { status: 404 },
+          );
+        }
+
+        void logAisUsage({
+          userId: user.id,
+          action: isUpdate ? "update_shipfinder" : "locate_shipfinder",
+          vesselName: vessel.name || resolvedName || mmsi,
+          providerCalls: 1,
+          creditsCharged: 0,
+          estimatedApiCostBrl: 0,
+          status: "success",
+        }).catch(() => null);
+
+        return NextResponse.json({
+          configured: true,
+          provider: "ShipFinder",
+          vessel,
+          creditCost: 0,
+          billing: { charged: 0, balanceUnchanged: true },
+          adminFree: false,
+          free: true,
+        });
+      }
 
       if (isFree) {
         let vessel: any = null;
@@ -1081,6 +1286,31 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.json(
         { error: error?.message || "Falha temporária na Marinesia.", code: "marinesia_error" },
+        { status: status >= 500 ? status : 502 },
+      );
+    }
+
+    if (error?.provider === "shipfinder") {
+      if (status === 401 || status === 403) {
+        return NextResponse.json(
+          {
+            error: "A chave SHIPFINDER_API_KEY foi recusada ou não tem permissão para este serviço.",
+            code: "shipfinder_key_invalid",
+          },
+          { status: 502 },
+        );
+      }
+      if (status === 429) {
+        return NextResponse.json(
+          {
+            error: "Limite temporário da ShipFinder atingido. Aguarde e tente novamente.",
+            code: "shipfinder_rate_limit",
+          },
+          { status: 429 },
+        );
+      }
+      return NextResponse.json(
+        { error: error?.message || "Falha temporária na ShipFinder.", code: "shipfinder_error" },
         { status: status >= 500 ? status : 502 },
       );
     }
