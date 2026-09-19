@@ -33,6 +33,91 @@ async function fetchJson(url: URL, timeoutMs = 6500) {
   return response.json();
 }
 
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (value: number) => value * Math.PI / 180;
+  const earthKm = 6371.0088;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function fetchGeographicContext(lat: number, lon: number) {
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/reverse");
+    url.search = new URLSearchParams({
+      format: "jsonv2",
+      lat: String(lat),
+      lon: String(lon),
+      zoom: "10",
+      addressdetails: "1",
+      layer: "address",
+      "accept-language": "pt-BR",
+    }).toString();
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "PainelDeBordoPescaIndustrial/1.0 (https://paineldebordo.vercel.app)",
+      },
+      signal: AbortSignal.timeout(4500),
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const json = await response.json();
+    const address = json?.address || {};
+    const city = address.city || address.town || address.village || address.municipality || address.county || null;
+    const state = address.state || address.region || address.state_district || null;
+    const country = address.country || null;
+    const matchedLat = Number(json?.lat);
+    const matchedLon = Number(json?.lon);
+    const distanceKm = Number.isFinite(matchedLat) && Number.isFinite(matchedLon)
+      ? haversineKm(lat, lon, matchedLat, matchedLon)
+      : null;
+    if (!city && !state && !country) return null;
+    return {
+      city,
+      state,
+      country,
+      label: [city, state].filter(Boolean).join(" — ") || state || country,
+      distanceKm: distanceKm != null ? Math.round(distanceKm * 10) / 10 : null,
+      source: "OpenStreetMap / Nominatim",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchBathymetry(lat: number, lon: number) {
+  try {
+    const url = new URL("https://api.odb.ntu.edu.tw/gebco");
+    url.search = new URLSearchParams({
+      lon: String(lon),
+      lat: String(lat),
+      mode: "row,point",
+    }).toString();
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const json = await response.json();
+    const first = Array.isArray(json) ? json[0] : json;
+    const rawZ = Array.isArray(first?.z) ? Number(first.z[0]) : Number(first?.z);
+    if (!Number.isFinite(rawZ)) return null;
+    return {
+      elevationM: rawZ,
+      depthM: rawZ < 0 ? Math.abs(rawZ) : 0,
+      isWater: rawZ < 0,
+      source: "GEBCO_2026 / Ocean Data Bank",
+      resolution: "15 arc-second",
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchCentralWeather(lat: number, lon: number) {
   const url = new URL("https://api.open-meteo.com/v1/forecast");
   url.search = new URLSearchParams({
@@ -170,11 +255,13 @@ export async function GET(request: Request) {
     // Fontes externas podem ficar lentas no mar. Nenhuma fonte opcional deve
     // travar a página inteira: retornamos os dados disponíveis e marcamos
     // valores ausentes como null.
-    const [weatherResult, marineResult, windResult, chlorophyllResult] = await Promise.allSettled([
+    const [weatherResult, marineResult, windResult, chlorophyllResult, geographyResult, bathymetryResult] = await Promise.allSettled([
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
       Promise.all(grid.map((point) => fetchChlorophyllPoint(point.lat, point.lon))),
+      fetchGeographicContext(lat, lon),
+      fetchBathymetry(lat, lon),
     ]);
 
     const weather = weatherResult.status === "fulfilled" ? weatherResult.value : null;
@@ -185,6 +272,8 @@ export async function GET(request: Request) {
     const chlorophyllGrid = chlorophyllResult.status === "fulfilled"
       ? chlorophyllResult.value
       : grid.map((point) => ({ ...point, mgM3: null, time: null }));
+    const geography = geographyResult.status === "fulfilled" ? geographyResult.value : null;
+    const bathymetry = bathymetryResult.status === "fulfilled" ? bathymetryResult.value : null;
 
     if (!weather && !marine) {
       return Response.json({ error: "As fontes de vento e mar estão demorando para responder. Tente novamente em alguns segundos." }, { status: 503 });
@@ -249,7 +338,13 @@ export async function GET(request: Request) {
     }
 
     return Response.json({
-      position: { lat, lon },
+      position: {
+        lat,
+        lon,
+        geography,
+        depthM: bathymetry?.isWater ? bathymetry.depthM : null,
+        bathymetry,
+      },
       current: {
         ...current,
         chlorophyllMgM3: centralChl?.mgM3 ?? null,
@@ -266,6 +361,8 @@ export async function GET(request: Request) {
         weather: weather ? "Open-Meteo Forecast" : "Open-Meteo Forecast (temporariamente indisponível)",
         marine: marine ? "Open-Meteo Marine" : "Open-Meteo Marine (temporariamente indisponível)",
         chlorophyll: chlorophyllResult.status === "fulfilled" ? "NOAA CoastWatch / VIIRS gap-filled daily" : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
+        geography: geography ? "OpenStreetMap / Nominatim" : "Referência geográfica indisponível",
+        bathymetry: bathymetry ? "GEBCO_2026 / Ocean Data Bank" : "Batimetria temporariamente indisponível",
       },
       disclaimer: "Previsão e dados modelados para apoio operacional. Maré/nível do mar não é referência de navegação costeira. Confirme condições de segurança em fontes marítimas oficiais.",
     });

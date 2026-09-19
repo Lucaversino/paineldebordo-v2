@@ -52,13 +52,37 @@ export function createPositionForecastPdf(data: any) {
   doc.setTextColor(4, 52, 58);
   doc.text(nauticalPositionPdf(Number(data?.position?.lat || 0), Number(data?.position?.lon || 0)), 16, 59);
 
+  const geographyLabel = data?.position?.geography?.label || "Referencia geografica indisponivel";
+  const distanceKm = Number(data?.position?.geography?.distanceKm);
+  const depthM = Number(data?.position?.depthM);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(22, 74, 78);
+  doc.text(`Perto de: ${geographyLabel}`, 16, 67);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(90, 117, 120);
+  if (Number.isFinite(distanceKm) && distanceKm > 1) {
+    doc.text(`Distancia aproximada da referencia: ${distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`, 16, 73);
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(4, 52, 58);
+  doc.text(Number.isFinite(depthM) ? `Profundidade estimada: ${Math.round(depthM)} m` : "Profundidade estimada: sem leitura", 170, 67);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(90, 117, 120);
+  doc.text("Batimetria GEBCO_2026 - valor modelado, nao usar para navegacao", 170, 73);
+
   doc.setTextColor(27, 54, 61);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("CONDICOES AGORA", 16, 70);
+  doc.text("CONDICOES AGORA", 16, 82);
 
   autoTable(doc, {
-    startY: 74,
+    startY: 86,
     margin: { left: 16, right: 16 },
     theme: "grid",
     head: [["Vento", "Rajadas", "Direcao", "Onda", "Periodo", "Mare modelada", "Temp. mar", "Clorofila"]],

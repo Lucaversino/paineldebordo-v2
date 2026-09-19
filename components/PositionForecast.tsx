@@ -10,6 +10,7 @@ import {
   Gauge,
   History,
   LocateFixed,
+  MapPin,
   Navigation,
   RefreshCw,
   Save,
@@ -422,12 +423,14 @@ export default function PositionForecast() {
       const summary = [
         "PAINEL DE BORDO — PREVISÃO OCEÂNICA",
         `Posição: ${nauticalPosition(Number(data.position.lat), Number(data.position.lon))}`,
+        data.position?.geography?.label ? `Referência: ${data.position.geography.label}` : null,
+        data.position?.depthM != null ? `Profundidade estimada: ${fmt(data.position.depthM, 0)} m (GEBCO_2026)` : null,
         `Vento: ${fmt(data.current.windSpeedKmh)} km/h ${data.current.windDirection} | rajadas ${fmt(data.current.gustKmh)} km/h`,
         `Ondas: ${fmt(data.current.waveHeightM)} m ${data.current.waveDirection} | período ${fmt(data.current.wavePeriodS)} s`,
         `Maré modelada: ${fmt(data.current.seaLevelMslM, 2)} m`,
         `Temperatura do mar: ${fmt(data.current.seaTemperatureC)} °C`,
         `Clorofila-a: ${fmt(data.current.chlorophyllMgM3, 2)} mg/m³`,
-      ].join("\n");
+      ].filter(Boolean).join("\n");
 
       const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
       if (navigator.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
@@ -533,6 +536,25 @@ export default function PositionForecast() {
               <button onClick={shareWhatsApp} disabled={shareBusy}><Share2 /> {shareBusy ? "Compartilhando..." : "WhatsApp"}</button>
               <span className={`condition-pill ${String(data.current.condition || "").toLowerCase().replace(" ", "-")}`}>{data.current.condition}</span>
             </div>
+          </div>
+
+          <div className="position-location-details">
+            <article>
+              <MapPin />
+              <span>
+                <small>REFERÊNCIA GEOGRÁFICA</small>
+                <b>{data.position?.geography?.label || "Referência indisponível"}</b>
+                <em>{data.position?.geography?.distanceKm != null && data.position?.geography?.distanceKm > 1 ? `Aprox. ${fmt(data.position.geography.distanceKm, 1)} km da referência encontrada` : "Cidade/estado mais próximo disponível"}</em>
+              </span>
+            </article>
+            <article>
+              <Gauge />
+              <span>
+                <small>METRAGEM DA POSIÇÃO</small>
+                <b>{data.position?.depthM != null ? `${fmt(data.position.depthM, 0)} m` : "Sem leitura"}</b>
+                <em>Profundidade estimada · GEBCO_2026</em>
+              </span>
+            </article>
           </div>
 
           <div className="position-kpis">
