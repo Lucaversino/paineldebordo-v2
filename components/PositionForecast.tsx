@@ -77,9 +77,9 @@ function CoordinateField({ label, direction, value, onChange }: {
   );
 }
 
-function toKnots(value: any) {
+function toMph(value: any) {
   const number = Number(value);
-  return Number.isFinite(number) ? number / 1.852 : null;
+  return Number.isFinite(number) ? number / 1.609344 : null;
 }
 
 function fmt(value: any, digits = 1) {
@@ -137,7 +137,7 @@ function LibraryItem({ item, saved, onOpen, onSave, onDelete }: {
       <div className="forecast-library-weather">
         <span><Wind /> {fmt(current.windSpeedKmh, 0)} km/h</span>
         <span><Waves /> {fmt(current.waveHeightM)} m</span>
-        <span><Navigation /> {fmt(toKnots(current.currentKmh), 2)} nós · {current.currentDirection || "—"}</span>
+        <span><Navigation /> {fmt(toMph(current.currentKmh), 2)} mph · {current.currentDirection || "—"}</span>
       </div>
       <div className="forecast-library-actions">
         <button onClick={onOpen}>Abrir</button>
@@ -432,7 +432,7 @@ export default function PositionForecast() {
         data.position?.depthM != null ? `Profundidade estimada: ${fmt(data.position.depthM, 0)} m (GEBCO_2026)` : null,
         `Vento: ${fmt(data.current.windSpeedKmh)} km/h ${data.current.windDirection} | rajadas ${fmt(data.current.gustKmh)} km/h`,
         `Ondas: ${fmt(data.current.waveHeightM)} m ${data.current.waveDirection} | período ${fmt(data.current.wavePeriodS)} s`,
-        `Corrente de maré: ${fmt(toKnots(data.current.currentKmh), 2)} nós (${fmt(data.current.currentKmh)} km/h) · ${data.current.currentDirection || "—"}`,
+        `Corrente de maré: ${fmt(toMph(data.current.currentKmh), 2)} mph · ${data.current.currentDirection || "—"}`,
         `Temperatura do mar: ${fmt(data.current.seaTemperatureC)} °C`,
         `Clorofila-a: ${fmt(data.current.chlorophyllMgM3, 2)} mg/m³`,
       ].filter(Boolean).join("\n");
@@ -565,7 +565,7 @@ export default function PositionForecast() {
           <div className="position-kpis">
             <article><Wind /><small>VENTO</small><strong>{fmt(data.current.windSpeedKmh)} km/h</strong><b>{data.current.windDirection} · {fmt(data.current.windDirectionDeg, 0)}°</b><span>Rajadas {fmt(data.current.gustKmh)} km/h</span></article>
             <article><Waves /><small>MAR / ONDA</small><strong>{fmt(data.current.waveHeightM)} m</strong><b>{data.current.waveDirection}</b><span>Período {fmt(data.current.wavePeriodS)} s · swell {fmt(data.current.swellHeightM)} m</span></article>
-            <article><Navigation /><small>CORRENTE DE MARÉ</small><strong>{fmt(toKnots(data.current.currentKmh), 2)} nós</strong><b>{data.current.currentDirection || "—"} · {fmt(data.current.currentDirectionDeg, 0)}°</b><span>{fmt(data.current.currentKmh)} km/h · modelo oceânico</span></article>
+            <article><Navigation /><small>CORRENTE DE MARÉ</small><strong>{fmt(toMph(data.current.currentKmh), 2)} mph</strong><b>{data.current.currentDirection || "—"} · {fmt(data.current.currentDirectionDeg, 0)}°</b><span>milhas por hora · modelo oceânico</span></article>
             <article><Thermometer /><small>TEMPERATURA DO MAR</small><strong>{fmt(data.current.seaTemperatureC)} °C</strong><b>Superfície</b><span>Temperatura superficial modelada</span></article>
             <article><Droplets /><small>CLOROFILA-A</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>Satélite VIIRS</b><span>{data.current.chlorophyllTime ? String(data.current.chlorophyllTime).slice(0, 10) : "Sem leitura"}</span></article>
           </div>
@@ -596,9 +596,9 @@ export default function PositionForecast() {
                   <div className="hourly-block tide-block-mini">
                     <div className="hourly-icon"><Navigation /></div>
                     <span>CORRENTE DE MARÉ</span>
-                    <strong>{fmt(toKnots(item.currentKmh), 2)} <small>nós</small></strong>
+                    <strong>{fmt(toMph(item.currentKmh), 2)} <small>mph</small></strong>
                     <b>{item.currentDirection || "—"}</b>
-                    <em>{fmt(item.currentKmh)} km/h · {fmt(item.currentDirectionDeg, 0)}°</em>
+                    <em>milhas/h · {fmt(item.currentDirectionDeg, 0)}°</em>
                   </div>
                 </div>
               ))}

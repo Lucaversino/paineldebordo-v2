@@ -7,11 +7,11 @@ const number = (value: unknown, digits = 1) => {
   return parsed.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
-const knots = (value: unknown, digits = 2) => {
+const mph = (value: unknown, digits = 2) => {
   if (value == null || value === "") return "-";
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return "-";
-  return (parsed / 1.852).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return (parsed / 1.609344).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
 const when = (value?: string | null) => {
@@ -99,7 +99,7 @@ export function createPositionForecastPdf(data: any) {
       `${data?.current?.windDirection || "-"} (${number(data?.current?.windDirectionDeg, 0)}°)`,
       `${number(data?.current?.waveHeightM)} m`,
       `${number(data?.current?.wavePeriodS)} s`,
-      `${knots(data?.current?.currentKmh)} nos · ${data?.current?.currentDirection || "-"}`,
+      `${mph(data?.current?.currentKmh)} mph · ${data?.current?.currentDirection || "-"}`,
       `${number(data?.current?.seaTemperatureC)} °C`,
       `${number(data?.current?.chlorophyllMgM3, 2)} mg/m³`,
     ]],
@@ -126,7 +126,7 @@ export function createPositionForecastPdf(data: any) {
       item.waveDirection || "-",
       `${number(item.wavePeriodS)} s`,
       `${number(item.swellHeightM)} m`,
-      `${knots(item.currentKmh)} nos · ${item.currentDirection || "-"}`,
+      `${mph(item.currentKmh)} mph · ${item.currentDirection || "-"}`,
       `${number(item.seaTemperatureC)} °C`,
     ]),
     styles: { fontSize: 7, cellPadding: 1.8 },
@@ -151,11 +151,11 @@ export function createPositionForecastPdf(data: any) {
     startY: y + 9,
     margin: { left: 16, right: 16 },
     theme: "plain",
-    head: [["Horario", "Velocidade", "km/h", "Direcao", "Graus"]],
+    head: [["Horario", "Velocidade", "Unidade", "Direcao", "Graus"]],
     body: currentRows.slice(0, 12).map((item: any) => [
       when(item.time),
-      `${knots(item.currentKmh)} nos`,
-      `${number(item.currentKmh)} km/h`,
+      `${mph(item.currentKmh)} mph`,
+      "milhas/h",
       item.currentDirection || "-",
       `${number(item.currentDirectionDeg, 0)}°`,
     ]),
