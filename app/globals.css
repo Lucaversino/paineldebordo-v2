@@ -2406,8 +2406,8 @@ main.loginpage{
 .ais-v119-page{
   position:relative!important;
   width:100%!important;
-  height:100%!important;
-  min-height:0!important;
+  height:calc(100dvh - 74px)!important;
+  min-height:520px!important;
   padding:0!important;
   margin:0!important;
   display:block!important;
@@ -2654,6 +2654,7 @@ main.loginpage{
 /* mobile: continua full map, pastas no rodapé e card pequeno */
 @media(max-width:760px){
   .content:has(.ais-v119-page){height:calc(100dvh - 66px)!important}
+  .ais-v119-page{height:calc(100dvh - 66px)!important;min-height:0!important}
   .ais-v119-page .ais-mobile-credit{
     display:flex!important;
     top:58px!important;
@@ -2699,4 +2700,12 @@ main.loginpage{
   .ais-v119-page .ais-v119-layer.marinesia{display:none!important}
   .ais-v119-page .ais-v119-map-card{width:205px!important}
   .ais-v119-page .ais-v95-map-position>strong{font-size:13px!important}
+}
+
+
+/* V119.1 — correção crítica: AISPage é renderizado direto no main, não dentro de .content */
+.ais-page.ais-v119-page{height:calc(100dvh - 74px)!important;min-height:520px!important}
+.ais-v119-page .ais-shell.ais-v61-shell{height:100%!important;min-height:100%!important}
+@media(max-width:760px){
+  .ais-page.ais-v119-page{height:calc(100dvh - 66px)!important;min-height:0!important}
 }
