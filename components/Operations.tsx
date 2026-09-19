@@ -315,6 +315,7 @@ export default function Operations({ view, onDashboard }: Props) {
     setEditing(null);
     setMsg("Viagem atualizada. O dashboard foi sincronizado.");
     load();
+    onDashboard();
   }
   const titles: any = {
     "Viagem atual": "Viagem atual",
@@ -859,12 +860,7 @@ export default function Operations({ view, onDashboard }: Props) {
               </label>
               <label>
                 Retorno previsto
-                <input
-                  name="expectedReturnDate"
-                  type="datetime-local"
-                  required
-                  defaultValue={editing.expectedReturnDate?.slice(0, 16)}
-                />
+                <TripDateInput key={`edit-expected-${editing.id}`} name="expectedReturnDate" label="retorno previsto" required value={editing.expectedReturnDate} />
               </label>
             </div>
             <label>
@@ -1230,19 +1226,11 @@ export default function Operations({ view, onDashboard }: Props) {
                 <div className="twocol">
                   <label>
                     Saída
-                    <input
-                      name="departureDate"
-                      type="datetime-local"
-                      required
-                    />
+                    <TripDateInput name="departureDate" label="saída" required />
                   </label>
                   <label>
                     Retorno previsto
-                    <input
-                      name="expectedReturnDate"
-                      type="datetime-local"
-                      required
-                    />
+                    <TripDateInput name="expectedReturnDate" label="retorno previsto" required />
                   </label>
                 </div>
                 <label>

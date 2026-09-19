@@ -45,6 +45,26 @@ const fmt = (n: number, d = 0) =>
     maximumFractionDigits: d,
   }).format(n || 0);
 const blank = { trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] };
+
+function calendarDayStamp(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function calendarDayDiff(from: string | Date, to: string | Date) {
+  const start = calendarDayStamp(from);
+  const end = calendarDayStamp(to);
+  if (start == null || end == null) return 0;
+  return Math.floor((end - start) / 864e5);
+}
+
+function shortTripDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
+}
 export default function Home() {
   const [data, setData] = useState<any>(blank),
     [view, setView] = useState("Dashboard"),
@@ -259,18 +279,10 @@ export default function Home() {
     forecast = 0,
     chart: any[] = [];
   if (t) {
-    elapsed = Math.max(
-      1,
-      Math.ceil((Date.now() - new Date(t.departureDate).getTime()) / 864e5),
-    );
-    days = Math.max(
-      elapsed,
-      Math.ceil(
-        (new Date(t.expectedReturnDate).getTime() -
-          new Date(t.departureDate).getTime()) /
-          864e5,
-      ),
-    );
+    // V112: o dashboard usa somente as datas cadastradas na viagem.
+    // Horário de saída/retorno não pode acrescentar um dia extra.
+    elapsed = Math.max(1, calendarDayDiff(t.departureDate, new Date()) + 1);
+    days = Math.max(1, calendarDayDiff(t.departureDate, t.expectedReturnDate) + 1);
     left = Math.max(0, t.targetKg - data.total);
     pct = Math.min(100, (data.total / t.targetKg) * 100);
     avg = data.total / elapsed;
@@ -388,7 +400,7 @@ export default function Home() {
                     <p>VIAGEM ATUAL</p>
                     <h2>{t.name}</h2>
                     <span>
-                      Dia {elapsed} de {days} • Saída de {t.departurePort}
+                      Dia {elapsed} de {days} • {shortTripDate(t.departureDate)} → {shortTripDate(t.expectedReturnDate)} • Saída de {t.departurePort}
                     </span>
                   </div>
                   <button
@@ -542,7 +554,14 @@ export default function Home() {
         ) : view === "Admin — AIS, IA e Créditos" ? (
           <AdminBillingPage />
         ) : (
-          <Operations view={view} onDashboard={() => setView("Dashboard")} />
+          <Operations
+            view={view}
+            onDashboard={() => {
+              setView("Dashboard");
+              setLoading(true);
+              void load();
+            }}
+          />
         )}
       </main>
       <FishAI />
