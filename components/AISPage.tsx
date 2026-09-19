@@ -47,7 +47,7 @@ type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
 type MobilePanel = "search" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
-type SearchProvider = "premium" | "marinesia";
+type SearchProvider = "premium" | "marinesia" | "shipfinder";
 
 const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
 const MARINESIA_AREA_CACHE_KEY = "painel-marinesia-area-cache-v1";
@@ -339,6 +339,9 @@ function sourceInfo(dataSource?: string) {
   if (/marinesia/i.test(source)) {
     return { title: "AIS Free · Marinesia", short: "AIS FREE", className: "marinesia" };
   }
+  if (/shipfinder/i.test(source)) {
+    return { title: "ShipFinder AIS", short: "SHIPFINDER", className: "shipfinder" };
+  }
   if (/premium/i.test(source) || /aprs\.fi|aprsfi/i.test(source)) {
     return { title: "AIS Premium", short: "PREMIUM", className: "premium" };
   }
@@ -404,6 +407,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [nameQuery, setNameQuery] = useState("");
   const [premiumQuery, setPremiumQuery] = useState("");
   const [freeQuery, setFreeQuery] = useState("");
+  const [shipFinderQuery, setShipFinderQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
@@ -421,6 +425,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
   const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
+  const [shipFinderConfigured, setShipFinderConfigured] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
@@ -941,6 +946,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }
       if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
       setMarinesiaConfigured(Boolean(data?.marinesiaConfigured));
+      setShipFinderConfigured(Boolean(data?.shipfinderConfigured));
       if (Number.isFinite(Number(data?.creditUnitPrice))) setCreditUnitPrice(Math.max(0.01, Number(data.creditUnitPrice)));
       if (data?.pricing) setAisPricing({
         locateCredits: Number.isFinite(Number(data.pricing.locateCredits)) ? Number(data.pricing.locateCredits) : 2,
@@ -1173,7 +1179,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       return;
     }
 
-    const isFreeProvider = provider === "marinesia";
+    const isFreeProvider = provider === "marinesia" || provider === "shipfinder";
     const operationCredits = isFreeProvider ? 0 : (force ? aisPricing.updateCredits : aisPricing.locateCredits);
     const operationBrl = formatBrl(operationCredits * creditUnitPrice);
     const operationLabel = force ? "ATUALIZAR OS DADOS" : "CONSULTAR A POSIÇÃO";
@@ -1193,7 +1199,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(
       operationCredits > 0
         ? (force ? `Atualizando posição — ${aisPricing.updateCredits} crédito(s)...` : `Consultando posição — ${aisPricing.locateCredits} crédito(s)...`)
-        : (force ? "Atualizando AIS Free..." : "Consultando AIS Free · Marinesia/fallback...")
+        : provider === "shipfinder"
+          ? (force ? "Atualizando posição pela ShipFinder..." : "Consultando posição pela ShipFinder...")
+          : (force ? "Atualizando AIS Free..." : "Consultando AIS Free · Marinesia/fallback...")
     );
     try {
       const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}&provider=${encodeURIComponent(provider)}`);
@@ -1320,6 +1328,84 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       } catch {
         setStatusMessage("Busca por nome indisponível. Tentando AIS Free na região...");
         await searchArea("marinesia");
+        return;
+      }
+    }
+
+    if (provider === "shipfinder") {
+      if (!shipFinderConfigured) {
+        setStatus("config");
+        setStatusMessage("ShipFinder ainda sem chave ativa. Configure SHIPFINDER_API_KEY na Vercel.");
+        return;
+      }
+
+      if (cleanName.length < 2) {
+        setStatus("error");
+        setStatusMessage("Digite nome, MMSI ou IMO para pesquisar na ShipFinder.");
+        return;
+      }
+
+      const shipDigits = cleanName.replace(/\D/g, "");
+      if (shipDigits.length === 9) {
+        const match: VesselMatch = {
+          name: `MMSI ${shipDigits}`,
+          mmsi: shipDigits,
+          imo: "",
+          country: "",
+          countryIso: "",
+          shipType: "ShipFinder AIS",
+          typeSpecific: "ShipFinder",
+          callsign: "",
+        };
+        setMatches([]);
+        setMatchTotal(0);
+        await getVesselPosition(match, false, "shipfinder");
+        return;
+      }
+
+      const cacheKey = `shipfinder:${cleanName.toLowerCase().replace(/\s+/g, " ")}`;
+      const cached = nameCacheRef.current.get(cacheKey);
+      if (cached) {
+        setMatches(cached);
+        setMatchTotal(cached.length);
+        setStatus("ready");
+        setStatusMessage(`${cached.length} resultado(s) ShipFinder do cache`);
+        if (cached.length === 1) await getVesselPosition(cached[0], false, "shipfinder");
+        return;
+      }
+
+      setStatus("loading");
+      setStatusMessage("ShipFinder: pesquisando embarcação...");
+      setMatches([]);
+      setMatchTotal(0);
+      try {
+        const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=shipfinder`);
+        const data = await response.json();
+        if (!response.ok) {
+          setStatus(response.status === 503 ? "config" : "error");
+          setStatusMessage(data?.error || "Falha na busca ShipFinder.");
+          return;
+        }
+        const rows = (Array.isArray(data?.items) ? data.items : []) as VesselMatch[];
+        nameCacheRef.current.set(cacheKey, rows);
+        setMatches(rows);
+        setMatchTotal(Number(data?.total) || rows.length);
+
+        if (!rows.length) {
+          setStatus("ready");
+          setStatusMessage("Nenhuma embarcação encontrada na ShipFinder.");
+          return;
+        }
+        if (rows.length === 1) {
+          await getVesselPosition(rows[0], false, "shipfinder");
+          return;
+        }
+        setStatus("ready");
+        setStatusMessage(`${rows.length} resultados ShipFinder — escolha o barco para mostrar no mapa`);
+        return;
+      } catch {
+        setStatus("error");
+        setStatusMessage("Falha de rede ao consultar a ShipFinder.");
         return;
       }
     }
@@ -1702,6 +1788,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 </div>
                 <small className="ais-v125-note">{marinesiaCooldownMessage() || (marinesiaConfigured ? "Marinesia conectada." : "Fallback gratuito ativo.")}</small>
               </section>
+
+              <section className="ais-v125-provider-card shipfinder">
+                <div className="ais-v125-provider-head"><Ship /><span><b>SHIPFINDER AIS</b><small>Nome, MMSI ou IMO</small></span><em>API</em></div>
+                <div className="ais-v125-search-row">
+                  <Search />
+                  <input value={shipFinderQuery} onChange={(e) => setShipFinderQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" autoComplete="off" />
+                  <button type="button" disabled={status === "loading" || !shipFinderConfigured} onClick={() => { setSearchProvider("shipfinder"); setNameQuery(shipFinderQuery); void searchByName(undefined, "shipfinder", shipFinderQuery); }}>
+                    {status === "loading" ? <RefreshCw className="spin" /> : <Ship />} BUSCAR SHIPFINDER
+                  </button>
+                </div>
+                <small className="ais-v125-note">{shipFinderConfigured ? "ShipFinder conectada." : "Aguardando SHIPFINDER_API_KEY na Vercel."}</small>
+              </section>
             </div>
 
             {matches.length > 0 && (
@@ -1925,9 +2023,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                     <div className="ais-v125-mobile-search-title"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando janela · cache/fallback ativo" : "0 créditos"}</small></span></div>
                     <div className="ais-v70-mobile-input"><Search /><input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" /><button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>Buscar</button></div>
                   </section>
+
+                  <section className="ais-v125-mobile-search-card shipfinder">
+                    <div className="ais-v125-mobile-search-title"><Ship /><span><b>SHIPFINDER AIS</b><small>{shipFinderConfigured ? "API conectada" : "Falta configurar a chave"}</small></span></div>
+                    <div className="ais-v70-mobile-input"><Search /><input value={shipFinderQuery} onChange={(e) => setShipFinderQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("shipfinder"); setNameQuery(shipFinderQuery); void searchByName(undefined, "shipfinder", shipFinderQuery); }} disabled={status === "loading" || !shipFinderConfigured}>Buscar</button></div>
+                  </section>
                 </div>
 
-                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : "GRÁTIS"}</em></button>)}</div>}
+                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : searchProvider === "shipfinder" ? "SHIPFINDER" : "GRÁTIS"}</em></button>)}</div>}
               </div>
             )}
 
