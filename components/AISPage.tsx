@@ -1223,6 +1223,24 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       return;
     }
 
+    const premiumDigits = cleanName.replace(/\D/g, "");
+    if (premiumDigits.length === 7 || premiumDigits.length === 9) {
+      const match: VesselMatch = {
+        name: premiumDigits.length === 9 ? `MMSI ${premiumDigits}` : `IMO ${premiumDigits}`,
+        mmsi: premiumDigits.length === 9 ? premiumDigits : "",
+        imo: premiumDigits.length === 7 ? premiumDigits : "",
+        country: "",
+        countryIso: "",
+        shipType: "AIS Premium",
+        typeSpecific: "Data Docked",
+        callsign: "",
+      };
+      setMatches([]);
+      setMatchTotal(0);
+      await getVesselPosition(match, false, "premium");
+      return;
+    }
+
     const cacheKey = cleanName.toLowerCase().replace(/\s+/g, " ");
     const cached = nameCacheRef.current.get(cacheKey);
     if (cached) {
@@ -1270,7 +1288,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setStatusMessage(`${rows.length} resultados — escolha o barco certo para consultar a posição — ${aisPricing.locateCredits} crédito(s)`);
     } catch {
       setStatus("error");
-      setStatusMessage("Falha de rede ao consultar o APRS.fi.");
+      setStatusMessage("Falha de rede ao consultar o AIS Premium.");
     }
   }
 
@@ -1606,7 +1624,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             {manualCoordError && <p className="ais-v74-coordinate-error">{manualCoordError}</p>}
             <div className="ais-v70-area-position">
               <span><small>CENTRO DA BUSCA · 50 KM</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Escolha pelo mapa, GPS ou latitude/longitude"}</b></span>
-              <button type="button" onClick={() => void searchArea(searchProvider)} disabled={status === "loading"}>{status === "loading" ? <RefreshCw className="spin" /> : <Search />} BUSCAR 50 KM</button>
+              <div className="ais-v125-area-actions">
+                <button type="button" className="premium" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading"}>{status === "loading" ? <RefreshCw className="spin" /> : <Radio />} PREMIUM · 10 CR</button>
+                <button type="button" className="free" onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia"); }} disabled={status === "loading"}>{status === "loading" ? <RefreshCw className="spin" /> : <Navigation />} AIS FREE · 0 CR</button>
+              </div>
             </div>
             {areaVessels.length > 0 && (
               <div className="ais-v70-area-results">
@@ -1778,7 +1799,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                     {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
                     <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Usar centro atual do mapa</button>
                     <div className="ais-v70-mobile-area-current"><small>Centro selecionado · raio 50 km</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
-                    <button type="button" className="ais-v70-area-go" onClick={() => { void searchArea(searchProvider); }} disabled={status === "loading"}><Search /> Buscar 50 km</button>
+                    <div className="ais-v125-mobile-area-actions">
+                      <button type="button" className="premium" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading"}><Radio /> Premium · 10 CR</button>
+                      <button type="button" className="free" onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia"); }} disabled={status === "loading"}><Navigation /> AIS Free · 0 CR</button>
+                    </div>
                   </>
                 )}
               </div>
