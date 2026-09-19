@@ -559,7 +559,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setFreeMapStatus("loading");
 
     try {
-      const response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=${encodeURIComponent(zoomBucket)}`);
+      const response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=${encodeURIComponent(zoomBucket)}&refresh=${force ? "1" : "0"}`);
       const data = await response.json();
       if (seq !== freeLayerRequestRef.current.seq) return;
       if (!response.ok) {
