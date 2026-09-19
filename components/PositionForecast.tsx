@@ -67,16 +67,19 @@ function CoordinateField({ label, direction, value, onChange }: {
   return (
     <label className="position-coordinate">
       <span>{label} <small>{direction === "S" ? "Sul" : "Oeste"}</small></span>
-      <input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        maxLength={6}
-        autoComplete="off"
-        value={value}
-        placeholder={direction === "S" ? "252178" : "474769"}
-        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
-      />
+      <span className="coord-free-input">
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={6}
+          autoComplete="off"
+          value={value}
+          placeholder={direction === "S" ? "252178" : "474769"}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+        />
+        <span className="coord-degree" aria-hidden="true">°</span>
+      </span>
       <em>{preview ? `Formato: ${preview}` : "Digite somente números — pode apagar e digitar novamente"}</em>
     </label>
   );

@@ -287,29 +287,35 @@ export default function OceanIntelligence() {
         </button>
         {gpsStatus && <div className="ocean-position-gps-ok">{gpsStatus}</div>}
         <label>LATITUDE
-          <input
-            type="text"
-            value={latInput}
-            onChange={e => updateQuickCoordinate(e.target.value, "lat")}
-            placeholder="254565"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={6}
-            autoComplete="off"
-          />
+          <span className="coord-free-input">
+            <input
+              type="text"
+              value={latInput}
+              onChange={e => updateQuickCoordinate(e.target.value, "lat")}
+              placeholder="254565"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              autoComplete="off"
+            />
+            <span className="coord-degree" aria-hidden="true">°</span>
+          </span>
           <small className="ocean-position-input-hint">{latInput.length === 6 ? `Formato: ${quickCoordinateDisplay(latInput, "S")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         <label>LONGITUDE
-          <input
-            type="text"
-            value={lonInput}
-            onChange={e => updateQuickCoordinate(e.target.value, "lon")}
-            placeholder="463545"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={6}
-            autoComplete="off"
-          />
+          <span className="coord-free-input">
+            <input
+              type="text"
+              value={lonInput}
+              onChange={e => updateQuickCoordinate(e.target.value, "lon")}
+              placeholder="463545"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              autoComplete="off"
+            />
+            <span className="coord-degree" aria-hidden="true">°</span>
+          </span>
           <small className="ocean-position-input-hint">{lonInput.length === 6 ? `Formato: ${quickCoordinateDisplay(lonInput, "W")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         {positionError && <div className="ocean-position-error">{positionError}</div>}

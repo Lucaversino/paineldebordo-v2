@@ -17,16 +17,19 @@ export default function CoordinateInput({ name, direction, defaultDecimal }: {
 }) {
   const [digits, setDigits] = useState(() => decimalToDigits(defaultDecimal));
 
-  return <input
-    name={name}
-    required
-    type="text"
-    inputMode="numeric"
-    pattern="[0-9]*"
-    maxLength={6}
-    autoComplete="off"
-    value={digits}
-    placeholder={direction === "S" ? "254530" : "462550"}
-    onChange={(event) => setDigits(event.target.value.replace(/\D/g, "").slice(0, 6))}
-  />;
+  return <span className="coord-free-input">
+    <input
+      name={name}
+      required
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      maxLength={6}
+      autoComplete="off"
+      value={digits}
+      placeholder={direction === "S" ? "254530" : "462550"}
+      onChange={(event) => setDigits(event.target.value.replace(/\D/g, "").slice(0, 6))}
+    />
+    <span className="coord-degree" aria-hidden="true">°</span>
+  </span>;
 }
