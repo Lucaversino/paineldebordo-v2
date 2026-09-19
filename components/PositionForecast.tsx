@@ -157,6 +157,8 @@ export default function PositionForecast() {
   const [saveDialog, setSaveDialog] = useState<{ payload: any; latitudeRaw: string; longitudeRaw: string } | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState("");
 
   const lat = digitsToDecimal(latDigits, "S");
   const lon = digitsToDecimal(lonDigits, "W");
@@ -226,6 +228,47 @@ export default function PositionForecast() {
       const json = await response.json().catch(() => ({}));
       if (response.ok && json.history) setHistory((old) => [json.history, ...old.filter((x) => x.id !== json.history.id)].slice(0, 20));
     } catch {}
+  }
+
+  function useCurrentLocation() {
+    setError("");
+    setNotice("");
+    setGpsStatus("");
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setError("GPS/localização não está disponível neste aparelho ou navegador.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+
+        if (latitude >= 0 || longitude >= 0) {
+          setLocating(false);
+          setError("A localização atual não está no quadrante Sul/Oeste usado por este módulo.");
+          return;
+        }
+
+        setLatDigits(decimalToDigits(latitude));
+        setLonDigits(decimalToDigits(longitude));
+        setGpsStatus(`GPS capturado · precisão aproximada ±${Math.round(accuracy || 0)} m`);
+        setNotice("Latitude e longitude preenchidas com a localização atual do celular.");
+        setLocating(false);
+      },
+      (geoError) => {
+        setLocating(false);
+        if (geoError.code === geoError.PERMISSION_DENIED) {
+          setError("Localização bloqueada. Permita o acesso ao GPS para este site e tente novamente.");
+        } else if (geoError.code === geoError.TIMEOUT) {
+          setError("O GPS demorou para responder. Tente novamente em uma área com melhor sinal.");
+        } else {
+          setError("Não foi possível obter a localização atual do celular.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+    );
   }
 
   async function consult() {
@@ -424,13 +467,23 @@ export default function PositionForecast() {
           <div><LocateFixed /><span><b>Informe a posição</b><small>Mesmo formato usado nas largadas</small></span></div>
         </div>
         <div className="position-coordinate-grid">
-          <CoordinateField label="Latitude" direction="S" value={latDigits} onChange={setLatDigits} />
-          <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={setLonDigits} />
+          <CoordinateField label="Latitude" direction="S" value={latDigits} onChange={(value) => { setLatDigits(value); setGpsStatus(""); }} />
+          <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={(value) => { setLonDigits(value); setGpsStatus(""); }} />
         </div>
+
+        <button type="button" className="position-use-gps" onClick={useCurrentLocation} disabled={busy || locating}>
+          <LocateFixed className={locating ? "spin" : ""}/>
+          <span>
+            <b>{locating ? "BUSCANDO GPS..." : "USAR LOCALIZAÇÃO ATUAL"}</b>
+            <small>Preenche latitude e longitude pelo GPS do celular</small>
+          </span>
+        </button>
+        {gpsStatus && <div className="position-gps-status">{gpsStatus}</div>}
+
         <div className="position-search-actions position-v68-search-actions">
-          <button className="position-consult" onClick={consult} disabled={busy}>{busy ? <RefreshCw className="spin" /> : <Navigation />} {busy ? "CONSULTANDO..." : "CONSULTAR PREVISÃO"}</button>
-          <button className="position-last" onClick={useLastSet} disabled={busy}>Usar última largada</button>
-          <button className="position-clear" onClick={clearSearch} disabled={busy}><X /> Limpar campos</button>
+          <button className="position-consult" onClick={consult} disabled={busy || locating}>{busy ? <RefreshCw className="spin" /> : <Navigation />} {busy ? "CONSULTANDO..." : "CONSULTAR PREVISÃO"}</button>
+          <button className="position-last" onClick={useLastSet} disabled={busy || locating}>Usar última largada</button>
+          <button className="position-clear" onClick={clearSearch} disabled={busy || locating}><X /> Limpar campos</button>
         </div>
         {notice && <p className="position-notice">{notice}</p>}
         {error && <p className="position-error">{error}</p>}
