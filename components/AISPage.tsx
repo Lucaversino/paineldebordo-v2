@@ -400,6 +400,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
 
   const [nameQuery, setNameQuery] = useState("");
+  const [premiumQuery, setPremiumQuery] = useState("");
+  const [freeQuery, setFreeQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
@@ -1145,11 +1147,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  async function searchByName(event?: FormEvent) {
+  async function searchByName(event?: FormEvent, providerOverride?: SearchProvider, queryOverride?: string) {
     event?.preventDefault();
-    const cleanName = nameQuery.trim();
+    const provider = providerOverride || searchProvider;
+    const cleanName = (queryOverride ?? nameQuery).trim();
 
-    if (searchProvider === "marinesia") {
+    if (provider === "marinesia") {
       if (!cleanName) {
         await searchArea("marinesia");
         return;
@@ -1184,7 +1187,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setMatches([]);
       setMatchTotal(0);
       try {
-        const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}`);
+        const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=${encodeURIComponent(provider)}`);
         const data = await response.json();
         if (!response.ok) {
           setStatus(response.status === 503 ? "config" : "error");
@@ -1236,7 +1239,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setMatches([]);
     setMatchTotal(0);
     try {
-      const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}`);
+      const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(cleanName)}&provider=${encodeURIComponent(provider)}`);
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) setStatus("config");
@@ -1521,10 +1524,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       )}
 
       <div className="ais-name-search-card ais-v70-search-card">
-        <div className="ais-v119-provider-tabs">
-          <button type="button" className={searchProvider === "premium" ? "active premium" : "premium"} onClick={() => setSearchProvider("premium")}><Radio /> Premium</button>
-          <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage(marinesiaCooldownMessage() || "AIS Free ativo — digite nome/MMSI/IMO ou deixe vazio para buscar na região."); }}><Navigation /> AIS Free {marinesiaCooldownUntil > Date.now() ? "· aguardando" : marinesiaConfigured ? "" : "· fallback"}</button>
-        </div>
         <div className="ais-v70-search-tabs">
           <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => { setSearchMode("vessel"); setMobilePanel("search"); }}><Ship /> Barco</button>
           <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); setMobilePanel("search"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
@@ -1532,22 +1531,31 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         {searchMode === "vessel" ? (
           <>
-            <div className="ais-name-search-head">
-              <div className="ais-name-title"><Ship /><span><b>LOCALIZAR EMBARCAÇÃO</b><small>Pesquise pelo nome e consulte somente o barco escolhido.</small></span></div>
-              {searchProvider === "premium"
-                ? <div className="ais-credit-flow ais-cost-highlight"><span>{`${aisPricing.locateCredits} CR`}</span><em>{formatBrl(aisPricing.locateCredits * creditUnitPrice)}</em><i>→</i><strong>CONFIRMAÇÃO ANTES DE COBRAR</strong></div>
-                : <div className="ais-credit-flow ais-cost-highlight free"><span>0 CR</span><em>GRÁTIS</em><i>→</i><strong>AIS FREE</strong></div>}
+            <div className="ais-v125-provider-cards">
+              <section className="ais-v125-provider-card premium">
+                <div className="ais-v125-provider-head"><Radio /><span><b>PREMIUM · DATA DOCKED</b><small>Nome, MMSI ou IMO</small></span><em>{aisPricing.locateCredits} CR</em></div>
+                <div className="ais-v125-search-row">
+                  <Search />
+                  <input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" autoComplete="off" />
+                  <button type="button" disabled={status === "loading"} onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }}>
+                    {status === "loading" ? <RefreshCw className="spin" /> : <Search />} BUSCAR PREMIUM
+                  </button>
+                </div>
+                <small className="ais-v125-note">Cobrança somente após posição válida.</small>
+              </section>
+
+              <section className="ais-v125-provider-card free">
+                <div className="ais-v125-provider-head"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>Nome, MMSI, IMO ou região</small></span><em>0 CR</em></div>
+                <div className="ais-v125-search-row">
+                  <Search />
+                  <input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" autoComplete="off" />
+                  <button type="button" disabled={status === "loading"} onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }}>
+                    {status === "loading" ? <RefreshCw className="spin" /> : <Navigation />} BUSCAR AIS FREE
+                  </button>
+                </div>
+                <small className="ais-v125-note">{marinesiaCooldownMessage() || (marinesiaConfigured ? "Marinesia conectada." : "Fallback gratuito ativo.")}</small>
+              </section>
             </div>
-            <form className="ais-name-form" onSubmit={searchByName}>
-              <label>
-                <span>{searchProvider === "marinesia" ? "Nome, MMSI ou IMO" : "Nome do barco"}</span>
-                <div><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder={searchProvider === "marinesia" ? "Nome / MMSI / IMO · vazio = buscar região" : "Ex.: ASTRO SOL I"} autoComplete="off" /></div>
-              </label>
-              <button type="submit" disabled={status === "loading"}>
-                {status === "loading" ? <RefreshCw className="spin" /> : <Search />}
-                {status === "loading" ? "CONSULTANDO..." : "BUSCAR"}
-              </button>
-            </form>
 
             {matches.length > 0 && (
               <div className="ais-name-results">
@@ -1737,18 +1745,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
             {mobilePanel === "search" && (
               <div className="ais-v70-mobile-search">
-                <div className="ais-v119-provider-tabs">
-                  <button type="button" className={searchProvider === "premium" ? "active premium" : "premium"} onClick={() => setSearchProvider("premium")}><Radio /> Premium</button>
-                  <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => { setSearchProvider("marinesia"); setStatusMessage(marinesiaCooldownMessage() || "AIS Free ativo — nome/MMSI/IMO ou busca na região."); }}><Navigation /> AIS Free {marinesiaCooldownUntil > Date.now() ? "· aguardando" : marinesiaConfigured ? "" : "· fallback"}</button>
-                </div>
                 <div className="ais-v70-search-tabs compact">
                   <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
                   <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
                 </div>
                 {searchMode === "vessel" ? (
                   <>
-                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder={searchProvider === "marinesia" ? "Nome, MMSI ou IMO · vazio = região" : "Nome do barco"} /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar</button></div>
-                    {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : "GRÁTIS"}</em></button>)}</div>}
+                    <div className="ais-v125-mobile-search-stack">
+                      <section className="ais-v125-mobile-search-card premium">
+                        <div className="ais-v125-mobile-search-title"><Radio /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição</small></span></div>
+                        <div className="ais-v70-mobile-input"><Search /><input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Premium</button></div>
+                      </section>
+                      <section className="ais-v125-mobile-search-card free">
+                        <div className="ais-v125-mobile-search-title"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando janela · cache/fallback ativo" : "0 créditos"}</small></span></div>
+                        <div className="ais-v70-mobile-input"><Search /><input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" /><button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>AIS Free</button></div>
+                      </section>
+                    </div>
+                    {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : "GRÁTIS"}</em></button>)}</div>}
                   </>
                 ) : (
                   <>
