@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Anchor,
   Bookmark,
@@ -54,50 +54,6 @@ type UnifiedSearchResult = {
   match: VesselMatch;
   providers: SearchProvider[];
 };
-
-const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
-const MARINESIA_AREA_CACHE_KEY = "painel-marinesia-area-cache-v1";
-
-function readMarinesiaCooldown() {
-  if (typeof window === "undefined") return 0;
-  const value = Number(window.localStorage.getItem(MARINESIA_COOLDOWN_KEY) || 0);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function writeMarinesiaCooldown(seconds = 1800) {
-  if (typeof window === "undefined") return 0;
-  const until = Date.now() + Math.max(1, seconds) * 1000;
-  window.localStorage.setItem(MARINESIA_COOLDOWN_KEY, String(until));
-  return until;
-}
-
-function readMarinesiaAreaCache(center: { lat: number; lon: number }) {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(MARINESIA_AREA_CACHE_KEY);
-    if (!raw) return null;
-    const cached = JSON.parse(raw);
-    if (!cached?.createdAt || Date.now() - Number(cached.createdAt) > 30 * 60_000) return null;
-    const dLat = Math.abs(Number(cached.lat) - center.lat);
-    const dLon = Math.abs(Number(cached.lon) - center.lon);
-    if (dLat > 0.45 || dLon > 0.55) return null;
-    return Array.isArray(cached.vessels) ? cached.vessels : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeMarinesiaAreaCache(center: { lat: number; lon: number }, vessels: unknown[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(MARINESIA_AREA_CACHE_KEY, JSON.stringify({
-      lat: center.lat,
-      lon: center.lon,
-      createdAt: Date.now(),
-      vessels,
-    }));
-  } catch {}
-}
 
 type DhnChart = {
   number: string;
@@ -188,6 +144,7 @@ type VesselMatch = {
   shipType: string;
   typeSpecific: string;
   callsign: string;
+  freeProvider?: "aprsfi" | "shipfinder";
 };
 
 type Vessel = {
@@ -470,8 +427,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
-  const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
-  const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
@@ -479,16 +434,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
 
-  const [nameQuery, setNameQuery] = useState("");
-  const [premiumQuery, setPremiumQuery] = useState("");
-  const [freeQuery, setFreeQuery] = useState("");
-  const [shipFinderQuery, setShipFinderQuery] = useState("");
-  const [unifiedQuery, setUnifiedQuery] = useState("");
-  const [unifiedResults, setUnifiedResults] = useState<UnifiedSearchResult[]>([]);
-  const [unifiedLoading, setUnifiedLoading] = useState(false);
+  const [freeSearchQuery, setFreeSearchQuery] = useState("");
+  const [freeSearchLoading, setFreeSearchLoading] = useState(false);
+  const [freeSearchError, setFreeSearchError] = useState("");
+  const [freeSearchResults, setFreeSearchResults] = useState<VesselMatch[]>([]);
+  const [premiumSearchQuery, setPremiumSearchQuery] = useState("");
+  const [premiumSearchLoading, setPremiumSearchLoading] = useState(false);
+  const [premiumSearchError, setPremiumSearchError] = useState("");
+  const [premiumSearchResults, setPremiumSearchResults] = useState<VesselMatch[]>([]);
+  const [premiumPanelOpen, setPremiumPanelOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
-  const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>({ lat: fallbackLat, lon: fallbackLon });
@@ -502,10 +458,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapSource, setFreeMapSource] = useState("AIS automático");
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
-  const [premiumConfigured, setPremiumConfigured] = useState(true);
-  const [freeSearchConfigured, setFreeSearchConfigured] = useState(true);
   const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
-  const [shipFinderConfigured, setShipFinderConfigured] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
@@ -516,23 +469,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
-    setMarinesiaCooldownUntil(readMarinesiaCooldown());
-    const timer = window.setInterval(() => {
-      const until = readMarinesiaCooldown();
-      if (until > Date.now()) {
-        setMarinesiaCooldownUntil(until);
-      } else {
-        setMarinesiaCooldownUntil(0);
-        if (until) window.localStorage.removeItem(MARINESIA_COOLDOWN_KEY);
-      }
-    }, 15000);
-    return () => window.clearInterval(timer);
+    // V138: remove apenas caches/configurações antigas do AIS. Dados de usuário ficam no servidor.
+    try {
+      [
+        "painel-marinesia-cooldown-until",
+        "painel-marinesia-area-cache-v1",
+        "painel-ais-name-cache",
+        "painel-ais-position-cache",
+      ].forEach((key) => {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.removeItem(key);
+      });
+    } catch {}
   }, []);
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
   useEffect(() => { areaRadiusRef.current = 50; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, 50); }, [areaCenter]);
-  const [matches, setMatches] = useState<VesselMatch[]>([]);
-  const [matchTotal, setMatchTotal] = useState(0);
   const [tracked, setTracked] = useState<Vessel | null>(null);
   const [showEmptyHint, setShowEmptyHint] = useState(false);
   const [status, setStatus] = useState<AisStatus>("idle");
@@ -1029,10 +981,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
-      setPremiumConfigured(Boolean(data?.configured));
-      setFreeSearchConfigured(Boolean(data?.marinesiaConfigured || data?.nameResolverFallback));
       setMarinesiaConfigured(Boolean(data?.marinesiaConfigured));
-      setShipFinderConfigured(Boolean(data?.shipfinderConfigured));
       if (Number.isFinite(Number(data?.creditUnitPrice))) setCreditUnitPrice(Math.max(0.01, Number(data.creditUnitPrice)));
       if (data?.pricing) setAisPricing({
         locateCredits: Number.isFinite(Number(data.pricing.locateCredits)) ? Number(data.pricing.locateCredits) : 2,
@@ -1181,8 +1130,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function showVesselFromLibrary(vessel: Vessel, message: string) {
-    const id = vessel.imo && vessel.imo !== "0" ? vessel.imo : vessel.mmsi;
-    if (id) positionCacheRef.current.set(id, vessel);
     trackedRef.current = vessel;
     setTracked(vessel);
     drawVessel(vessel);
@@ -1206,7 +1153,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function openSavedVessel(item: SavedVessel) {
     if (item.lastLatitude == null || item.lastLongitude == null) {
-      setNameQuery(item.name);
       setStatusMessage("Barco salvo sem posição armazenada. Use ATUALIZAR para consultar a posição.");
       return;
     }
@@ -2019,11 +1965,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   }, []);
-
-  const exactMatch = useMemo(() => {
-    const q = nameQuery.trim().toLowerCase();
-    return matches.find((m) => m.name.toLowerCase() === q) || null;
-  }, [matches, nameQuery]);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedAge = tracked ? positionAgeLabel(tracked.positionReceived || tracked.updateTime) : null;
