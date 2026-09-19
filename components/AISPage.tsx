@@ -2322,12 +2322,71 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
             <span>VESSEL FREE</span>
           </button>
+          <button
+            type="button"
+            className={`ais-v137-chart-toggle ${baseMode === "dhn" ? "active" : ""}`}
+            onClick={toggleFishingChart}
+            title="Carta de pesca DHN"
+          >
+            <MapPinned />
+            <span>CARTA</span>
+          </button>
         </div>
+
+        {dhnPanelOpen && (
+          <div className="ais-v137-chart-panel">
+            <div className="ais-v137-chart-head">
+              <span><MapPinned /><b>CARTA DE PESCA</b></span>
+              <button type="button" onClick={() => setDhnPanelOpen(false)}>×</button>
+            </div>
+
+            <button
+              type="button"
+              className={`ais-v137-auto ${dhnAuto ? "active" : ""}`}
+              onClick={() => setDhnAuto((value) => !value)}
+            >
+              <Crosshair /> {dhnAuto ? "AUTOMÁTICA PELO MAPA" : "SELEÇÃO MANUAL"}
+            </button>
+
+            <label className="ais-v137-chart-select">
+              <span>Carta DHN</span>
+              <select
+                value={selectedDhnChart}
+                onChange={(e) => { setDhnAuto(false); setSelectedDhnChart(e.target.value); setMapMode("dhn"); }}
+                disabled={!dhnCharts.length}
+              >
+                {!dhnCharts.length && <option value="">Carregando cartas...</option>}
+                {dhnCharts.map((chart) => (
+                  <option key={chart.number} value={chart.number}>
+                    {chart.number} · {chart.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="ais-v137-opacity">
+              <span>Transparência <b>{Math.round(dhnOpacity * 100)}%</b></span>
+              <input
+                type="range"
+                min="20"
+                max="90"
+                value={Math.round(dhnOpacity * 100)}
+                onChange={(e) => setDhnOpacity(Number(e.target.value) / 100)}
+              />
+            </label>
+
+            <small>{dhnLoadMessage}</small>
+            <button type="button" className="ais-v137-off" onClick={() => { setMapMode("map"); setDhnPanelOpen(false); }}>
+              DESLIGAR CARTA
+            </button>
+          </div>
+        )}
 
         <div className="ais-map-header-controls ais-single-map-badge ais-v119-layerbar">
           <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVessels.length}</span>
           <span className="ais-v119-layer marinesia"><i /> AIS Free</span>
           <span className="ais-v119-layer premium"><i /> Premium</span>
+          {baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 
