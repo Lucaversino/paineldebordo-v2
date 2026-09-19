@@ -46,8 +46,14 @@ type Props = {
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
-type MobilePanel = "search" | "premiumSearch" | "freeSearch" | "shipfinderSearch" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
+type MobilePanel = "search" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
+
+type UnifiedSearchResult = {
+  key: string;
+  match: VesselMatch;
+  providers: SearchProvider[];
+};
 
 const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
 const MARINESIA_AREA_CACHE_KEY = "painel-marinesia-area-cache-v1";
@@ -408,6 +414,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [premiumQuery, setPremiumQuery] = useState("");
   const [freeQuery, setFreeQuery] = useState("");
   const [shipFinderQuery, setShipFinderQuery] = useState("");
+  const [unifiedQuery, setUnifiedQuery] = useState("");
+  const [unifiedResults, setUnifiedResults] = useState<UnifiedSearchResult[]>([]);
+  const [unifiedLoading, setUnifiedLoading] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
@@ -424,6 +433,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapSource, setFreeMapSource] = useState("AIS automático");
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
+  const [premiumConfigured, setPremiumConfigured] = useState(true);
+  const [freeSearchConfigured, setFreeSearchConfigured] = useState(true);
   const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
   const [shipFinderConfigured, setShipFinderConfigured] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
@@ -947,6 +958,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       if (Number.isFinite(Number(data?.credits))) setCredits(Number(data.credits));
+      setPremiumConfigured(Boolean(data?.configured));
+      setFreeSearchConfigured(Boolean(data?.marinesiaConfigured || data?.nameResolverFallback));
       setMarinesiaConfigured(Boolean(data?.marinesiaConfigured));
       setShipFinderConfigured(Boolean(data?.shipfinderConfigured));
       if (Number.isFinite(Number(data?.creditUnitPrice))) setCreditUnitPrice(Math.max(0.01, Number(data.creditUnitPrice)));
@@ -1265,12 +1278,160 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       await Promise.all([
         refreshCredits(),
         recordHistory(vessel, Number(data?.creditCost) || operationCredits),
-        saveVessel(vessel, provider === "marinesia" ? "marinesia" : "premium", true),
+        saveVessel(vessel, provider === "marinesia" ? "marinesia" : provider === "shipfinder" ? "shipfinder" : "premium", true),
       ]);
     } catch {
       setStatus("error");
       setStatusMessage("Falha de rede ao consultar a posição AIS.");
     }
+  }
+
+  function unifiedResultKey(match: VesselMatch) {
+    const mmsi = String(match.mmsi || "").replace(/\D/g, "");
+    const imo = String(match.imo || "").replace(/\D/g, "");
+    const name = String(match.name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (mmsi) return `mmsi:${mmsi}`;
+    if (imo && imo !== "0") return `imo:${imo}`;
+    return `name:${name}`;
+  }
+
+  function sourceName(provider: SearchProvider) {
+    if (provider === "premium") return "Data Docked";
+    if (provider === "shipfinder") return "ShipFinder";
+    return "Marinesia";
+  }
+
+  async function searchAllProviders() {
+    const clean = unifiedQuery.trim();
+    if (clean.length < 2) {
+      setStatus("error");
+      setStatusMessage("Digite nome, MMSI ou IMO.");
+      return;
+    }
+
+    setUnifiedLoading(true);
+    setStatus("loading");
+    setStatusMessage("Buscando nas fontes AIS disponíveis...");
+    setUnifiedResults([]);
+    setMatches([]);
+    setMatchTotal(0);
+
+    try {
+      const digits = clean.replace(/\D/g, "");
+      if (digits.length === 7 || digits.length === 9) {
+        const providers: SearchProvider[] = [];
+        if (freeSearchConfigured) providers.push("marinesia");
+        if (shipFinderConfigured) providers.push("shipfinder");
+        if (premiumConfigured) providers.push("premium");
+
+        const match: VesselMatch = {
+          name: digits.length === 9 ? `MMSI ${digits}` : `IMO ${digits}`,
+          mmsi: digits.length === 9 ? digits : "",
+          imo: digits.length === 7 ? digits : "",
+          country: "",
+          countryIso: "",
+          shipType: "AIS",
+          typeSpecific: "",
+          callsign: "",
+        };
+
+        setUnifiedResults(providers.length ? [{ key: unifiedResultKey(match), match, providers }] : []);
+        setStatus(providers.length ? "ready" : "idle");
+        setStatusMessage("");
+        return;
+      }
+
+      const requests: Array<Promise<{ provider: SearchProvider; rows: VesselMatch[] }>> = [];
+
+      if (premiumConfigured) {
+        requests.push((async () => {
+          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=premium`);
+          const data = await response.json().catch(() => ({}));
+          return { provider: "premium" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
+        })());
+      }
+
+      if (freeSearchConfigured) {
+        requests.push((async () => {
+          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=marinesia`);
+          const data = await response.json().catch(() => ({}));
+          return { provider: "marinesia" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
+        })());
+      }
+
+      if (shipFinderConfigured) {
+        requests.push((async () => {
+          const response = await aisFetch(`/api/ais?action=name&name=${encodeURIComponent(clean)}&provider=shipfinder`);
+          const data = await response.json().catch(() => ({}));
+          return { provider: "shipfinder" as SearchProvider, rows: response.ok && Array.isArray(data?.items) ? data.items : [] };
+        })());
+      }
+
+      const settled = await Promise.allSettled(requests);
+      const merged = new Map<string, UnifiedSearchResult>();
+
+      settled.forEach((result) => {
+        if (result.status !== "fulfilled") return;
+        const { provider, rows } = result.value;
+        rows.forEach((row) => {
+          const key = unifiedResultKey(row);
+          if (!key || key === "name:") return;
+          const current = merged.get(key);
+          if (!current) {
+            merged.set(key, { key, match: row, providers: [provider] });
+            return;
+          }
+
+          const providers = current.providers.includes(provider)
+            ? current.providers
+            : [...current.providers, provider];
+
+          merged.set(key, {
+            key,
+            providers,
+            match: {
+              ...current.match,
+              name: current.match.name || row.name,
+              mmsi: current.match.mmsi || row.mmsi,
+              imo: current.match.imo || row.imo,
+              country: current.match.country || row.country,
+              countryIso: current.match.countryIso || row.countryIso,
+              shipType: current.match.shipType || row.shipType,
+              typeSpecific: current.match.typeSpecific || row.typeSpecific,
+              callsign: current.match.callsign || row.callsign,
+            },
+          });
+        });
+      });
+
+      const normalized = Array.from(merged.values()).sort((a, b) => {
+        const aFree = a.providers.some((p) => p !== "premium") ? 0 : 1;
+        const bFree = b.providers.some((p) => p !== "premium") ? 0 : 1;
+        if (aFree !== bFree) return aFree - bFree;
+        return String(a.match.name || "").localeCompare(String(b.match.name || ""));
+      });
+
+      setUnifiedResults(normalized.slice(0, 12));
+      setStatus(normalized.length ? "ready" : "idle");
+      setStatusMessage("");
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha ao consultar as fontes AIS.");
+    } finally {
+      setUnifiedLoading(false);
+    }
+  }
+
+  async function openUnifiedResult(result: UnifiedSearchResult) {
+    const freeProvider = result.providers.includes("shipfinder")
+      ? "shipfinder"
+      : result.providers.includes("marinesia")
+        ? "marinesia"
+        : null;
+    const provider: SearchProvider = freeProvider || "premium";
+    setSearchProvider(provider);
+    await getVesselPosition(result.match, false, provider);
+    setMobilePanel(null);
   }
 
   async function searchByName(event?: FormEvent, providerOverride?: SearchProvider, queryOverride?: string) {
@@ -2008,55 +2169,66 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           )}
         </div>
 
-        <div className="ais-v70-mobile-dock ais-v119-dock ais-v135-dock">
-          <button type="button" className={mobilePanel === "premiumSearch" ? "active premium-search" : "premium-search"} onClick={() => { const open = mobilePanel !== "premiumSearch"; setMobilePanel(open ? "premiumSearch" : null); if (open) { setSearchProvider("premium"); setMatches([]); setMatchTotal(0); } }}><Search /><span>Premium</span></button>
-          <button type="button" className={mobilePanel === "freeSearch" ? "active free-search" : "free-search"} onClick={() => { const open = mobilePanel !== "freeSearch"; setMobilePanel(open ? "freeSearch" : null); if (open) { setSearchProvider("marinesia"); setMatches([]); setMatchTotal(0); } }}><Search /><span>AIS Free</span></button>
-          <button type="button" className={mobilePanel === "shipfinderSearch" ? "active shipfinder-search" : "shipfinder-search"} onClick={() => { const open = mobilePanel !== "shipfinderSearch"; setMobilePanel(open ? "shipfinderSearch" : null); if (open) { setSearchProvider("shipfinder"); setMatches([]); setMatchTotal(0); } }}><Search /><span>ShipFinder</span></button>
+        <div className="ais-v70-mobile-dock ais-v119-dock ais-v136-dock">
+          <button type="button" className={mobilePanel === "search" ? "active search" : "search"} onClick={() => { const open = mobilePanel !== "search"; setMobilePanel(open ? "search" : null); if (open) { setUnifiedResults([]); setMatches([]); setMatchTotal(0); } }}><Search /><span>Buscar</span></button>
           <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>50 km</span></button>
           <button type="button" className={mobilePanel === "saved" ? "active saved" : "saved"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{premiumSavedVessels.length}</em></button>
-          <button type="button" className={mobilePanel === "history" ? "active history" : "history"} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Hist.</span><em>{historyItems.length}</em></button>
+          <button type="button" className={mobilePanel === "history" ? "active history" : "history"} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
         </div>
 
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "premiumSearch" ? "Premium · Data Docked" : mobilePanel === "freeSearch" ? "AIS Free · Marinesia" : mobilePanel === "shipfinderSearch" ? "ShipFinder AIS" : mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
+              <b>{mobilePanel === "search" ? "Buscar barco" : mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
-            {mobilePanel === "premiumSearch" && (
-              <div className="ais-v135-provider-panel premium">
-                <div className="ais-v135-provider-head"><Search /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição válida</small></span></div>
-                <div className="ais-v70-mobile-input">
+            {mobilePanel === "search" && (
+              <div className="ais-v136-unified-search">
+                <div className="ais-v136-search-box">
                   <Search />
-                  <input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" />
-                  <button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Buscar</button>
+                  <input
+                    value={unifiedQuery}
+                    onChange={(e) => setUnifiedQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void searchAllProviders(); }}
+                    placeholder="Nome, MMSI ou IMO"
+                    autoComplete="off"
+                  />
+                  <button type="button" onClick={() => void searchAllProviders()} disabled={unifiedLoading || status === "loading"}>
+                    {unifiedLoading ? <RefreshCw className="spin" /> : <Search />}
+                    Buscar
+                  </button>
                 </div>
-                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"premium-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "premium"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>PREMIUM</em></button>)}</div>}
-              </div>
-            )}
 
-            {mobilePanel === "freeSearch" && (
-              <div className="ais-v135-provider-panel free">
-                <div className="ais-v135-provider-head"><Search /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando próxima janela · fallback ativo" : "0 créditos"}</small></span></div>
-                <div className="ais-v70-mobile-input">
-                  <Search />
-                  <input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" />
-                  <button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>Buscar</button>
+                <div className="ais-v136-legend">
+                  <span className="free"><i /> GRÁTIS</span>
+                  <span className="premium"><i /> PREMIUM · {aisPricing.locateCredits} CR</span>
                 </div>
-                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"free-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "marinesia"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>GRÁTIS</em></button>)}</div>}
-              </div>
-            )}
 
-            {mobilePanel === "shipfinderSearch" && (
-              <div className="ais-v135-provider-panel shipfinder">
-                <div className="ais-v135-provider-head"><Search /><span><b>SHIPFINDER AIS</b><small>{shipFinderConfigured ? "API conectada · busca independente" : "Configure SHIPFINDER_API_KEY"}</small></span></div>
-                <div className="ais-v70-mobile-input">
-                  <Search />
-                  <input value={shipFinderQuery} onChange={(e) => setShipFinderQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" />
-                  <button type="button" onClick={() => { setSearchProvider("shipfinder"); setNameQuery(shipFinderQuery); void searchByName(undefined, "shipfinder", shipFinderQuery); }} disabled={status === "loading" || !shipFinderConfigured}>Buscar</button>
-                </div>
-                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={"shipfinder-" + (match.mmsi || match.imo || index)} onClick={() => { void getVesselPosition(match, false, "shipfinder"); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>SHIPFINDER</em></button>)}</div>}
+                {unifiedResults.length > 0 && (
+                  <div className="ais-v136-results">
+                    {unifiedResults.map((result) => {
+                      const hasFree = result.providers.some((provider) => provider !== "premium");
+                      const hasPremium = result.providers.includes("premium");
+                      return (
+                        <button type="button" key={result.key} onClick={() => void openUnifiedResult(result)}>
+                          <Ship />
+                          <span className="ais-v136-result-copy">
+                            <b>{result.match.name || result.match.mmsi || result.match.imo}</b>
+                            <small>
+                              MMSI {result.match.mmsi || "—"} · IMO {result.match.imo || "—"}
+                            </small>
+                            <em>{result.providers.map(sourceName).join(" · ")}</em>
+                          </span>
+                          <span className="ais-v136-badges">
+                            {hasFree && <i className="free">GRÁTIS</i>}
+                            {hasPremium && <i className="premium">PREMIUM</i>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
