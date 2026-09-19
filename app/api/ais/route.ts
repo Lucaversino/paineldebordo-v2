@@ -277,6 +277,7 @@ async function updateMarinesiaLimiter(input: {
     const nextAllowedAt = Number.isFinite(resetEpoch) && resetEpoch > 0
       ? new Date(resetEpoch * 1000)
       : new Date(Date.now() + fallbackSeconds * 1000);
+    const nextAllowedIso = nextAllowedAt.toISOString();
 
     await db.execute(sql`
       insert into public.ais_provider_rate_limits (
@@ -284,7 +285,7 @@ async function updateMarinesiaLimiter(input: {
       )
       values (
         'marinesia',
-        ${nextAllowedAt},
+        ${nextAllowedIso}::timestamptz,
         ${input.status ?? null},
         ${input.limit ?? null},
         ${input.remaining ?? null},
@@ -549,6 +550,48 @@ function detailOf(data: any) {
   return data?.detail && typeof data.detail === "object" ? data.detail : data;
 }
 
+function normalizeDataDockedMatch(raw: any) {
+  return {
+    name: textOrEmpty(raw?.name || raw?.vesselName),
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
+    country: textOrEmpty(raw?.country),
+    countryIso: textOrEmpty(raw?.countryIso),
+    shipType: textOrEmpty(raw?.shipType) || "Embarcação AIS",
+    typeSpecific: textOrEmpty(raw?.typeSpecific || raw?.shipType) || "Embarcação AIS",
+    callsign: textOrEmpty(raw?.callsign),
+  };
+}
+
+function normalizeDataDockedVessel(raw: any, fallbackName = "") {
+  const lat = numberOrNull(raw?.latitude ?? raw?.lat);
+  const lon = numberOrNull(raw?.longitude ?? raw?.lon);
+  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const providerTime = textOrEmpty(raw?.positionReceived || raw?.updateTime || raw?.timestamp);
+  const updateTime = textOrEmpty(raw?.updateTime || raw?.positionReceived || raw?.timestamp);
+  return {
+    mmsi: textOrEmpty(raw?.mmsi).replace(/\D/g, ""),
+    imo: textOrEmpty(raw?.imo).replace(/\D/g, ""),
+    name: textOrEmpty(raw?.name || raw?.vesselName) || fallbackName,
+    lat,
+    lon,
+    sog: numberOrNull(raw?.speed ?? raw?.sog),
+    cog: numberOrNull(raw?.course ?? raw?.cog),
+    heading: numberOrNull(raw?.heading),
+    draught: textOrEmpty(raw?.draught),
+    destination: textOrEmpty(raw?.destination),
+    lastPort: textOrEmpty(raw?.lastPort),
+    callsign: textOrEmpty(raw?.callsign),
+    vesselType: textOrEmpty(raw?.typeSpecific || raw?.shipType) || "Embarcação AIS",
+    navStatusText: textOrEmpty(raw?.navigationalStatus || raw?.navStatus),
+    dataSource: textOrEmpty(raw?.dataSource) || "Data Docked",
+    positionReceived: providerTime,
+    updateTime,
+    receivedAt: providerTime && !Number.isNaN(new Date(providerTime).getTime()) ? new Date(providerTime).getTime() : Date.now(),
+    provider: "Data Docked",
+  };
+}
+
 function normalizeAreaVessel(raw: any) {
   const lat = numberOrNull(raw?.latitude ?? raw?.lat);
   const lon = numberOrNull(raw?.longitude ?? raw?.lon);
@@ -591,10 +634,11 @@ export async function GET(request: NextRequest) {
       const settings = await getBillingSettings();
       const wallet = await ensureWallet(user, settings);
       return NextResponse.json({
-        configured: Boolean(aprsApiKey),
+        configured: Boolean(dataDockedApiKey),
         areaConfigured: Boolean(dataDockedApiKey),
-        provider: "Premium AIS",
+        provider: "Data Docked",
         complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : null,
+        nameResolverFallback: Boolean(aprsApiKey),
         marinesiaConfigured: Boolean(marinesiaApiKey),
         credits: wallet.balance,
         creditUnitPrice: settings.CREDIT_UNIT_PRICE,
@@ -611,8 +655,8 @@ export async function GET(request: NextRequest) {
 
     if (action === "provider-health") {
       if (!admin) return NextResponse.json({ error: "Acesso administrativo negado." }, { status: 403 });
-      if (!aprsApiKey) {
-        return NextResponse.json({ ok: false, provider: "APRS.fi", error: "APRSFI_API_KEY não configurada." }, { status: 503 });
+      if (!dataDockedApiKey) {
+        return NextResponse.json({ ok: false, provider: "Data Docked", error: "DATADOCKED_API_KEY não configurada." }, { status: 503 });
       }
 
       let dataDockedCredits: number | null = null;
@@ -628,9 +672,9 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        provider: "APRS.fi",
+        provider: "Data Docked",
         configured: true,
-        areaProvider: dataDockedApiKey ? "Data Docked" : marinesiaApiKey ? "Marinesia AIS (fallback)" : "não configurado",
+        areaProvider: "Data Docked",
         complementaryProvider: marinesiaApiKey ? "Marinesia AIS" : "não configurado",
         marinesiaConfigured: Boolean(marinesiaApiKey),
         marinesiaPlanMode: "free-protected-30min",
@@ -639,17 +683,59 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "name") {
-      if (!aprsApiKey) {
-        return NextResponse.json(
-          { error: "APRSFI_API_KEY não configurada na Vercel.", configured: false },
-          { status: 503 },
-        );
-      }
-
+      const providerChoice = (searchParams.get("provider") || "premium").toLowerCase();
+      const isFreeSearch = providerChoice === "marinesia" || providerChoice === "free";
       const settings = await getBillingSettings();
       const rawName = (searchParams.get("name") || "").trim();
+
       if (rawName.length < 2) {
         return NextResponse.json({ error: "Digite pelo menos 2 caracteres do nome do barco." }, { status: 400 });
+      }
+
+      if (!isFreeSearch) {
+        if (!dataDockedApiKey) {
+          return NextResponse.json(
+            { error: "DATADOCKED_API_KEY não configurada para o AIS Premium.", configured: false },
+            { status: 503 },
+          );
+        }
+
+        const encodedName = encodeURIComponent(rawName.replace(/\s+/g, "_"));
+        const data = await callDataDocked(`/vessels-by-vessel-name?name=${encodedName}&page_number=1`, dataDockedApiKey);
+        const source = detailOf(data);
+        const rawItems = Array.isArray(source?.items) ? source.items : Array.isArray(data?.items) ? data.items : [];
+        const items = rawItems
+          .map(normalizeDataDockedMatch)
+          .filter((item: any) => item.name || item.imo || item.mmsi);
+
+        void logAisUsage({
+          userId: user.id,
+          action: "name_search_datadocked",
+          vesselName: rawName,
+          providerCalls: 1,
+          creditsCharged: 0,
+          estimatedApiCostBrl: 0,
+          status: items.length ? "success" : "not_found",
+        }).catch(() => null);
+
+        return NextResponse.json({
+          configured: true,
+          provider: "Data Docked",
+          query: rawName,
+          exactSearch: true,
+          total: Number(source?.total ?? data?.total ?? items.length),
+          page: 1,
+          items,
+          finalQueryCredits: settings.AIS_SINGLE_QUERY_CREDITS,
+          adminFree: false,
+        });
+      }
+
+      if (!aprsApiKey) {
+        return NextResponse.json(
+          { error: "Busca gratuita por nome indisponível no momento. Use MMSI/IMO ou Buscar Região.", configured: false },
+          { status: 503 },
+        );
       }
 
       const data = await callAprsFi(rawName, aprsApiKey);
@@ -660,7 +746,7 @@ export async function GET(request: NextRequest) {
 
       void logAisUsage({
         userId: user.id,
-        action: "name_search_aprsfi",
+        action: "name_search_ais_free",
         vesselName: rawName,
         providerCalls: 1,
         creditsCharged: 0,
@@ -670,13 +756,13 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         configured: true,
-        provider: "APRS.fi",
+        provider: "AIS Free · identificador",
         query: rawName,
         exactSearch: true,
         total: items.length,
         page: 1,
         items,
-        finalQueryCredits: settings.AIS_SINGLE_QUERY_CREDITS,
+        finalQueryCredits: 0,
         adminFree: false,
       });
     }
@@ -687,7 +773,7 @@ export async function GET(request: NextRequest) {
       const providerChoice = (searchParams.get("provider") || "premium").toLowerCase();
       const isFree = providerChoice === "marinesia" || providerChoice === "free";
       const isUpdate = searchParams.get("update") === "1";
-      const target = name || id;
+      const target = id || name;
 
       if (!target) return NextResponse.json({ error: "Informe o nome, IMO ou MMSI." }, { status: 400 });
 
@@ -769,47 +855,58 @@ export async function GET(request: NextRequest) {
       const mode = isUpdate ? "ais_update" as const : "ais_single" as const;
       const access = await assertCanUse(user, mode);
 
-      if (!aprsApiKey) {
+      if (!dataDockedApiKey) {
         return NextResponse.json(
-          { error: "APRSFI_API_KEY não configurada na Vercel.", configured: false },
+          { error: "DATADOCKED_API_KEY não configurada para o AIS Premium.", configured: false },
           { status: 503 },
         );
       }
 
-      const data = await callAprsFi(target, aprsApiKey);
-      const entries = aprsEntries(data);
-      const selected =
-        (id
-          ? entries.find((entry: any) => {
-              const mmsi = textOrEmpty(entry?.mmsi).replace(/\D/g, "");
-              const imo = textOrEmpty(entry?.imo).replace(/\D/g, "");
-              return mmsi === id || imo === id;
-            })
-          : null) ||
-        entries[0];
-      const vessel = normalizeAprsVessel(selected);
-      if (vessel && !vessel.name && name) vessel.name = name;
+      let identifier = id;
+      let resolvedName = name;
 
-      if (!vessel) {
+      if (!identifier && name) {
+        const encodedName = encodeURIComponent(name.replace(/\s+/g, "_"));
+        const searchData = await callDataDocked(`/vessels-by-vessel-name?name=${encodedName}&page_number=1`, dataDockedApiKey);
+        const searchSource = detailOf(searchData);
+        const first = (Array.isArray(searchSource?.items) ? searchSource.items : Array.isArray(searchData?.items) ? searchData.items : [])[0];
+        if (first) {
+          identifier = textOrEmpty(first?.imo || first?.mmsi).replace(/\D/g, "");
+          resolvedName = textOrEmpty(first?.name) || name;
+        }
+      }
+
+      if (!identifier) {
         return NextResponse.json(
-          { error: "AIS Premium não retornou uma posição válida. Nenhum crédito foi descontado." },
+          { error: "Não foi possível obter IMO/MMSI para consultar a posição Premium. Nenhum crédito foi descontado." },
           { status: 404 },
         );
       }
 
-      const reference = vessel.mmsi || vessel.imo || id || name;
+      const data = await callDataDocked(`/get-vessel-location?imo_or_mmsi=${encodeURIComponent(identifier)}`, dataDockedApiKey);
+      const source = detailOf(data);
+      const vessel = normalizeDataDockedVessel(source, resolvedName);
+
+      if (!vessel) {
+        return NextResponse.json(
+          { error: "Data Docked não retornou uma posição válida. Nenhum crédito foi descontado." },
+          { status: 404 },
+        );
+      }
+
+      const reference = vessel.mmsi || vessel.imo || identifier;
       const debit = await debitCreditsAfterSuccess({
         user,
         mode,
         description: `${isUpdate ? "Atualizar posição" : "Localizar barco"} — ${vessel.name || reference}`,
         reference,
-        metadata: { name: vessel.name, lat: vessel.lat, lon: vessel.lon, provider: "Premium AIS" },
+        metadata: { name: vessel.name, lat: vessel.lat, lon: vessel.lon, provider: "Data Docked" },
       });
 
       void logAisUsage({
         userId: user.id,
-        action: isUpdate ? "update_premium" : "locate_premium",
-        vesselName: vessel.name || name || reference,
+        action: isUpdate ? "update_premium_datadocked" : "locate_premium_datadocked",
+        vesselName: vessel.name || resolvedName || reference,
         providerCalls: 1,
         creditsCharged: debit.charged,
         estimatedApiCostBrl: access.settings.AIS_PROVIDER_COST_PER_QUERY_BRL,
@@ -818,7 +915,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         configured: true,
-        provider: "Premium AIS",
+        provider: "Data Docked",
         vessel,
         creditCost: debit.charged,
         billing: debit,
