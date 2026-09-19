@@ -45,7 +45,7 @@ type Props = {
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
-type MobilePanel = "search" | "saved" | "areaSaved" | "history" | null;
+type MobilePanel = "search" | "areaSearch" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia";
 
 const MARINESIA_COOLDOWN_KEY = "painel-marinesia-cooldown-until";
@@ -411,6 +411,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [manualLatDigits, setManualLatDigits] = useState("");
   const [manualLonDigits, setManualLonDigits] = useState("");
   const [manualCoordError, setManualCoordError] = useState("");
+  const [mobileAreaAdvanced, setMobileAreaAdvanced] = useState(false);
   const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
   const [areaCost, setAreaCost] = useState<number | null>(null);
   const [freeMapVessels, setFreeMapVessels] = useState<Vessel[]>([]);
@@ -1292,25 +1293,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  function locateDevice() {
+  function locateDevice(forArea = false) {
     if (!navigator.geolocation) {
-      setStatusMessage("GPS não disponível. Digite latitude e longitude manualmente na busca por área.");
+      setStatusMessage("GPS não disponível. Use o centro do mapa ou digite a posição.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
+        const useAsArea = forArea || searchModeRef.current === "area";
         setDevicePosition(coords);
-        centerOn(coords.lat, coords.lon, searchModeRef.current === "area" ? 8 : 12, true);
-        if (searchModeRef.current === "area") {
+        centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, true);
+        if (useAsArea) {
           setAreaCenter(coords);
           drawAreaSelection(coords.lat, coords.lon, 50);
-          setStatusMessage(`GPS localizado e definido como centro da busca · ${formatCoordMarine(coords.lat, true)} · ${formatCoordMarine(coords.lon, false)}`);
+          setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordMarine(coords.lat, true)} · ${formatCoordMarine(coords.lon, false)}`);
         } else {
           setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
         }
       },
-      () => setStatusMessage("GPS não autorizado ou indisponível. Use os campos de latitude e longitude."),
+      () => setStatusMessage("GPS não autorizado ou indisponível. Use o centro do mapa ou digite a posição."),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
     );
   }
@@ -1752,59 +1754,73 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         <div className="ais-v70-mobile-dock ais-v119-dock">
           <button type="button" className={mobilePanel === "search" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "search" ? null : "search")}><Search /><span>Buscar</span></button>
-          <button type="button" className={mobilePanel === "saved" ? "active premium" : "premium"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Premium</span><em>{premiumSavedVessels.length}</em></button>
-          <button type="button" className={mobilePanel === "areaSaved" ? "active area" : "area"} onClick={() => setMobilePanel(mobilePanel === "areaSaved" ? null : "areaSaved")}><Crosshair /><span>Área 50 km</span><em>{areaSavedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>50 km</span></button>
+          <button type="button" className={mobilePanel === "saved" ? "active premium" : "premium"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{premiumSavedVessels.length}</em></button>
           <button type="button" className={mobilePanel === "history" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
         </div>
 
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "search" ? "Pesquisar AIS" : mobilePanel === "saved" ? "Barcos Premium" : mobilePanel === "areaSaved" ? "Pasta Premium · 50 km" : "Histórico AIS"}</b>
+              <b>{mobilePanel === "search" ? "Buscar barco" : mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
             {mobilePanel === "search" && (
-              <div className="ais-v70-mobile-search">
-                <div className="ais-v70-search-tabs compact">
-                  <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
-                  <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
+              <div className="ais-v70-mobile-search ais-v127-simple-search">
+                <div className="ais-v125-mobile-search-stack">
+                  <section className="ais-v125-mobile-search-card premium">
+                    <div className="ais-v125-mobile-search-title"><Radio /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição</small></span></div>
+                    <div className="ais-v70-mobile-input"><Search /><input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Buscar</button></div>
+                  </section>
+
+                  <section className="ais-v125-mobile-search-card free">
+                    <div className="ais-v125-mobile-search-title"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando janela · cache/fallback ativo" : "0 créditos"}</small></span></div>
+                    <div className="ais-v70-mobile-input"><Search /><input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" /><button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>Buscar</button></div>
+                  </section>
                 </div>
-                {searchMode === "vessel" ? (
-                  <>
-                    <div className="ais-v125-mobile-search-stack">
-                      <section className="ais-v125-mobile-search-card premium">
-                        <div className="ais-v125-mobile-search-title"><Radio /><span><b>PREMIUM · DATA DOCKED</b><small>{aisPricing.locateCredits} créditos por posição</small></span></div>
-                        <div className="ais-v70-mobile-input"><Search /><input value={premiumQuery} onChange={(e) => setPremiumQuery(e.target.value)} placeholder="Nome, MMSI ou IMO" /><button type="button" onClick={() => { setSearchProvider("premium"); setNameQuery(premiumQuery); void searchByName(undefined, "premium", premiumQuery); }} disabled={status === "loading"}>Premium</button></div>
-                      </section>
-                      <section className="ais-v125-mobile-search-card free">
-                        <div className="ais-v125-mobile-search-title"><Navigation /><span><b>AIS FREE · MARINESIA</b><small>{marinesiaCooldownUntil > Date.now() ? "Aguardando janela · cache/fallback ativo" : "0 créditos"}</small></span></div>
-                        <div className="ais-v70-mobile-input"><Search /><input value={freeQuery} onChange={(e) => setFreeQuery(e.target.value)} placeholder="Nome, MMSI ou IMO · vazio = região" /><button type="button" onClick={() => { setSearchProvider("marinesia"); setNameQuery(freeQuery); void searchByName(undefined, "marinesia", freeQuery); }} disabled={status === "loading"}>AIS Free</button></div>
-                      </section>
-                    </div>
-                    {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : "GRÁTIS"}</em></button>)}</div>}
-                  </>
-                ) : (
-                  <>
-                    <div className="ais-v70-mobile-radius single"><button type="button" className="active">50 km <small>{searchProvider === "premium" ? "PREMIUM" : "AIS FREE"}</small></button></div>
-                    <div className="ais-v74-mobile-location-actions">
-                      <button type="button" onClick={locateDevice}><LocateFixed /> GPS do celular</button>
-                      {devicePosition && <button type="button" onClick={() => { setAreaCenter(devicePosition); drawAreaSelection(devicePosition.lat, devicePosition.lon, 50); centerOn(devicePosition.lat, devicePosition.lon, 8, true); }}><Navigation /> Usar GPS encontrado</button>}
-                    </div>
-                    <div className="ais-v74-mobile-coordinates">
-                      <label><span>Latitude Sul</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLatDigits} onChange={(e) => { setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="254530" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
-                      <label><span>Longitude Oeste</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLonDigits} onChange={(e) => { setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="462550" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
-                      <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar lat/long</button>
-                    </div>
-                    {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
-                    <button type="button" className="ais-v70-select-center" onClick={() => { chooseAreaCenterFromMap(); setMobilePanel(null); }}><Crosshair /> Usar centro atual do mapa</button>
-                    <div className="ais-v70-mobile-area-current"><small>Centro selecionado · raio 50 km</small><b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Nenhum"}</b></div>
-                    <div className="ais-v125-mobile-area-actions">
-                      <button type="button" className="premium" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading"}><Radio /> Premium · 10 CR</button>
-                      <button type="button" className="free" onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia"); }} disabled={status === "loading"}><Navigation /> AIS Free · 0 CR</button>
-                    </div>
-                  </>
+
+                {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match, false, searchProvider); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small></span><em>{searchProvider === "premium" ? "PREMIUM" : "GRÁTIS"}</em></button>)}</div>}
+              </div>
+            )}
+
+            {mobilePanel === "areaSearch" && (
+              <div className="ais-v127-area-simple">
+                <div className="ais-v127-area-hero">
+                  <span><Crosshair /></span>
+                  <div><b>RADAR 50 KM</b><small>Uma busca simples na região escolhida</small></div>
+                  <em>{aisPricing.areaCredits} CR</em>
+                </div>
+
+                <div className="ais-v127-area-pick">
+                  <button type="button" onClick={() => locateDevice(true)}><LocateFixed /> Meu GPS</button>
+                  <button type="button" onClick={chooseAreaCenterFromMap}><Crosshair /> Centro do mapa</button>
+                </div>
+
+                <div className="ais-v127-area-current">
+                  <small>Centro da busca</small>
+                  <b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Use GPS ou o centro do mapa"}</b>
+                </div>
+
+                <button type="button" className="ais-v127-area-main" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading" || !areaCenter}>
+                  {status === "loading" ? <RefreshCw className="spin" /> : <Radio />}
+                  {status === "loading" ? "BUSCANDO..." : `BUSCAR 50 KM · ${aisPricing.areaCredits} CR`}
+                </button>
+
+                <button type="button" className="ais-v127-area-more" onClick={() => setMobileAreaAdvanced((value) => !value)}>
+                  {mobileAreaAdvanced ? "Ocultar posição manual" : "Digitar outra posição"}
+                </button>
+
+                {mobileAreaAdvanced && (
+                  <div className="ais-v74-mobile-coordinates ais-v127-manual">
+                    <label><span>Latitude Sul</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLatDigits} onChange={(e) => { setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="254530" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
+                    <label><span>Longitude Oeste</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLonDigits} onChange={(e) => { setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="462550" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
+                    <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar posição</button>
+                  </div>
                 )}
+                {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
+
+                <button type="button" className="ais-v127-area-saved" onClick={() => setMobilePanel("areaSaved")}><FolderHeart /> Ver resultados salvos <em>{areaSavedVessels.length}</em></button>
               </div>
             )}
 
