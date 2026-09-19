@@ -332,6 +332,9 @@ export async function GET(request: Request) {
         swellDirection: directionName(marine?.hourly?.swell_wave_direction?.[mi]),
         swellPeriodS: marine?.hourly?.swell_wave_period?.[mi] ?? null,
         seaTemperatureC: marine?.hourly?.sea_surface_temperature?.[mi] ?? null,
+        currentKmh: marine?.hourly?.ocean_current_velocity?.[mi] ?? null,
+        currentDirectionDeg: marine?.hourly?.ocean_current_direction?.[mi] ?? null,
+        currentDirection: directionName(marine?.hourly?.ocean_current_direction?.[mi]),
         seaLevelMslM: marine?.hourly?.sea_level_height_msl?.[mi] ?? null,
       });
       if (forecast.length >= 24) break;

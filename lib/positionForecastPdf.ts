@@ -7,6 +7,13 @@ const number = (value: unknown, digits = 1) => {
   return parsed.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 };
 
+const knots = (value: unknown, digits = 2) => {
+  if (value == null || value === "") return "-";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "-";
+  return (parsed / 1.852).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
+
 const when = (value?: string | null) => {
   if (!value) return "-";
   const date = new Date(value);
@@ -27,7 +34,7 @@ function nauticalPositionPdf(lat: number, lon: number) {
 export function createPositionForecastPdf(data: any) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const forecast = Array.isArray(data?.forecast) ? data.forecast : [];
-  const extrema = Array.isArray(data?.tide?.extrema) ? data.tide.extrema : [];
+  const currentRows = forecast.filter((item: any) => Number.isFinite(Number(item?.currentKmh)));
 
   doc.setFillColor(4, 32, 39);
   doc.rect(0, 0, 297, 40, "F");
@@ -85,14 +92,14 @@ export function createPositionForecastPdf(data: any) {
     startY: 86,
     margin: { left: 16, right: 16 },
     theme: "grid",
-    head: [["Vento", "Rajadas", "Direcao", "Onda", "Periodo", "Mare modelada", "Temp. mar", "Clorofila"]],
+    head: [["Vento", "Rajadas", "Direcao", "Onda", "Periodo", "Corrente de mare", "Temp. mar", "Clorofila"]],
     body: [[
       `${number(data?.current?.windSpeedKmh)} km/h`,
       `${number(data?.current?.gustKmh)} km/h`,
       `${data?.current?.windDirection || "-"} (${number(data?.current?.windDirectionDeg, 0)}°)`,
       `${number(data?.current?.waveHeightM)} m`,
       `${number(data?.current?.wavePeriodS)} s`,
-      `${number(data?.current?.seaLevelMslM, 2)} m`,
+      `${knots(data?.current?.currentKmh)} nos · ${data?.current?.currentDirection || "-"}`,
       `${number(data?.current?.seaTemperatureC)} °C`,
       `${number(data?.current?.chlorophyllMgM3, 2)} mg/m³`,
     ]],
@@ -103,13 +110,13 @@ export function createPositionForecastPdf(data: any) {
   const afterCurrent = (doc as any).lastAutoTable?.finalY || 72;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("PREVISAO POR HORARIO - VENTO, ONDAS E MARE", 16, afterCurrent + 9);
+  doc.text("PREVISAO POR HORARIO - VENTO, ONDAS E CORRENTES DE MARE", 16, afterCurrent + 9);
 
   autoTable(doc, {
     startY: afterCurrent + 13,
     margin: { left: 16, right: 16 },
     theme: "striped",
-    head: [["Horario", "Vento", "Rajada", "Dir. vento", "Onda", "Dir. onda", "Periodo", "Swell", "Mare", "Temp."]],
+    head: [["Horario", "Vento", "Rajada", "Dir. vento", "Onda", "Dir. onda", "Periodo", "Swell", "Corrente", "Temp."]],
     body: forecast.map((item: any) => [
       when(item.time),
       `${number(item.windSpeedKmh, 0)} km/h`,
@@ -119,7 +126,7 @@ export function createPositionForecastPdf(data: any) {
       item.waveDirection || "-",
       `${number(item.wavePeriodS)} s`,
       `${number(item.swellHeightM)} m`,
-      `${number(item.seaLevelMslM, 2)} m`,
+      `${knots(item.currentKmh)} nos · ${item.currentDirection || "-"}`,
       `${number(item.seaTemperatureC)} °C`,
     ]),
     styles: { fontSize: 7, cellPadding: 1.8 },
@@ -129,19 +136,29 @@ export function createPositionForecastPdf(data: any) {
 
   const forecastEnd = (doc as any).lastAutoTable?.finalY || 160;
   let y = forecastEnd + 9;
-  if (y > 185) {
+  if (y > 165) {
     doc.addPage();
     y = 18;
   }
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("PICOS DE NIVEL DO MAR MODELADOS", 16, y);
+  doc.text("CORRENTES DE MARE MODELADAS - DETALHE", 16, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(92, 119, 124);
+  doc.text("Velocidade e direcao da corrente do oceano; o modelo inclui contribuicoes de maré e ondas.", 16, y + 5);
   autoTable(doc, {
-    startY: y + 4,
+    startY: y + 9,
     margin: { left: 16, right: 16 },
     theme: "plain",
-    head: [["Tipo", "Horario", "Nivel"]],
-    body: extrema.map((item: any) => [item.type === "HIGH" ? "ALTA" : "BAIXA", when(item.time), `${number(item.height, 2)} m`]),
+    head: [["Horario", "Velocidade", "km/h", "Direcao", "Graus"]],
+    body: currentRows.slice(0, 12).map((item: any) => [
+      when(item.time),
+      `${knots(item.currentKmh)} nos`,
+      `${number(item.currentKmh)} km/h`,
+      item.currentDirection || "-",
+      `${number(item.currentDirectionDeg, 0)}°`,
+    ]),
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [14, 63, 72], textColor: [255, 255, 255] },
   });

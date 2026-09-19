@@ -77,6 +77,11 @@ function CoordinateField({ label, direction, value, onChange }: {
   );
 }
 
+function toKnots(value: any) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number / 1.852 : null;
+}
+
 function fmt(value: any, digits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
@@ -132,7 +137,7 @@ function LibraryItem({ item, saved, onOpen, onSave, onDelete }: {
       <div className="forecast-library-weather">
         <span><Wind /> {fmt(current.windSpeedKmh, 0)} km/h</span>
         <span><Waves /> {fmt(current.waveHeightM)} m</span>
-        <span><Gauge /> {fmt(current.seaLevelMslM, 2)} m</span>
+        <span><Navigation /> {fmt(toKnots(current.currentKmh), 2)} nós · {current.currentDirection || "—"}</span>
       </div>
       <div className="forecast-library-actions">
         <button onClick={onOpen}>Abrir</button>
@@ -427,7 +432,7 @@ export default function PositionForecast() {
         data.position?.depthM != null ? `Profundidade estimada: ${fmt(data.position.depthM, 0)} m (GEBCO_2026)` : null,
         `Vento: ${fmt(data.current.windSpeedKmh)} km/h ${data.current.windDirection} | rajadas ${fmt(data.current.gustKmh)} km/h`,
         `Ondas: ${fmt(data.current.waveHeightM)} m ${data.current.waveDirection} | período ${fmt(data.current.wavePeriodS)} s`,
-        `Maré modelada: ${fmt(data.current.seaLevelMslM, 2)} m`,
+        `Corrente de maré: ${fmt(toKnots(data.current.currentKmh), 2)} nós (${fmt(data.current.currentKmh)} km/h) · ${data.current.currentDirection || "—"}`,
         `Temperatura do mar: ${fmt(data.current.seaTemperatureC)} °C`,
         `Clorofila-a: ${fmt(data.current.chlorophyllMgM3, 2)} mg/m³`,
       ].filter(Boolean).join("\n");
@@ -524,7 +529,7 @@ export default function PositionForecast() {
         <div className="position-empty">
           <Wind />
           <h3>Digite uma posição para começar</h3>
-          <p>O painel mostrará vento, rajadas, ondas por horário, maré modelada, temperatura do mar, corrente e clorofila.</p>
+          <p>O painel mostrará vento, rajadas, ondas por horário, correntes de maré, temperatura do mar e clorofila.</p>
         </div>
       ) : (
         <>
@@ -560,14 +565,14 @@ export default function PositionForecast() {
           <div className="position-kpis">
             <article><Wind /><small>VENTO</small><strong>{fmt(data.current.windSpeedKmh)} km/h</strong><b>{data.current.windDirection} · {fmt(data.current.windDirectionDeg, 0)}°</b><span>Rajadas {fmt(data.current.gustKmh)} km/h</span></article>
             <article><Waves /><small>MAR / ONDA</small><strong>{fmt(data.current.waveHeightM)} m</strong><b>{data.current.waveDirection}</b><span>Período {fmt(data.current.wavePeriodS)} s · swell {fmt(data.current.swellHeightM)} m</span></article>
-            <article><Gauge /><small>MARÉ MODELADA</small><strong>{fmt(data.current.seaLevelMslM, 2)} m</strong><b>{data.tide.extrema?.[0] ? (data.tide.extrema[0].type === "HIGH" ? "Próxima alta" : "Próxima baixa") : "Sem pico detectado"}</b><span>{data.tide.extrema?.[0] ? `${shortTime(data.tide.extrema[0].time)} · ${fmt(data.tide.extrema[0].height, 2)} m` : "Janela atual sem extremo claro"}</span></article>
-            <article><Thermometer /><small>TEMPERATURA DO MAR</small><strong>{fmt(data.current.seaTemperatureC)} °C</strong><b>Superfície</b><span>Corrente {fmt(data.current.currentKmh)} km/h · {data.current.currentDirection}</span></article>
+            <article><Navigation /><small>CORRENTE DE MARÉ</small><strong>{fmt(toKnots(data.current.currentKmh), 2)} nós</strong><b>{data.current.currentDirection || "—"} · {fmt(data.current.currentDirectionDeg, 0)}°</b><span>{fmt(data.current.currentKmh)} km/h · modelo oceânico</span></article>
+            <article><Thermometer /><small>TEMPERATURA DO MAR</small><strong>{fmt(data.current.seaTemperatureC)} °C</strong><b>Superfície</b><span>Temperatura superficial modelada</span></article>
             <article><Droplets /><small>CLOROFILA-A</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>Satélite VIIRS</b><span>{data.current.chlorophyllTime ? String(data.current.chlorophyllTime).slice(0, 10) : "Sem leitura"}</span></article>
           </div>
 
           <article className="position-panel hourly-panel">
             <div className="position-panel-title hourly-title">
-              <div><small>PRÓXIMAS HORAS</small><h3>Vento, ondas e maré por horário</h3><p>Até 72 horas · intervalos de 3 horas · tudo visível no desktop</p></div>
+              <div><small>PRÓXIMAS HORAS</small><h3>Vento, ondas e correntes de maré por horário</h3><p>Até 72 horas · intervalos de 3 horas · tudo visível no desktop</p></div>
               <span>{(data.forecast || []).length} horários</span>
             </div>
             <div className="hourly-forecast-grid">
@@ -589,10 +594,11 @@ export default function PositionForecast() {
                     <em>Período {fmt(item.wavePeriodS)} s · swell {fmt(item.swellHeightM)} m</em>
                   </div>
                   <div className="hourly-block tide-block-mini">
-                    <div className="hourly-icon"><Gauge /></div>
-                    <span>MARÉ MODELADA</span>
-                    <strong>{fmt(item.seaLevelMslM, 2)} <small>m</small></strong>
-                    <em>Temp. {fmt(item.seaTemperatureC)} °C</em>
+                    <div className="hourly-icon"><Navigation /></div>
+                    <span>CORRENTE DE MARÉ</span>
+                    <strong>{fmt(toKnots(item.currentKmh), 2)} <small>nós</small></strong>
+                    <b>{item.currentDirection || "—"}</b>
+                    <em>{fmt(item.currentKmh)} km/h · {fmt(item.currentDirectionDeg, 0)}°</em>
                   </div>
                 </div>
               ))}
