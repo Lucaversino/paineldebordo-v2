@@ -44,7 +44,8 @@ type Props = {
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
-type MobilePanel = "search" | "saved" | "history" | "recent" | null;
+type MobilePanel = "search" | "saved" | "areaSaved" | "history" | null;
+type SearchProvider = "premium" | "marinesia";
 
 type DhnChart = {
   number: string;
@@ -98,6 +99,7 @@ type SavedVessel = {
   country?: string | null;
   vesselType?: string | null;
   callsign?: string | null;
+  folder?: string | null;
   lastLatitude?: number | null;
   lastLongitude?: number | null;
   lastSog?: number | null;
@@ -128,6 +130,7 @@ type AisHistoryItem = {
   dataSource?: string | null;
   positionReceived?: string | null;
   updateTime?: string | null;
+  creditsUsed?: number | null;
   queriedAt: string;
 };
 
@@ -287,8 +290,11 @@ function sourceInfo(dataSource?: string) {
   if (/terrestrial|t-ais/i.test(source)) {
     return { title: "AIS TERRESTRE", short: "T-AIS", className: "terrestrial" };
   }
-  if (/aprs\.fi|aprsfi/i.test(source)) {
-    return { title: "APRS.fi AIS", short: "APRS", className: "terrestrial" };
+  if (/marinesia/i.test(source)) {
+    return { title: "Marinesia AIS", short: "MARINESIA", className: "marinesia" };
+  }
+  if (/premium/i.test(source) || /aprs\.fi|aprsfi/i.test(source)) {
+    return { title: "AIS Premium", short: "PREMIUM", className: "premium" };
   }
   if (/aisstream/i.test(source)) {
     return { title: "AISStream", short: "STREAM", className: "terrestrial" };
@@ -345,6 +351,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const nameCacheRef = useRef<Map<string, VesselMatch[]>>(new Map());
   const positionCacheRef = useRef<Map<string, Vessel>>(new Map());
+  const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
   const freeLayerTimerRef = useRef<number | null>(null);
@@ -352,6 +359,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   const [nameQuery, setNameQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
+  const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("search");
   const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
@@ -364,6 +372,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [freeMapSource, setFreeMapSource] = useState("AIS automático");
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
+  const [marinesiaConfigured, setMarinesiaConfigured] = useState(false);
+  const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [cardPulse, setCardPulse] = useState(0);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -397,10 +408,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
 
   function buildVesselStyle(vessel: Vessel, currentZoom: number) {
-    const speed = Number(vessel.sog || 0);
     const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511
       ? Number(vessel.heading)
       : Number(vessel.cog || 0);
+    const source = String(vessel.dataSource || "").toLowerCase();
+    const markerColor = source.includes("marinesia")
+      ? "#24c98c"
+      : source.includes("vesselapi") || source.includes("free")
+        ? "#2f8cff"
+        : "#d8aa3f";
     return new Style({
       image: new RegularShape({
         points: 3,
@@ -408,7 +424,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         angle: 0,
         rotation: (angle * Math.PI) / 180,
         rotateWithView: true,
-        fill: new Fill({ color: isFishingVessel(vessel) ? "#ff861c" : (speed >= 0.5 ? "#25d4aa" : "#f0c65b") }),
+        fill: new Fill({ color: markerColor }),
         stroke: new Stroke({ color: "#05252b", width: 2.4 }),
       }),
       text: currentZoom >= 8
@@ -435,7 +451,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         angle: 0,
         rotation: (angle * Math.PI) / 180,
         rotateWithView: true,
-        fill: new Fill({ color: isFishingVessel(vessel) ? "#ff861c" : (speed >= 0.5 ? "#35d9b2" : "#e0b94e") }),
+        fill: new Fill({ color: "#2f8cff" }),
         stroke: new Stroke({ color: "#043039", width: 1.8 }),
       }),
       text: currentZoom >= 10
@@ -645,6 +661,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setTracked(vessel);
     drawAreaVessels(areaVessels);
     centerOn(vessel.lat, vessel.lon, 12);
+    window.setTimeout(() => anchorCardForVessel(vessel), 240);
     setStatus("ready");
     setStatusMessage(`${vessel.name || vessel.mmsi} selecionado da busca por área · 0 crédito adicional`);
     await recordHistory(vessel);
@@ -702,7 +719,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  async function saveVessel(source: VesselMatch | Vessel) {
+  async function saveVessel(source: VesselMatch | Vessel, folder?: string, silent = false) {
     const key = vesselKeyFrom(source);
     if (!key) {
       setStatusMessage("Este barco não possui IMO/MMSI válido para salvar.");
@@ -713,13 +730,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       next.add(key);
       return next;
     });
-    setStatusMessage(`Salvando ${source.name || "embarcação"}...`);
+    if (!silent) setStatusMessage(`Salvando ${source.name || "embarcação"}...`);
     try {
       const response = await fetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ action: "save", vessel: source }),
+        body: JSON.stringify({ action: "save", vessel: source, folder: folder || (String((source as Vessel)?.dataSource || "").toLowerCase().includes("marinesia") ? "marinesia" : "premium") }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -731,7 +748,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       } else {
         await loadAisLibrary();
       }
-      setStatusMessage(`${source.name || "Embarcação"} salva na pasta de barcos ✓`);
+      if (!silent) setStatusMessage(`${source.name || "Embarcação"} salva na pasta ✓`);
     } catch (error) {
       console.error("AIS save vessel error", error);
       setStatusMessage("Falha de conexão ao salvar a embarcação. Tente novamente.");
@@ -767,12 +784,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  async function recordHistory(vessel: Vessel) {
+  async function recordHistory(vessel: Vessel, creditsUsed = 0) {
     try {
       await fetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "history", vessel }),
+        body: JSON.stringify({ action: "history", vessel, creditsUsed }),
       });
       await loadAisLibrary();
     } catch {
@@ -780,9 +797,30 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
+  function anchorCardForVessel(vessel: Vessel, clickedPixel?: [number, number]) {
+    if (typeof window === "undefined" || window.innerWidth <= 760) {
+      setCardAnchor(null);
+      return;
+    }
+    const map = mapRef.current;
+    const host = hostRef.current;
+    if (!map || !host) return;
+    const pixel = clickedPixel || map.getPixelFromCoordinate(fromLonLat([vessel.lon, vessel.lat]));
+    if (!pixel) return;
+    const width = host.clientWidth;
+    const height = host.clientHeight;
+    const cardWidth = 232;
+    const cardHeight = 168;
+    const left = pixel[0] + cardWidth + 22 > width ? pixel[0] - cardWidth - 14 : pixel[0] + 14;
+    const top = Math.max(8, Math.min(height - cardHeight - 8, pixel[1] - 64));
+    setCardAnchor({ left: Math.max(8, left), top });
+    setCardPulse((value) => value + 1);
+  }
+
   function showVesselFromLibrary(vessel: Vessel, message: string) {
     const id = vessel.imo && vessel.imo !== "0" ? vessel.imo : vessel.mmsi;
     if (id) positionCacheRef.current.set(id, vessel);
+    trackedRef.current = vessel;
     setTracked(vessel);
     drawVessel(vessel);
     centerOn(vessel.lat, vessel.lon, 12);
@@ -852,7 +890,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     showVesselFromLibrary(historyItemToVessel(item), `${item.name} aberto do histórico — 0 créditos`);
   }
 
-  async function getVesselPosition(match: VesselMatch, force = false) {
+  async function getVesselPosition(match: VesselMatch, force = false, provider: SearchProvider = searchProvider) {
     const id = vesselIdentifier(match);
     const lookupKey = id || match.name.trim();
     if (!lookupKey) {
@@ -893,7 +931,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         : (force ? "Atualizando posição via AIS complementar..." : "Consultando posição via APRS.fi + Marinesia (fallback)...")
     );
     try {
-      const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}`);
+      const response = await aisFetch(`/api/ais?action=vessel&id=${encodeURIComponent(id)}&name=${encodeURIComponent(match.name || "")}&update=${force ? "1" : "0"}&provider=${encodeURIComponent(provider)}`);
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 503) setStatus("config");
@@ -928,13 +966,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       positionCacheRef.current.set(lookupKey, vessel);
+      trackedRef.current = vessel;
       setTracked(vessel);
       drawVessel(vessel);
       centerOn(vessel.lat, vessel.lon, 12);
+      window.setTimeout(() => anchorCardForVessel(vessel), 240);
       setLastFetch(Date.now());
       setStatus("ready");
       setStatusMessage(`${vessel.name || "Embarcação"} localizada`);
-      await Promise.all([refreshCredits(), recordHistory(vessel)]);
+      await Promise.all([
+        refreshCredits(),
+        recordHistory(vessel, Number(data?.creditCost) || operationCredits),
+        saveVessel(vessel, provider === "marinesia" ? "marinesia" : "premium", true),
+      ]);
     } catch {
       setStatus("error");
       setStatusMessage("Falha de rede ao consultar a posição AIS.");
@@ -944,6 +988,30 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   async function searchByName(event?: FormEvent) {
     event?.preventDefault();
     const cleanName = nameQuery.trim();
+
+    if (searchProvider === "marinesia") {
+      const digits = cleanName.replace(/\D/g, "");
+      if (!(digits.length === 7 || digits.length === 9)) {
+        setStatus("error");
+        setStatusMessage("Na Marinesia, digite o MMSI (9 números) ou IMO (7 números).");
+        return;
+      }
+      const match: VesselMatch = {
+        name: digits.length === 9 ? `MMSI ${digits}` : `IMO ${digits}`,
+        mmsi: digits.length === 9 ? digits : "",
+        imo: digits.length === 7 ? digits : "",
+        country: "",
+        countryIso: "",
+        shipType: "AIS",
+        typeSpecific: "Marinesia",
+        callsign: "",
+      };
+      setMatches([]);
+      setMatchTotal(0);
+      await getVesselPosition(match, false, "marinesia");
+      return;
+    }
+
     if (cleanName.length < 2) {
       setStatus("error");
       setStatusMessage("Digite pelo menos 2 caracteres do nome do barco.");
@@ -1089,6 +1157,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const vessel = feature.get("freeVessel") as Vessel | undefined;
         if (vessel) feature.setStyle(() => buildFreeVesselStyle(vessel, view.getZoom() || 10));
       });
+      const selected = trackedRef.current;
+      if (selected) anchorCardForVessel(selected);
       scheduleFreeMapLayer(false);
     };
     map.on("moveend", updateCenter);
@@ -1099,11 +1169,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         { hitTolerance: 10 },
       );
       if (vessel) {
+        trackedRef.current = vessel;
         setTracked(vessel);
         setShowEmptyHint(false);
         setStatus("ready");
         setStatusMessage(`${vessel.name || `MMSI ${vessel.mmsi}`} · ${vessel.dataSource || "AIS"} · visualização do mapa sem desconto de créditos`);
-        centerOn(vessel.lat, vessel.lon, Math.max(10, view.getZoom() || 10));
+        anchorCardForVessel(vessel, [Number(event.pixel[0]), Number(event.pixel[1])]);
+        view.animate({ center: fromLonLat([vessel.lon, vessel.lat]), duration: 150 });
         return;
       }
       if (searchModeRef.current !== "area") return;
@@ -1168,6 +1240,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const trackedDateTime = tracked ? trackedDateParts(tracked.positionReceived || tracked.updateTime) : null;
   const trackedFishing = tracked ? isFishingVessel(tracked) : false;
   const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
+  const premiumSavedVessels = useMemo(() => savedVessels.filter((item) => (item.folder || "premium") !== "area50"), [savedVessels]);
+  const areaSavedVessels = useMemo(() => savedVessels.filter((item) => item.folder === "area50"), [savedVessels]);
   const trackedKey = tracked ? vesselKeyFrom(tracked) : "";
   const recentCards = useMemo(() => {
     const rows: Array<{ key: string; vessel: Vessel; historyItem?: AisHistoryItem; current: boolean }> = [];
@@ -1211,7 +1285,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [tracked, historyItems]);
 
   return (
-    <section className="ais-page ais-v61-page ais-v62-page ais-v75-page">
+    <section className="ais-page ais-v61-page ais-v62-page ais-v75-page ais-v119-page">
       <div className="ais-topbar">
         <div>
           <small>MONITORAMENTO MARÍTIMO</small>
@@ -1413,16 +1487,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           {tracked && <button type="button" onClick={() => centerOn(tracked.lat, tracked.lon, 12)} title="Centralizar no barco"><Ship /></button>}
         </div>
 
-        <div className="ais-map-header-controls ais-single-map-badge">
-          <span><Navigation /> Mapa</span>
-          <span className={`ais-free-map-badge ${freeMapStatus}`}>
-            <Radio />
-            {freeMapStatus === "loading"
-              ? "Carregando AIS..."
-              : freeMapStatus === "error"
-                ? "AIS temporariamente indisponível"
-                : `${freeMapSource} · ${freeMapVessels.length} barco(s)${freeMapUpdatedAt ? ` · ${relativeTime(freeMapUpdatedAt)}` : ""}`}
-          </span>
+        <div className="ais-map-header-controls ais-single-map-badge ais-v119-layerbar">
+          <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVessels.length}</span>
+          <span className="ais-v119-layer marinesia"><i /> Marinesia</span>
+          <span className="ais-v119-layer premium"><i /> Premium</span>
+          <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 
         <div className={`ais-mobile-credit ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"}`}>
@@ -1431,29 +1500,33 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" onClick={() => openCreditPack(10)}>+ R$ 10</button>
         </div>
 
-        <div className="ais-v70-mobile-dock">
+        <div className="ais-v70-mobile-dock ais-v119-dock">
           <button type="button" className={mobilePanel === "search" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "search" ? null : "search")}><Search /><span>Buscar</span></button>
-          <button type="button" className={mobilePanel === "saved" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{savedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "saved" ? "active premium" : "premium"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Premium</span><em>{premiumSavedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "areaSaved" ? "active area" : "area"} onClick={() => setMobilePanel(mobilePanel === "areaSaved" ? null : "areaSaved")}><Crosshair /><span>Área 50 km</span><em>{areaSavedVessels.length}</em></button>
           <button type="button" className={mobilePanel === "history" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
-          <button type="button" className={mobilePanel === "recent" ? "active" : ""} onClick={() => setMobilePanel(mobilePanel === "recent" ? null : "recent")}><Ship /><span>Recentes</span><em>{recentCards.length}</em></button>
         </div>
 
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "search" ? "Pesquisar AIS" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "history" ? "Histórico AIS" : "Barcos recentes"}</b>
+              <b>{mobilePanel === "search" ? "Pesquisar AIS" : mobilePanel === "saved" ? "Barcos Premium" : mobilePanel === "areaSaved" ? "Pasta Premium · 50 km" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
             {mobilePanel === "search" && (
               <div className="ais-v70-mobile-search">
+                <div className="ais-v119-provider-tabs">
+                  <button type="button" className={searchProvider === "premium" ? "active premium" : "premium"} onClick={() => setSearchProvider("premium")}><Radio /> Premium</button>
+                  <button type="button" className={searchProvider === "marinesia" ? "active marinesia" : "marinesia"} onClick={() => setSearchProvider("marinesia")}><Navigation /> Marinesia {marinesiaConfigured ? "" : "· sem chave"}</button>
+                </div>
                 <div className="ais-v70-search-tabs compact">
                   <button type="button" className={searchMode === "vessel" ? "active" : ""} onClick={() => setSearchMode("vessel")}><Ship /> Barco</button>
                   <button type="button" className={searchMode === "area" ? "active" : ""} onClick={() => { setSearchMode("area"); if (!areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /> Área</button>
                 </div>
                 {searchMode === "vessel" ? (
                   <>
-                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder="Nome do barco" /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar · {aisPricing.locateCredits} CR</button></div>
+                    <div className="ais-v70-mobile-input"><Search /><input value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} placeholder={searchProvider === "marinesia" ? "MMSI ou IMO" : "Nome do barco"} /><button type="button" onClick={() => searchByName()} disabled={status === "loading"}>Buscar · {aisPricing.locateCredits} CR</button></div>
                     {matches.length > 0 && <div className="ais-v70-mobile-results">{matches.slice(0, 6).map((match, index) => <button type="button" key={`${match.mmsi}-${index}`} onClick={() => { getVesselPosition(match); setMobilePanel(null); }}><Ship /><span><b>{match.name}</b><small>MMSI {match.mmsi || "—"}</small></span><em>{`${aisPricing.locateCredits} CR`}</em></button>)}</div>}
                   </>
                 ) : (
@@ -1477,10 +1550,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               </div>
             )}
 
-            {mobilePanel === "saved" && <div className="ais-v70-mobile-list saved">{savedVessels.length ? savedVessels.slice(0, 10).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
+            {mobilePanel === "saved" && <div className="ais-v70-mobile-list saved">{premiumSavedVessels.length ? premiumSavedVessels.slice(0, 30).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
               <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordMarine(Number(item.lastLatitude), true)} · ${formatCoordMarine(Number(item.lastLongitude), false)}` : "Sem posição salva"}</small></span></button>
               <button type="button" className="ais-mobile-saved-update" onClick={() => void getVesselPosition(savedItemToMatch(item), true)}><RefreshCw /><span>{`ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
             </article>) : <p>Nenhum barco salvo.</p>}</div>}
+
+            {mobilePanel === "areaSaved" && <div className="ais-v70-mobile-list area-saved">{areaSavedVessels.length ? areaSavedVessels.slice(0, 80).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
+              <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordOperational(Number(item.lastLatitude), true)} · ${formatCoordOperational(Number(item.lastLongitude), false)}` : "Sem posição"}</small></span></button>
+              <button type="button" className="ais-mobile-saved-update" onClick={() => void getVesselPosition(savedItemToMatch(item), true, "premium")}><RefreshCw /><span>ATUALIZAR</span></button>
+            </article>) : <p>Nenhuma busca premium de 50 km salva ainda.</p>}</div>}
 
             {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => {
               const historyVessel = historyItemToVessel(item);
@@ -1492,8 +1570,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 <button type="button" className={`ais-mobile-history-save ${historySaved ? "saved" : ""}`} onClick={() => { if (!historySaved) void saveVessel(historyVessel); }} disabled={historySaving || historySaved}><Bookmark /><span>{historySaving ? "SALVANDO" : historySaved ? "SALVO" : "SALVAR"}</span></button>
               </article>;
             })}</> : <p>Histórico vazio.</p>}</div>}
-
-            {mobilePanel === "recent" && <div className="ais-v70-mobile-list recent">{recentCards.length ? recentCards.map(({ key, vessel, historyItem, current }) => <button type="button" key={key} onClick={() => { if (current) centerOn(vessel.lat, vessel.lon, 12); else if (historyItem) openHistoryItem(historyItem); setMobilePanel(null); }}><Ship /><span><b>{vessel.name || vessel.mmsi}</b><small>{formatCoordMarine(vessel.lat, true)} · {formatCoordMarine(vessel.lon, false)}</small></span></button>) : <p>Nenhuma posição recente.</p>}</div>}
           </div>
         )}
 
@@ -1515,13 +1591,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         {tracked && trackedDateTime && (
-          <div className={`ais-v95-map-card ${trackedFishing ? "fishing" : ""}`}>
+          <div key={`${trackedKey}-${cardPulse}`} className={`ais-v95-map-card ais-v119-map-card ${trackedSource?.className || ""}`} style={cardAnchor ? { left: cardAnchor.left, top: cardAnchor.top, right: "auto", bottom: "auto" } : undefined}>
             <div className="ais-v95-map-card-head">
               <div>
                 <b>{tracked.name || `MMSI ${tracked.mmsi}`}</b>
-                <small>{trackedFishing ? `BARCO DE PESCA · MMSI ${tracked.mmsi || "—"}` : `MMSI ${tracked.mmsi || "—"}`}</small>
+                <small>{trackedSource?.title || "AIS"} · MMSI {tracked.mmsi || "—"}</small>
               </div>
-              <button type="button" aria-label="Fechar dados da embarcação" title="Fechar" onClick={() => setTracked(null)}>×</button>
+              <button type="button" aria-label="Fechar dados da embarcação" title="Fechar" onClick={() => { trackedRef.current = null; setTracked(null); setCardAnchor(null); }}>×</button>
             </div>
             <div className="ais-v95-map-position">
               <span>POSIÇÃO</span>
@@ -1640,7 +1716,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       )}
 
       <div className="ais-footnote ais-v61-footnote">
-        <b>Busca AIS: APRS.fi · Mapa automático: VesselAPI Free → Kpler</b>
+        <b>AIS profissional · Vessel Free + Premium + Marinesia</b>
         <span>
           A pesquisa manual por nome usa APRS.fi sem descontar créditos. O APRS.fi exige busca por alvo específico, então digite o nome exato do barco. Fonte:{" "}
           <a href="https://aprs.fi" target="_blank" rel="noreferrer">aprs.fi</a>. A busca por área continua separada e todas as chaves ficam somente no backend.
