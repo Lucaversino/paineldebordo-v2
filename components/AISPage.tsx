@@ -27,6 +27,7 @@ import XYZ from "ol/source/XYZ";
 import TileWMS from "ol/source/TileWMS";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
+import Translate from "ol/interaction/Translate";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import CircleGeom from "ol/geom/Circle";
@@ -407,7 +408,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [marinesiaCooldownUntil, setMarinesiaCooldownUntil] = useState(0);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [areaRadius] = useState<50>(50);
-  const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>(null);
+  const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>({ lat: fallbackLat, lon: fallbackLon });
   const [manualLatDigits, setManualLatDigits] = useState("");
   const [manualLonDigits, setManualLonDigits] = useState("");
   const [manualCoordError, setManualCoordError] = useState("");
@@ -678,7 +679,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return `AIS Free aguardando a próxima janela da Marinesia — cerca de ${minutes} min. O fallback gratuito do mapa continua disponível.`;
   }
 
-  async function searchArea(provider: SearchProvider = searchProvider) {
+  async function searchArea(provider: SearchProvider = searchProvider, forceFreeRefresh = false) {
     const selected = areaCenter || center;
     if (!selected) return;
 
@@ -700,7 +701,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(isFree ? "Buscando barcos no AIS Free da região..." : `Pesquisando embarcações Premium em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
 
-    if (isFree) {
+    if (isFree && !forceFreeRefresh) {
       const cachedFree = readMarinesiaAreaCache(selected);
       if (cachedFree?.length) {
         const cachedRows = cachedFree as Vessel[];
@@ -1362,6 +1363,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       view,
     });
 
+    const areaTranslate = new Translate({
+      layers: [areaLayer],
+      hitTolerance: 14,
+    });
+    map.addInteraction(areaTranslate);
+
+    const handleAreaTranslateEnd = (event: any) => {
+      const feature = event?.features?.item?.(0);
+      const geometry = feature?.getGeometry?.();
+      let coordinate: number[] | null = null;
+      if (geometry instanceof CircleGeom) coordinate = geometry.getCenter();
+      else if (geometry instanceof Point) coordinate = geometry.getCoordinates();
+      if (!coordinate) return;
+      const [lon, lat] = toLonLat(coordinate);
+      setAreaCenter({ lat, lon });
+      drawAreaSelection(lat, lon, 50);
+      setStatusMessage(`Círculo 50 km movido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+    };
+    areaTranslate.on("translateend", handleAreaTranslateEnd);
+
     mapRef.current = map;
     vesselSourceRef.current = vesselSource;
     freeVesselSourceRef.current = freeVesselSource;
@@ -1369,6 +1390,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
     dhnLayerRef.current = dhn;
+    drawAreaSelection(fallbackLat, fallbackLon, 50);
 
     const updateCenter = () => {
       const [lon, lat] = toLonLat(view.getCenter() || fromLonLat([fallbackLon, fallbackLat]));
@@ -1418,6 +1440,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       ro.disconnect();
       map.un("moveend", updateCenter);
       map.un("singleclick", selectMapFeature);
+      areaTranslate.un("translateend", handleAreaTranslateEnd);
+      map.removeInteraction(areaTranslate);
       if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
       map.setTarget(undefined);
       mapRef.current = null;
@@ -1447,6 +1471,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         setDevicePosition(coords);
+        setAreaCenter(coords);
+        drawAreaSelection(coords.lat, coords.lon, 50);
         centerOn(coords.lat, coords.lon, 11, true);
       },
       () => undefined,
@@ -1721,9 +1747,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         <div className="ais-map-tools ais-left-tools">
           <button type="button" onClick={() => zoomBy(1)} title="Aumentar zoom"><Plus /></button>
           <button type="button" onClick={() => zoomBy(-1)} title="Diminuir zoom"><Minus /></button>
-          <button type="button" onClick={locateDevice} title="Minha localização"><LocateFixed /></button>
+          <button type="button" onClick={() => locateDevice()} title="Minha localização"><LocateFixed /></button>
           <button type="button" onClick={() => centerOn(fallbackLat, fallbackLon, 11)} title="Voltar para a última largada"><Crosshair /></button>
           {tracked && <button type="button" onClick={() => centerOn(tracked.lat, tracked.lon, 12)} title="Centralizar no barco"><Ship /></button>}
+          <button
+            type="button"
+            className="ais-v128-marinesia-refresh"
+            onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia", true); }}
+            disabled={status === "loading"}
+            title="Atualizar AIS Free Marinesia dentro do círculo de 50 km"
+          >
+            <RefreshCw className={status === "loading" ? "spin" : ""} />
+            <span>AIS FREE</span>
+          </button>
         </div>
 
         <div className="ais-map-header-controls ais-single-map-badge ais-v119-layerbar">
