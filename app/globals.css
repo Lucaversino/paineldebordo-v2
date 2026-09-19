@@ -2709,3 +2709,125 @@ main.loginpage{
 @media(max-width:760px){
   .ais-page.ais-v119-page{height:calc(100dvh - 66px)!important;min-height:0!important}
 }
+
+
+/* V119.2 — carteira de créditos compacta no mapa AIS */
+.ais-v119-wallet{
+  position:absolute;
+  z-index:72;
+  top:58px;
+  left:60px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding:4px;
+  border:1px solid #315861;
+  border-radius:12px;
+  background:#061b21e8;
+  box-shadow:0 8px 24px #00131d66;
+  backdrop-filter:blur(14px);
+}
+.ais-v119-wallet-main{
+  min-width:170px;
+  height:40px;
+  padding:0 9px 0 7px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:#eafaf7;
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) auto;
+  align-items:center;
+  gap:7px;
+  text-align:left;
+  cursor:pointer;
+}
+.ais-v119-wallet-main:hover{background:#0c2b31}
+.ais-v119-wallet-main:active,.ais-v119-wallet-plus:active{transform:scale(.95)}
+.ais-v119-wallet-icon{
+  width:30px;height:30px;border-radius:8px;
+  background:#123a35;color:#52dbb7;
+  display:grid;place-items:center;
+}
+.ais-v119-wallet-icon svg{width:15px;height:15px}
+.ais-v119-wallet-copy{display:grid;gap:0;min-width:0}
+.ais-v119-wallet-copy small{
+  font-size:6px;font-weight:950;letter-spacing:.12em;color:#6f999e;
+}
+.ais-v119-wallet-copy b{
+  font-size:13px;line-height:1.05;color:#f4fffc;white-space:nowrap;
+}
+.ais-v119-wallet-main em{
+  font-size:7px;font-style:normal;font-weight:950;
+  color:#7edfc8;background:#113b35;border:1px solid #286958;
+  border-radius:999px;padding:4px 6px;white-space:nowrap;
+}
+.ais-v119-wallet-plus{
+  width:34px;height:34px;border:1px solid #2e7b68;border-radius:9px;
+  background:#123d36;color:#73e7ca;display:grid;place-items:center;cursor:pointer;
+}
+.ais-v119-wallet-plus:hover{background:#174c43;border-color:#41b596;color:#eafff7}
+.ais-v119-wallet-plus svg{width:15px;height:15px}
+.ais-v119-wallet.no-credit{
+  border-color:#7a3c43;background:#2a171be8;
+}
+.ais-v119-wallet.no-credit .ais-v119-wallet-icon{background:#451f25;color:#ff8b93}
+.ais-v119-wallet.no-credit .ais-v119-wallet-main em{background:#451f25;border-color:#6d3239;color:#ff9ca3}
+.ais-v119-wallet-menu{
+  position:absolute;
+  top:calc(100% + 7px);
+  left:0;
+  width:214px;
+  padding:7px;
+  border:1px solid #315861;
+  border-radius:11px;
+  background:#061b21f6;
+  box-shadow:0 14px 35px #001018aa;
+  backdrop-filter:blur(16px);
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+  animation:aisWalletOpen .14s ease-out;
+}
+@keyframes aisWalletOpen{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.ais-v119-wallet-menu>span{
+  grid-column:1/-1;
+  padding:2px 3px 4px;
+  font-size:6px;font-weight:950;letter-spacing:.12em;color:#6d959b;
+}
+.ais-v119-wallet-menu button{
+  min-height:42px;
+  border:1px solid #28584f;
+  border-radius:8px;
+  background:#0d342f;
+  color:#dffff6;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:1px;
+  cursor:pointer;
+}
+.ais-v119-wallet-menu button:hover{border-color:#42b696;background:#154940}
+.ais-v119-wallet-menu button b{font-size:10px}
+.ais-v119-wallet-menu button small{font-size:6px;color:#71aa9d}
+.app:not(.dark) .ais-v119-wallet,
+.app:not(.dark) .ais-v119-wallet-menu{background:#082127ed;color:#fff}
+@media(max-width:760px){
+  .ais-v119-wallet{
+    top:50px;
+    left:60px;
+    max-width:calc(100% - 70px);
+  }
+  .ais-v119-wallet-main{min-width:145px;height:36px;grid-template-columns:28px minmax(0,1fr) auto;padding-right:7px}
+  .ais-v119-wallet-icon{width:28px;height:28px}
+  .ais-v119-wallet-copy b{font-size:11px}
+  .ais-v119-wallet-main em{font-size:6px;padding:3px 5px}
+  .ais-v119-wallet-plus{width:32px;height:32px}
+  .ais-v119-wallet-menu{width:200px}
+}
+@media(max-width:430px){
+  .ais-v119-wallet{top:47px;left:56px}
+  .ais-v119-wallet-main{min-width:132px}
+  .ais-v119-wallet-copy small{display:none}
+  .ais-v119-wallet-menu{width:190px}
+}
