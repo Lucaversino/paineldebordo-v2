@@ -217,7 +217,6 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    marinesiaState.lastCallAt = now;
     const response = await fetch(`${MARINESIA_BASE_URL}${path}?${params.toString()}`, {
       method: "GET",
       headers: {
@@ -236,6 +235,10 @@ async function callMarinesia(path: string, params: URLSearchParams, apiKey: stri
         providerBody: body,
       });
     }
+
+    // Só começa o intervalo local depois que a Marinesia respondeu com sucesso.
+    // Antes, qualquer erro/timeout também bloqueava o AIS Free por 30 minutos.
+    marinesiaState.lastCallAt = Date.now();
     marinesiaState.cache.set(cacheKey, { body, expiresAt: Date.now() + MARINESIA_FREE_TTL_MS });
     if (marinesiaState.cache.size > 40) {
       const first = marinesiaState.cache.keys().next().value;

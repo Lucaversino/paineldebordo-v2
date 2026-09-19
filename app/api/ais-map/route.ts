@@ -589,18 +589,6 @@ async function loadSnapshot(lat: number, lon: number): Promise<CacheValue> {
     }
   }
 
-  if (vessels.length === 0) {
-    try {
-      const marinesia = await fetchMarinesiaMap(lat, lon);
-      if (marinesia.length) {
-        vessels = marinesia;
-        source = "Marinesia AIS";
-      }
-    } catch {
-      // Complemento grátis: falhar aqui nunca derruba o mapa.
-    }
-  }
-
   const now = Date.now();
   return {
     vessels,

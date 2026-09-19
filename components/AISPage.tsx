@@ -659,6 +659,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       let data = await response.json();
 
       if (!response.ok && isFree) {
+        setStatusMessage(
+          response.status === 429
+            ? "Marinesia atingiu o limite do plano grátis. Complementando com AIS Free do mapa..."
+            : "Marinesia não respondeu. Complementando com AIS Free do mapa..."
+        );
         response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
         data = await response.json();
       }
@@ -669,7 +674,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
 
-      const rows = toRows(data, isFree);
+      let rows = toRows(data, isFree);
+
+      // A conta Free da Marinesia pode retornar pouquíssimos ou nenhum barco.
+      // Se vier vazia, mantém a experiência funcionando com VesselAPI/Kpler.
+      if (isFree && rows.length === 0) {
+        const fallbackResponse = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
+        const fallbackData = await fallbackResponse.json().catch(() => ({}));
+        if (fallbackResponse.ok) {
+          rows = toRows(fallbackData, true);
+          data = fallbackData;
+        }
+      }
+
       setAreaVessels(rows);
       setAreaCost(isFree ? 0 : (Number(data?.creditCost) || aisPricing.areaCredits));
       drawAreaVessels(rows);
@@ -686,7 +703,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setStatus("ready");
       setStatusMessage(
         isFree
-          ? `${rows.length} barco(s) AIS Free encontrado(s) na região · 0 créditos`
+          ? `${rows.length} barco(s) AIS Free encontrado(s) · ${String(data?.provider || data?.source || "Marinesia/fallback")} · 0 créditos`
           : `${rows.length} barco(s) Premium encontrado(s) em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s)`
       );
       if (!isFree) await refreshCredits();
