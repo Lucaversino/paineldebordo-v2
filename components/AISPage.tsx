@@ -19,7 +19,7 @@ import {
   Trash2,
   WalletCards,
 } from "lucide-react";
-import Map from "ol/Map";
+import OlMap from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
@@ -419,7 +419,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return response;
   }
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<Map | null>(null);
+  const mapRef = useRef<OlMap | null>(null);
   const vesselSourceRef = useRef<VectorSource | null>(null);
   const freeVesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
@@ -1551,7 +1551,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     vesselLayer.setZIndex(30);
     positionLayer.setZIndex(40);
 
-    const map = new Map({
+    const map = new OlMap({
       target: hostRef.current,
       controls: [],
       layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer],
