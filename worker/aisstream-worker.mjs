@@ -406,10 +406,14 @@ function connect() {
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
-    const healthy = state.connected && state.subscribed;
-    res.writeHead(healthy ? 200 : 503, { "content-type": "application/json; charset=utf-8" });
+    // O healthcheck mede se o processo está vivo. Uma queda temporária do
+    // provedor não deve fazer a Railway substituir um worker que já está
+    // executando sua própria lógica de reconexão.
+    const providerReady = state.connected && state.subscribed;
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({
-      ok: healthy,
+      ok: true,
+      providerReady,
       service: SERVICE,
       connected: state.connected,
       subscribed: state.subscribed,
