@@ -613,6 +613,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const vesselFeatureRegistryRef = useRef<Map<string, Feature>>(new Map());
   const vesselStyleBucketRef = useRef<number | null>(null);
+  const vesselIconPathCacheRef = useRef<Map<string, string>>(new Map());
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
@@ -896,52 +897,60 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function getVesselIcon(vessel: Vessel) {
     const type = normalizeVesselTypeText(vessel.vesselType);
+    const source = normalizeVesselTypeText(vessel.dataSource);
+    const cacheKey = `${type}|${source}`;
+    const cached = vesselIconPathCacheRef.current.get(cacheKey);
+    if (cached) return cached;
+
     const code = vesselTypeCode(vessel);
     const fallback = isPremiumVessel(vessel) ? AIS_PREMIUM_ICON : AIS_FREE_ICON;
+    let resolved = fallback;
 
     // Tipos textuais específicos têm prioridade sobre as classes AIS genéricas.
-    if (/ambulancia|medical|hospital/.test(type) || code === 58) return `${AIS_ICON_BASE}/ambulancia_maritima.svg`;
-    if (/pilot|piloto|pratico/.test(type) || code === 50) return `${AIS_ICON_BASE}/lancha_piloto.svg`;
-    if (/rescue|salvamento|search and rescue|sar vessel/.test(type) || code === 51) return `${AIS_ICON_BASE}/barco_salvamento.svg`;
-    if (/military|militar|navy|warship/.test(type) || code === 35) return `${AIS_ICON_BASE}/navio_militar.svg`;
-    if (/sailing|sailboat|veleiro|vela/.test(type) || code === 36) return `${AIS_ICON_BASE}/veleiro.svg`;
-    if (/cruise|cruzeiro/.test(type)) return `${AIS_ICON_BASE}/navio_cruzeiro_topdown.svg`;
-    if (/catamara|catamaran/.test(type)) return `${AIS_ICON_BASE}/catamara.svg`;
-    if (/tourist|tourism|turistico|turismo|excursao/.test(type)) return `${AIS_ICON_BASE}/barco_turistico.svg`;
-    if (/chemical|quimico/.test(type)) return `${AIS_ICON_BASE}/navio_quimico.svg`;
-    if (/lng|lpg|gas carrier|gaseiro/.test(type)) return `${AIS_ICON_BASE}/navio_gaseiro.svg`;
-    if (/oil tanker|petroleiro|tanker/.test(type)) return `${AIS_ICON_BASE}/navio_petroleiro.svg`;
-    if (/bulk|graneleiro|grain carrier/.test(type)) return `${AIS_ICON_BASE}/navio_graneleiro.svg`;
-    if (/reefer|frigorifico|refrigerated/.test(type)) return `${AIS_ICON_BASE}/navio_frigorifico.svg`;
-    if (/car carrier|vehicle carrier|porta carros|porta-carros/.test(type)) return `${AIS_ICON_BASE}/navio_porta_carros.svg`;
-    if (/ro ro|roro|roll on|roll off/.test(type)) return `${AIS_ICON_BASE}/navio_roro.svg`;
-    if (/floating crane|guindaste|crane vessel/.test(type)) return `${AIS_ICON_BASE}/guindaste_flutuante.svg`;
-    if (/dredg|draga/.test(type) || code === 33) return `${AIS_ICON_BASE}/draga.svg`;
-    if (/pusher|empurrador/.test(type)) return `${AIS_ICON_BASE}/empurrador_fluvial.svg`;
-    if (/tug|rebocador|towing|tow vessel/.test(type) || code === 31 || code === 32 || code === 52) return `${AIS_ICON_BASE}/rebocador.svg`;
-    if (/offshore|support|apoio|supply vessel|platform supply|diving/.test(type) || code === 34) return `${AIS_ICON_BASE}/apoio_offshore.svg`;
-    if (/port tender|service barge|balsa servico/.test(type) || code === 53) return `${AIS_ICON_BASE}/balsa_servico.svg`;
-    if (/barge|barcaca|lighter/.test(type)) return `${AIS_ICON_BASE}/barcaca.svg`;
-    if (/balsa|pontoon/.test(type)) return `${AIS_ICON_BASE}/balsa.svg`;
-    if (/ferry|passenger ferry/.test(type)) return `${AIS_ICON_BASE}/ferry_boat.svg`;
-    if (/yacht|iate|pleasure craft/.test(type) || code === 37) return `${AIS_ICON_BASE}/iate.svg`;
-    if (/speedboat|speed boat|lancha/.test(type)) return `${AIS_ICON_BASE}/lancha.svg`;
+    if (/ambulancia|medical|hospital/.test(type) || code === 58) resolved = `${AIS_ICON_BASE}/ambulancia_maritima.svg`;
+    else if (/pilot|piloto|pratico/.test(type) || code === 50) resolved = `${AIS_ICON_BASE}/lancha_piloto.svg`;
+    else if (/rescue|salvamento|search and rescue|sar vessel/.test(type) || code === 51) resolved = `${AIS_ICON_BASE}/barco_salvamento.svg`;
+    else if (/military|militar|navy|warship/.test(type) || code === 35) resolved = `${AIS_ICON_BASE}/navio_militar.svg`;
+    else if (/sailing|sailboat|veleiro|vela/.test(type) || code === 36) resolved = `${AIS_ICON_BASE}/veleiro.svg`;
+    else if (/cruise|cruzeiro/.test(type)) resolved = `${AIS_ICON_BASE}/navio_cruzeiro_topdown.svg`;
+    else if (/catamara|catamaran/.test(type)) resolved = `${AIS_ICON_BASE}/catamara.svg`;
+    else if (/tourist|tourism|turistico|turismo|excursao/.test(type)) resolved = `${AIS_ICON_BASE}/barco_turistico.svg`;
+    else if (/chemical|quimico/.test(type)) resolved = `${AIS_ICON_BASE}/navio_quimico.svg`;
+    else if (/lng|lpg|gas carrier|gaseiro/.test(type)) resolved = `${AIS_ICON_BASE}/navio_gaseiro.svg`;
+    else if (/oil tanker|petroleiro|tanker/.test(type)) resolved = `${AIS_ICON_BASE}/navio_petroleiro.svg`;
+    else if (/bulk|graneleiro|grain carrier/.test(type)) resolved = `${AIS_ICON_BASE}/navio_graneleiro.svg`;
+    else if (/reefer|frigorifico|refrigerated/.test(type)) resolved = `${AIS_ICON_BASE}/navio_frigorifico.svg`;
+    else if (/car carrier|vehicle carrier|porta carros|porta-carros/.test(type)) resolved = `${AIS_ICON_BASE}/navio_porta_carros.svg`;
+    else if (/ro ro|roro|roll on|roll off/.test(type)) resolved = `${AIS_ICON_BASE}/navio_roro.svg`;
+    else if (/floating crane|guindaste|crane vessel/.test(type)) resolved = `${AIS_ICON_BASE}/guindaste_flutuante.svg`;
+    else if (/dredg|draga/.test(type) || code === 33) resolved = `${AIS_ICON_BASE}/draga.svg`;
+    else if (/pusher|empurrador/.test(type)) resolved = `${AIS_ICON_BASE}/empurrador_fluvial.svg`;
+    else if (/tug|rebocador|towing|tow vessel/.test(type) || code === 31 || code === 32 || code === 52) resolved = `${AIS_ICON_BASE}/rebocador.svg`;
+    else if (/offshore|support|apoio|supply vessel|platform supply|diving/.test(type) || code === 34) resolved = `${AIS_ICON_BASE}/apoio_offshore.svg`;
+    else if (/port tender|service barge|balsa servico/.test(type) || code === 53) resolved = `${AIS_ICON_BASE}/balsa_servico.svg`;
+    else if (/barge|barcaca|lighter/.test(type)) resolved = `${AIS_ICON_BASE}/barcaca.svg`;
+    else if (/balsa|pontoon/.test(type)) resolved = `${AIS_ICON_BASE}/balsa.svg`;
+    else if (/ferry|passenger ferry/.test(type)) resolved = `${AIS_ICON_BASE}/ferry_boat.svg`;
+    else if (/yacht|iate|pleasure craft/.test(type) || code === 37) resolved = `${AIS_ICON_BASE}/iate.svg`;
+    else if (/speedboat|speed boat|lancha/.test(type)) resolved = `${AIS_ICON_BASE}/lancha.svg`;
 
     // Classes AIS padrão.
-    if (code === 30 || /fishing|pesca|pesqueiro|trawler/.test(type)) return fallback;
-    if (code != null && code >= 60 && code <= 69) return `${AIS_ICON_BASE}/ferry_boat.svg`;
-    if (code != null && code >= 70 && code <= 79) return `${AIS_ICON_BASE}/navio_cargueiro_topdown.svg`;
-    if (code != null && code >= 80 && code <= 89) return `${AIS_ICON_BASE}/navio_petroleiro.svg`;
-    if (/cargo|cargueiro|container/.test(type)) return `${AIS_ICON_BASE}/navio_cargueiro_topdown.svg`;
+    else if (code === 30 || /fishing|pesca|pesqueiro|trawler/.test(type)) resolved = fallback;
+    else if (code != null && code >= 60 && code <= 69) resolved = `${AIS_ICON_BASE}/ferry_boat.svg`;
+    else if (code != null && code >= 70 && code <= 79) resolved = `${AIS_ICON_BASE}/navio_cargueiro_topdown.svg`;
+    else if (code != null && code >= 80 && code <= 89) resolved = `${AIS_ICON_BASE}/navio_petroleiro.svg`;
+    else if (/cargo|cargueiro|container/.test(type)) resolved = `${AIS_ICON_BASE}/navio_cargueiro_topdown.svg`;
 
     // Quando o tipo não chega pela API, a origem define FREE (verde) ou PREMIUM/Data Locked (dourado).
-    return fallback;
+    vesselIconPathCacheRef.current.set(cacheKey, resolved);
+    return resolved;
   }
 
   function vesselStyleBucket(currentZoom: number) {
     if (currentZoom >= 16) return 6;
     if (currentZoom >= 14) return 5;
-    if (currentZoom >= 12) return 4;
+    if (currentZoom >= 12) return 5;
+    if (currentZoom >= 11) return 4;
     if (currentZoom >= 10) return 3;
     if (currentZoom >= 9) return 2;
     if (currentZoom >= 8) return 1;
@@ -951,8 +960,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   function vesselIconScale(currentZoom: number) {
     const bucket = vesselStyleBucket(currentZoom);
     if (bucket >= 6) return 0.030;
-    if (bucket === 5) return 0.026;
-    if (bucket === 4) return 0.022;
+    if (bucket === 5) return 0.024;
+    if (bucket === 4) return 0.021;
     if (bucket === 3) return 0.019;
     if (bucket === 2) return 0.017;
     if (bucket === 1) return 0.016;
@@ -982,7 +991,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         rotation: (angle * Math.PI) / 180,
         rotateWithView: true,
       }),
-      text: currentZoom >= 8
+      text: currentZoom >= 11
         ? new Text({
             text: (vessel.name || vessel.mmsi).slice(0, 26),
             offsetY: labelOffset,
@@ -1066,7 +1075,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function vesselStyleSignature(vessel: Vessel) {
     return [
-      Math.round(vesselHeading(vessel) * 10) / 10,
       String(vessel.name || vessel.mmsi || "").slice(0, 26),
       String(vessel.dataSource || "").toLowerCase(),
       String(vessel.vesselType || "").toLowerCase(),
@@ -1122,6 +1130,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       feature.setStyle(buildVesselStyle(vessel, currentZoom));
       feature.set("_aisStyleSignature", styleSignature, true);
       feature.set("_aisStyleBucket", styleBucket, true);
+      feature.set("_aisHeading", vesselHeading(vessel), true);
+    } else {
+      const nextHeading = vesselHeading(vessel);
+      const previousHeading = Number(feature.get("_aisHeading"));
+      if (!Number.isFinite(previousHeading) || Math.abs(previousHeading - nextHeading) >= 0.5) {
+        const assigned = feature.getStyle();
+        if (assigned instanceof Style) {
+          const image = assigned.getImage();
+          if (image instanceof IconStyle) {
+            image.setRotation((nextHeading * Math.PI) / 180);
+            feature.set("_aisHeading", nextHeading, true);
+            feature.changed();
+          }
+        }
+      }
     }
   }
 
@@ -2550,9 +2573,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }),
     });
     const vesselSource = new VectorSource();
-    const vesselLayer = new VectorLayer({ source: vesselSource, declutter: true });
+    const vesselLayer = new VectorLayer({
+      source: vesselSource,
+      declutter: true,
+      renderBuffer: 36,
+      updateWhileAnimating: false,
+      updateWhileInteracting: false,
+    });
     const freeVesselSource = new VectorSource();
-    const freeVesselLayer = new VectorLayer({ source: freeVesselSource, declutter: true });
+    const freeVesselLayer = new VectorLayer({
+      source: freeVesselSource,
+      declutter: true,
+      renderBuffer: 36,
+      updateWhileAnimating: false,
+      updateWhileInteracting: false,
+    });
     const areaSource = new VectorSource();
     const areaLayer = new VectorLayer({ source: areaSource });
     const positionSource = new VectorSource();
@@ -2710,6 +2745,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       gpsFeatureRef.current = null;
       vesselFeatureRegistryRef.current.clear();
       vesselStyleBucketRef.current = null;
+      vesselIconPathCacheRef.current.clear();
       map.setTarget(undefined);
       mapRef.current = null;
     };

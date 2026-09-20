@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v157-ais-svg-icons";
+const CACHE = "painel-bordo-v158-ais-performance";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -8,39 +8,7 @@ const ASSETS = [
   "/icon-maskable-512.png",
   "/apple-touch-icon.png",
   "/favicon.ico",
-  "/icons/baco-malha-v152.svg",
-  "/icons/ais/barco_ais_svg_verde.svg",
-  "/icons/ais/barco_ais_svg_dourado.svg",
-  "/icons/ais/ambulancia_maritima.svg",
-  "/icons/ais/apoio_offshore.svg",
-  "/icons/ais/balsa.svg",
-  "/icons/ais/balsa_servico.svg",
-  "/icons/ais/barcaca.svg",
-  "/icons/ais/barco_salvamento.svg",
-  "/icons/ais/barco_turistico.svg",
-  "/icons/ais/catamara.svg",
-  "/icons/ais/draga.svg",
-  "/icons/ais/empurrador_fluvial.svg",
-  "/icons/ais/ferry_boat.svg",
-  "/icons/ais/graneleiro.svg",
-  "/icons/ais/guindaste_flutuante.svg",
-  "/icons/ais/iate.svg",
-  "/icons/ais/lancha.svg",
-  "/icons/ais/lancha_piloto.svg",
-  "/icons/ais/navio_cargueiro.svg",
-  "/icons/ais/navio_cargueiro_topdown.svg",
-  "/icons/ais/navio_cruzeiro.svg",
-  "/icons/ais/navio_cruzeiro_topdown.svg",
-  "/icons/ais/navio_frigorifico.svg",
-  "/icons/ais/navio_gaseiro.svg",
-  "/icons/ais/navio_graneleiro.svg",
-  "/icons/ais/navio_militar.svg",
-  "/icons/ais/navio_petroleiro.svg",
-  "/icons/ais/navio_porta_carros.svg",
-  "/icons/ais/navio_quimico.svg",
-  "/icons/ais/navio_roro.svg",
-  "/icons/ais/rebocador.svg",
-  "/icons/ais/veleiro.svg"
+  "/icons/baco-malha-v152.svg"
 ];
 
 self.addEventListener("install", (event) => {
