@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import WebSocket from "ws";
+import { sql } from "drizzle-orm";
+import { getDb } from "../../../db";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
@@ -21,6 +22,7 @@ type MapVessel = {
   updateTime: string;
   dataSource: "AISStream" | "VesselAPI Free" | "Kpler Maritime" | "Marinesia AIS";
   receivedAt: number;
+  stale?: boolean;
 };
 
 type CacheValue = {
@@ -35,7 +37,6 @@ type CacheValue = {
 type AisMapGlobal = {
   cache: Map<string, CacheValue>;
   inflight: Map<string, Promise<CacheValue>>;
-  activeStreams: number;
   marinesiaCache: Map<string, { vessels: MapVessel[]; expiresAt: number }>;
   marinesiaLastCallAt: number;
 };
@@ -44,7 +45,6 @@ const globalAisMap = globalThis as typeof globalThis & { __painelAisMap?: AisMap
 const state: AisMapGlobal = globalAisMap.__painelAisMap || {
   cache: new Map(),
   inflight: new Map(),
-  activeStreams: 0,
   marinesiaCache: new Map(),
   marinesiaLastCallAt: 0,
 };
@@ -123,164 +123,6 @@ function validVessel(vessel: MapVessel | null): vessel is MapVessel {
     Number.isFinite(vessel.lon) && Math.abs(vessel.lon) <= 180 &&
     vessel.mmsi
   );
-}
-
-function parseAisStreamEvent(event: any): MapVessel | null {
-  const type = cleanText(event?.MessageType);
-  const meta = event?.MetaData || {};
-  const message = event?.Message || {};
-  const payload =
-    message?.PositionReport ||
-    message?.StandardClassBPositionReport ||
-    message?.ExtendedClassBPositionReport ||
-    null;
-
-  if (!["PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport"].includes(type) || !payload) {
-    return null;
-  }
-
-  const lat = numberOrNull(meta?.Latitude ?? payload?.Latitude);
-  const lon = numberOrNull(meta?.Longitude ?? payload?.Longitude);
-  const mmsi = cleanText(meta?.MMSI ?? payload?.UserID).replace(/\D/g, "");
-  if (lat == null || lon == null || !mmsi || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-
-  const now = new Date();
-  const providerTime = cleanText(
-    meta?.time_utc ?? meta?.TimeUtc ?? meta?.TimeUTC ?? meta?.Timestamp ?? meta?.timestamp,
-  );
-  const iso = providerTime && !Number.isNaN(new Date(providerTime).getTime())
-    ? new Date(providerTime).toISOString()
-    : now.toISOString();
-
-  const heading = numberOrNull(payload?.TrueHeading ?? payload?.Heading);
-  return {
-    mmsi,
-    name: cleanText(meta?.ShipName || meta?.shipName) || `MMSI ${mmsi}`,
-    lat,
-    lon,
-    sog: numberOrNull(payload?.Sog ?? payload?.Speed),
-    cog: numberOrNull(payload?.Cog ?? payload?.Course),
-    heading: heading != null && heading < 511 ? heading : null,
-    navStatusText: navStatusText(payload?.NavigationalStatus),
-    positionReceived: iso,
-    updateTime: iso,
-    dataSource: "AISStream",
-    receivedAt: now.getTime(),
-  };
-}
-
-function parseAisStreamStatic(event: any) {
-  const type = cleanText(event?.MessageType);
-  const meta = event?.MetaData || {};
-  const message = event?.Message || {};
-  let payload: any = null;
-  if (type === "ShipStaticData") payload = message?.ShipStaticData || null;
-  if (type === "StaticDataReport") payload = message?.StaticDataReport || null;
-  if (!payload) return null;
-
-  const reportA = payload?.ReportA || payload?.reportA || {};
-  const reportB = payload?.ReportB || payload?.reportB || {};
-  const mmsi = cleanText(meta?.MMSI ?? payload?.UserID ?? reportA?.UserID ?? reportB?.UserID).replace(/\D/g, "");
-  if (!mmsi) return null;
-
-  const vesselType = shipTypeText(
-    payload?.Type ?? payload?.ShipType ?? payload?.TypeAndCargo ??
-    reportB?.Type ?? reportB?.ShipType ?? reportB?.TypeAndCargo
-  );
-  const name = cleanText(
-    meta?.ShipName || meta?.shipName || payload?.Name || payload?.ShipName ||
-    reportA?.Name || reportA?.ShipName
-  );
-  return { mmsi, vesselType, name };
-}
-
-async function collectAisStream(lat: number, lon: number): Promise<MapVessel[]> {
-  const apiKey = process.env.AISSTREAM_API_KEY?.trim();
-  if (!apiKey) throw Object.assign(new Error("AISSTREAM_API_KEY não configurada."), { code: "not_configured" });
-  if (state.activeStreams >= 2) throw Object.assign(new Error("AISStream ocupado no momento."), { code: "busy" });
-
-  const box = queryBox(lat, lon);
-  state.activeStreams += 1;
-
-  return new Promise<MapVessel[]>((resolve, reject) => {
-    const vessels = new Map<string, MapVessel>();
-    const staticByMmsi = new Map<string, { vesselType?: string; name?: string }>();
-    let settled = false;
-    let opened = false;
-    let confirmed = false;
-    let sampleTimer: ReturnType<typeof setTimeout> | null = null;
-    const hardTimer = setTimeout(() => finish(), 5_800);
-
-    const socket = new WebSocket("wss://stream.aisstream.io/v0/stream", {
-      perMessageDeflate: true,
-      handshakeTimeout: 4_000,
-    });
-
-    function cleanup() {
-      if (sampleTimer) clearTimeout(sampleTimer);
-      clearTimeout(hardTimer);
-      state.activeStreams = Math.max(0, state.activeStreams - 1);
-      try { socket.removeAllListeners(); } catch { /* noop */ }
-      try { if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) socket.close(); } catch { /* noop */ }
-    }
-
-    function finish(error?: Error) {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if ((error || !confirmed) && vessels.size === 0) reject(error || new Error("AISStream não confirmou a assinatura."));
-      else resolve(Array.from(vessels.values()).slice(0, MAX_VESSELS));
-    }
-
-    socket.once("open", () => {
-      opened = true;
-      socket.send(JSON.stringify({
-        APIKey: apiKey,
-        BoundingBoxes: [[[box.north, box.west], [box.south, box.east]]],
-        FilterMessageTypes: ["PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport", "ShipStaticData", "StaticDataReport"],
-      }));
-      sampleTimer = setTimeout(() => finish(), 3_800);
-    });
-
-    socket.on("message", (raw: any) => {
-      try {
-        const event = JSON.parse(Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw));
-        if (event?.MessageType === "SubscriptionConfirmation") {
-          confirmed = true;
-          return;
-        }
-        const staticData = parseAisStreamStatic(event);
-        if (staticData) {
-          staticByMmsi.set(staticData.mmsi, { vesselType: staticData.vesselType, name: staticData.name });
-          const existing = vessels.get(staticData.mmsi);
-          if (existing) {
-            vessels.set(staticData.mmsi, {
-              ...existing,
-              vesselType: staticData.vesselType || existing.vesselType,
-              name: staticData.name || existing.name,
-            });
-          }
-          return;
-        }
-        const vessel = parseAisStreamEvent(event);
-        if (!validVessel(vessel)) return;
-        const knownStatic = staticByMmsi.get(vessel.mmsi);
-        if (knownStatic) {
-          vessel.vesselType = knownStatic.vesselType || vessel.vesselType;
-          vessel.name = knownStatic.name || vessel.name;
-        }
-        vessels.set(vessel.mmsi, vessel);
-        if (vessels.size >= MAX_VESSELS) finish();
-      } catch {
-        // Mensagem inválida é ignorada sem derrubar a camada inteira.
-      }
-    });
-
-    socket.once("error", () => finish(new Error("Falha na conexão AISStream.")));
-    socket.once("close", () => {
-      if (!settled) finish(opened ? undefined : new Error("AISStream encerrou antes de conectar."));
-    });
-  });
 }
 
 function parseVesselApiItem(raw: any): MapVessel | null {
@@ -563,13 +405,91 @@ async function fetchMarinesiaMap(lat: number, lon: number): Promise<MapVessel[]>
   }
 }
 
+async function fetchAisStreamCache(lat: number, lon: number, zoom = 10): Promise<MapVessel[]> {
+  const box = queryBox(lat, lon, zoom);
+  const maxAgeMinutes = Math.max(5, Number(process.env.AIS_LIVE_MAX_AGE_MINUTES || 45) || 45);
+  const staleMaxHours = Math.max(1, Number(process.env.AIS_LIVE_STALE_MAX_HOURS || 6) || 6);
+
+  try {
+    const db = getDb();
+
+    const queryRows = async (stale: boolean) => {
+      const result = await db.execute(sql`
+        select
+          mmsi, imo, name, lat, lon, sog, cog, heading,
+          vessel_type, nav_status_text, position_received, last_seen_at
+        from public.ais_live_vessels
+        where lat between ${box.south} and ${box.north}
+          and lon between ${box.west} and ${box.east}
+          and last_seen_at >= now() - ${stale
+            ? sql`make_interval(hours => ${staleMaxHours})`
+            : sql`make_interval(mins => ${maxAgeMinutes})`}
+        order by last_seen_at desc
+        limit ${MAX_VESSELS}
+      `);
+      return Array.isArray(result) ? result as any[] : [];
+    };
+
+    let rows = await queryRows(false);
+    let stale = false;
+
+    // Se o provedor/worker ficar temporariamente fora do ar, mantém as últimas
+    // posições conhecidas por algumas horas, em vez de apagar todos os barcos.
+    if (!rows.length) {
+      rows = await queryRows(true);
+      stale = rows.length > 0;
+    }
+
+    return rows.map((row) => {
+      const rawStamp = row.position_received || row.last_seen_at || new Date();
+      const stampDate = rawStamp instanceof Date ? rawStamp : new Date(rawStamp);
+      const stamp = Number.isNaN(stampDate.getTime()) ? new Date().toISOString() : stampDate.toISOString();
+      return {
+        mmsi: cleanText(row.mmsi).replace(/\D/g, ""),
+        imo: cleanText(row.imo).replace(/\D/g, ""),
+        name: cleanText(row.name) || `MMSI ${cleanText(row.mmsi)}`,
+        lat: Number(row.lat),
+        lon: Number(row.lon),
+        sog: numberOrNull(row.sog),
+        cog: numberOrNull(row.cog),
+        heading: numberOrNull(row.heading),
+        vesselType: cleanText(row.vessel_type),
+        navStatusText: cleanText(row.nav_status_text),
+        positionReceived: stamp,
+        updateTime: stamp,
+        dataSource: "AISStream" as const,
+        receivedAt: stampDate.getTime(),
+        stale,
+      };
+    }).filter(validVessel);
+  } catch (error) {
+    console.warn("[AISStream cache] indisponível:", error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
 async function loadSnapshot(lat: number, lon: number, zoom = 10): Promise<CacheValue> {
   let vessels: MapVessel[] = [];
   let source: CacheValue["source"] = "Nenhuma";
   let fallbackUsed = true;
 
-  // AISStream foi retirado da camada automática. APRS.fi é usado apenas
-  // na busca manual por alvo específico; ele não oferece busca por bounding box.
+  // Fonte principal: cache persistente abastecido por um único worker AISStream.
+  // A Vercel não abre WebSocket com o provedor; apenas lê a última posição por MMSI.
+  vessels = await fetchAisStreamCache(lat, lon, zoom);
+  if (vessels.length) {
+    const now = Date.now();
+    return {
+      vessels,
+      source: "AISStream",
+      fallbackUsed: false,
+      updatedAt: now,
+      expiresAt: now + FRESH_TTL_MS,
+      staleUntil: now + STALE_TTL_MS,
+    };
+  }
+
+  // Fallbacks gratuitos antigos permanecem intactos para não deixar o mapa vazio
+  // durante deploy/reconexão do worker.
   let vesselApiAvailable = false;
   try {
     vessels = await fetchVesselApi(lat, lon, zoom);

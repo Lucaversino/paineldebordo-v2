@@ -4892,3 +4892,24 @@ main.loginpage{
     bottom:174px!important;
   }
 }
+
+
+/* V160 — AIS mobile: menu acima do mapa e cards reposicionados */
+@media (max-width: 900px) {
+  .sidebar.open {
+    z-index: 5000 !important;
+  }
+}
+@media (max-width: 760px) {
+  .ais-page.ais-v119-page,
+  .ais-v119-page .ais-shell.ais-v61-shell {
+    overflow: hidden !important;
+    max-width: 100vw !important;
+  }
+  .ais-v119-page .ais-v95-map-card.ais-v119-map-card {
+    left: 18px !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}

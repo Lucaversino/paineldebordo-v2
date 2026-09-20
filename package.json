@@ -18,7 +18,8 @@
     "charts:convert": "python tools/cartas-marinha/03_converter_kap_para_xyz.py",
     "desktop": "electron .",
     "desktop:dist": "electron-builder --win nsis",
-    "desktop:pack": "electron-builder --dir"
+    "desktop:pack": "electron-builder --dir",
+    "ais:worker": "node worker/aisstream-worker.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
