@@ -4169,3 +4169,84 @@ main.loginpage{
     overflow:auto;
   }
 }
+
+
+/* V147 — AIS sem IA + orientação do mapa */
+.ais-v147-orientation{
+  position:absolute;
+  z-index:95;
+  right:8px;
+  top:205px;
+  display:grid;
+  justify-items:end;
+  gap:5px;
+  pointer-events:auto;
+}
+.ais-v147-orientation-main{
+  min-width:86px;
+  height:34px;
+  padding:0 8px;
+  border:1px solid #3d6670;
+  border-radius:9px;
+  background:#071f26eF;
+  color:#b9d9df;
+  box-shadow:0 7px 20px #00111866;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  font:900 6.5px system-ui;
+  letter-spacing:.03em;
+  cursor:pointer;
+}
+.ais-v147-orientation-main svg{width:14px;height:14px}
+.ais-v147-orientation.open .ais-v147-orientation-main{
+  border-color:#49a8c9;
+  color:#9ee5ff;
+}
+.ais-v147-orientation-menu{
+  width:108px;
+  padding:4px;
+  border:1px solid #345962;
+  border-radius:9px;
+  background:#061b21f2;
+  box-shadow:0 9px 26px #00111877;
+  display:grid;
+  gap:3px;
+  backdrop-filter:blur(12px);
+}
+.ais-v147-orientation-menu button{
+  height:30px;
+  padding:0 6px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:#90afb6;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font:900 6.5px system-ui;
+  cursor:pointer;
+}
+.ais-v147-orientation-menu button svg{width:13px;height:13px}
+.ais-v147-orientation-menu button.active{
+  border-color:#3c7e8c;
+  background:#10323a;
+  color:#a9e9f6;
+}
+@media(max-width:780px){
+  .ais-v147-orientation{
+    right:8px;
+    top:190px;
+  }
+  .ais-v147-orientation-main{
+    min-width:40px;
+    width:40px;
+    height:38px;
+    padding:0;
+  }
+  .ais-v147-orientation-main span{display:none}
+  .ais-v147-orientation-menu{
+    width:102px;
+  }
+}

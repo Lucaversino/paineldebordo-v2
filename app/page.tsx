@@ -650,7 +650,7 @@ export default function Home() {
           />
         )}
       </main>
-      <FishAI />
+      {view !== "AIS" && <FishAI />}
       {modal && t && (
         <div className="overlay" onMouseDown={() => setModal(null)}>
           <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>

@@ -36,7 +36,7 @@ import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import LineString from "ol/geom/LineString";
 import CircleGeom from "ol/geom/Circle";
-import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
+import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
@@ -55,6 +55,7 @@ type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
 type MobilePanel = "areaSearch" | "saved" | "areaSaved" | "waypoints" | "history" | null;
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
+type MapOrientationMode = "heading" | "course" | "north" | "south";
 type WaypointIcon = "circle" | "diamond" | "triangle" | "cross" | "star";
 
 type MapWaypoint = {
@@ -347,6 +348,43 @@ function crossTrackErrorNm(start: { lat: number; lon: number }, end: { lat: numb
   return Math.asin(Math.sin(angularDistance) * Math.sin(theta13 - theta12)) * earthRadiusNm;
 }
 
+function bearingDegrees(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const rad = initialBearingRad(a, b);
+  return (rad * 180 / Math.PI + 360) % 360;
+}
+
+function orientationLabel(mode: MapOrientationMode) {
+  if (mode === "heading") return "PROA UP";
+  if (mode === "course") return "RUMO UP";
+  if (mode === "south") return "SUL UP";
+  return "NORTE UP";
+}
+
+const NAV_BOAT_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 31 28 20 24 9 28Z" fill="#44d7ff" stroke="#ffffff" stroke-width="2"/><path d="M12 29h16l-4 6h-8Z" fill="#0a5368" stroke="#ffffff" stroke-width="1.5"/></svg>'
+)}`;
+
+function gpsPositionStyle(navigating: boolean, headingDegrees = 0) {
+  if (!navigating) {
+    return new Style({
+      image: new CircleStyle({
+        radius: 8,
+        fill: new Fill({ color: "#2a92ff" }),
+        stroke: new Stroke({ color: "#ffffff", width: 3 }),
+      }),
+    });
+  }
+  return new Style({
+    image: new IconStyle({
+      src: NAV_BOAT_SVG,
+      anchor: [0.5, 0.5],
+      scale: 0.9,
+      rotation: (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180,
+      rotateWithView: false,
+    }),
+  });
+}
+
 function waypointSymbol(icon: WaypointIcon) {
   if (icon === "diamond") return "◆";
   if (icon === "triangle") return "▲";
@@ -516,6 +554,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const measureStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const navigationStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const navigationTrailRef = useRef<Array<{ lat: number; lon: number }>>([]);
+  const navigationTargetRef = useRef<MapWaypoint | null>(null);
   const smoothedSpeedRef = useRef<number | null>(null);
   const gpsPreviousRef = useRef<{ lat: number; lon: number; at: number } | null>(null);
   const gpsCenteredRef = useRef(false);
@@ -576,14 +615,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [navigationDistanceNm, setNavigationDistanceNm] = useState<number | null>(null);
   const [navigationEtaMinutes, setNavigationEtaMinutes] = useState<number | null>(null);
   const [navigationXteNm, setNavigationXteNm] = useState<number | null>(null);
+  const [gpsHeadingDegrees, setGpsHeadingDegrees] = useState<number | null>(null);
+  const [mapOrientationMode, setMapOrientationMode] = useState<MapOrientationMode>("north");
+  const [orientationMenuOpen, setOrientationMenuOpen] = useState(false);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
     try {
       const savedXte = Number(window.localStorage.getItem("painel-map-xte-nm"));
       const savedDamping = Number(window.localStorage.getItem("painel-map-speed-damping"));
+      const savedOrientation = String(window.localStorage.getItem("painel-map-orientation") || "");
       if (Number.isFinite(savedXte) && savedXte >= 0.05 && savedXte <= 5) setXteLimitNm(savedXte);
       if (Number.isFinite(savedDamping) && savedDamping >= 0 && savedDamping <= 95) setSpeedDampingPct(savedDamping);
+      if (["heading","course","north","south"].includes(savedOrientation)) setMapOrientationMode(savedOrientation as MapOrientationMode);
     } catch {}
     return () => document.body.classList.remove("ais-mobile-active");
   }, []);
@@ -592,8 +636,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     try {
       window.localStorage.setItem("painel-map-xte-nm", String(xteLimitNm));
       window.localStorage.setItem("painel-map-speed-damping", String(speedDampingPct));
+      window.localStorage.setItem("painel-map-orientation", mapOrientationMode);
     } catch {}
-  }, [xteLimitNm, speedDampingPct]);
+  }, [xteLimitNm, speedDampingPct, mapOrientationMode]);
+
+  useEffect(() => {
+    navigationTargetRef.current = navigationTarget;
+  }, [navigationTarget]);
 
   useEffect(() => {
     // V138: remove apenas caches/configurações antigas do AIS. Dados de usuário ficam no servidor.
@@ -1128,6 +1177,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(`Distância medida: ${nm.toFixed(2)} milhas náuticas`);
   }
 
+  function drawGpsPositionMarker(coords: { lat: number; lon: number }, headingDegrees?: number | null) {
+    const source = positionSourceRef.current;
+    source?.clear();
+    const feature = new Feature({ geometry: new Point(fromLonLat([coords.lon, coords.lat])) });
+    feature.setStyle(gpsPositionStyle(Boolean(navigationTargetRef.current), Number(headingDegrees || 0)));
+    source?.addFeature(feature);
+  }
+
   function stopWaypointNavigation() {
     navigationSourceRef.current?.clear();
     navigationStartRef.current = null;
@@ -1138,6 +1195,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setNavigationDistanceNm(null);
     setNavigationEtaMinutes(null);
     setNavigationXteNm(null);
+    if (devicePosition) drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
     setStatusMessage("Navegação para waypoint encerrada.");
   }
 
@@ -1163,11 +1221,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setMapSettingsOpen(false);
     setWaypointPanelOpen(false);
     setNavigationTarget(target);
+    navigationTargetRef.current = target;
     navigationStartRef.current = devicePosition ? { ...devicePosition } : null;
     navigationTrailRef.current = devicePosition ? [{ ...devicePosition }] : [];
     smoothedSpeedRef.current = null;
 
     if (devicePosition) {
+      drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
       const line = new LineString([
         fromLonLat([devicePosition.lon, devicePosition.lat]),
         fromLonLat([coords.lon, coords.lat]),
@@ -2252,6 +2312,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         const sampleAt = Number(position.timestamp) || Date.now();
         const nativeSpeed = Number(position.coords.speed);
+        const nativeHeading = Number(position.coords.heading);
+        if (Number.isFinite(nativeHeading) && nativeHeading >= 0) setGpsHeadingDegrees(nativeHeading);
         let rawKnots = Number.isFinite(nativeSpeed) && nativeSpeed >= 0 ? nativeSpeed * 1.943844492 : null;
         const previous = gpsPreviousRef.current;
         if (rawKnots == null && previous && sampleAt > previous.at) {
@@ -2261,9 +2323,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         gpsPreviousRef.current = { ...coords, at: sampleAt };
         if (rawKnots != null && Number.isFinite(rawKnots) && rawKnots < 120) setGpsRawSpeedKnots(rawKnots);
         setDevicePosition(coords);
-        const source = positionSourceRef.current;
-        source?.clear();
-        source?.addFeature(new Feature({ geometry: new Point(fromLonLat([coords.lon, coords.lat])) }));
+        drawGpsPositionMarker(coords, Number.isFinite(nativeHeading) ? nativeHeading : gpsHeadingDegrees);
         if (!gpsCenteredRef.current) {
           gpsCenteredRef.current = true;
           setAreaCenter(coords);
@@ -2350,6 +2410,29 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }));
     source.addFeature(activeLeg);
   }, [navigationTarget, devicePosition, gpsRawSpeedKnots, speedDampingPct]);
+
+  useEffect(() => {
+    const view = mapRef.current?.getView();
+    if (!view) return;
+
+    let degrees = 0;
+    if (mapOrientationMode === "south") {
+      degrees = 180;
+    } else if (mapOrientationMode === "heading") {
+      degrees = gpsHeadingDegrees ?? 0;
+    } else if (mapOrientationMode === "course") {
+      if (navigationTarget && devicePosition) {
+        degrees = bearingDegrees(devicePosition, {
+          lat: Number(navigationTarget.latitude),
+          lon: Number(navigationTarget.longitude),
+        });
+      } else {
+        degrees = gpsHeadingDegrees ?? 0;
+      }
+    }
+
+    view.setRotation(-(degrees * Math.PI / 180));
+  }, [mapOrientationMode, gpsHeadingDegrees, devicePosition, navigationTarget]);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
@@ -2650,6 +2733,38 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 
+        <div className={`ais-v147-orientation ${orientationMenuOpen ? "open" : ""}`}>
+          <button
+            type="button"
+            className="ais-v147-orientation-main"
+            onClick={() => setOrientationMenuOpen((open) => !open)}
+            title="Modo de orientação do mapa"
+          >
+            {navigationTarget ? <Ship /> : <Navigation />}
+            <span>{orientationLabel(mapOrientationMode)}</span>
+          </button>
+          {orientationMenuOpen && (
+            <div className="ais-v147-orientation-menu">
+              {([
+                ["heading", "PROA UP"],
+                ["course", "RUMO UP"],
+                ["north", "NORTE UP"],
+                ["south", "SUL UP"],
+              ] as Array<[MapOrientationMode, string]>).map(([mode, label]) => (
+                <button
+                  type="button"
+                  key={mode}
+                  className={mapOrientationMode === mode ? "active" : ""}
+                  onClick={() => { setMapOrientationMode(mode); setOrientationMenuOpen(false); }}
+                >
+                  {mode === "heading" ? <Ship /> : <Navigation />}
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className={`ais-v119-wallet ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"} ${creditMenuOpen ? "open" : ""}`}>
           <button type="button" className="ais-v119-wallet-main" onClick={() => setCreditMenuOpen((open) => !open)} aria-expanded={creditMenuOpen}>
             <span className="ais-v119-wallet-icon"><WalletCards /></span>
@@ -2709,7 +2824,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             </div>
             {selectedWaypointId != null && (
               <button type="button" className="ais-v146-goto" onClick={() => startWaypointNavigation()}>
-                <Navigation /> IR PARA
+                <Ship /> IR PARA
               </button>
             )}
           </div>
@@ -2733,7 +2848,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         {navigationTarget && (
           <div className={`ais-v146-nav-card ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
             <div className="ais-v146-nav-head">
-              <span><Navigation /><b>IR PARA · {navigationTarget.name}</b></span>
+              <span><Ship /><b>IR PARA · {navigationTarget.name}</b></span>
               <button type="button" onClick={stopWaypointNavigation}>×</button>
             </div>
             <div className="ais-v146-nav-grid">
