@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
+
+export const maxDuration = 60;
 
 const TZ = "America/Sao_Paulo";
 
@@ -31,6 +34,17 @@ async function fetchJson(url: URL, timeoutMs = 6500) {
   });
   if (!response.ok) throw new Error(`Falha na fonte externa (${response.status})`);
   return response.json();
+}
+
+
+function dateKeyInTimeZone(offsetDays = 0) {
+  const date = new Date(Date.now() + offsetDays * 86400000);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -125,7 +139,7 @@ async function fetchCentralWeather(lat: number, lon: number) {
     longitude: String(lon),
     timezone: TZ,
     wind_speed_unit: "kmh",
-    forecast_days: "4",
+    forecast_days: "7",
     current: "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
     hourly: "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
   }).toString();
@@ -138,7 +152,7 @@ async function fetchMarine(lat: number, lon: number) {
     latitude: String(lat),
     longitude: String(lon),
     timezone: TZ,
-    forecast_days: "4",
+    forecast_days: "7",
     hourly: [
       "wave_height",
       "wave_direction",
@@ -176,6 +190,71 @@ async function fetchWindGrid(points: { lat: number; lon: number }[]) {
       gustKmh: current?.wind_gusts_10m ?? null,
     };
   });
+}
+
+
+async function fetchWeeklyChlorophyllForecast(lat: number, lon: number, requestUrl: string) {
+  const username = String(process.env.COPERNICUSMARINE_SERVICE_USERNAME || "").trim();
+  const password = String(process.env.COPERNICUSMARINE_SERVICE_PASSWORD || "").trim();
+  const days = Array.from({ length: 7 }, (_, index) => ({ date: dateKeyInTimeZone(index) }));
+
+  if (!username || !password) {
+    return {
+      configured: false,
+      source: "Copernicus Marine (configure usuário e senha gratuitos)",
+      values: days.map((day) => ({ date: day.date, mgM3: null, model: null })),
+    };
+  }
+
+  try {
+    const endpoint = new URL("/api/copernicus-chlorophyll", requestUrl);
+    endpoint.search = new URLSearchParams({ lat: String(lat), lon: String(lon), days: "7" }).toString();
+    const internalToken = createHash("sha256")
+      .update(`${username}:${password}:painel-de-bordo-copernicus`)
+      .digest("hex");
+    const response = await fetch(endpoint, {
+      headers: {
+        accept: "application/json",
+        "x-panel-copernicus": internalToken,
+      },
+      signal: AbortSignal.timeout(45000),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Copernicus Marine ${response.status}`);
+    const json = await response.json();
+    const received = Array.isArray(json?.values) ? json.values : [];
+    return {
+      configured: true,
+      source: json?.source || "Copernicus Marine / NEMO-PISCES",
+      values: days.map((day) => {
+        const item = received.find((row: any) => row?.date === day.date);
+        const value = Number(item?.mgM3);
+        return {
+          date: day.date,
+          mgM3: Number.isFinite(value) ? value : null,
+          model: Number.isFinite(value) ? "Copernicus Marine / NEMO" : null,
+        };
+      }),
+    };
+  } catch (error) {
+    console.warn("Copernicus Marine weekly chlorophyll unavailable", error);
+    return {
+      configured: true,
+      source: "Copernicus Marine / NEMO-PISCES (temporariamente indisponível)",
+      values: days.map((day) => ({ date: day.date, mgM3: null, model: null })),
+    };
+  }
+}
+
+function average(values: Array<number | null | undefined>) {
+  const rows = values.map(Number).filter(Number.isFinite);
+  if (!rows.length) return null;
+  return rows.reduce((sum, value) => sum + value, 0) / rows.length;
+}
+
+function maximum(values: Array<number | null | undefined>) {
+  const rows = values.map(Number).filter(Number.isFinite);
+  return rows.length ? Math.max(...rows) : null;
 }
 
 async function fetchChlorophyllPoint(lat: number, lon: number) {
@@ -255,11 +334,12 @@ export async function GET(request: Request) {
     // Fontes externas podem ficar lentas no mar. Nenhuma fonte opcional deve
     // travar a página inteira: retornamos os dados disponíveis e marcamos
     // valores ausentes como null.
-    const [weatherResult, marineResult, windResult, chlorophyllResult, geographyResult, bathymetryResult] = await Promise.allSettled([
+    const [weatherResult, marineResult, windResult, chlorophyllResult, weeklyChlorophyllResult, geographyResult, bathymetryResult] = await Promise.allSettled([
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
       Promise.all(grid.map((point) => fetchChlorophyllPoint(point.lat, point.lon))),
+      fetchWeeklyChlorophyllForecast(lat, lon, request.url),
       fetchGeographicContext(lat, lon),
       fetchBathymetry(lat, lon),
     ]);
@@ -272,6 +352,9 @@ export async function GET(request: Request) {
     const chlorophyllGrid = chlorophyllResult.status === "fulfilled"
       ? chlorophyllResult.value
       : grid.map((point) => ({ ...point, mgM3: null, time: null }));
+    const weeklyChlorophyll = weeklyChlorophyllResult.status === "fulfilled"
+      ? weeklyChlorophyllResult.value
+      : { configured: false, source: "Copernicus Marine (temporariamente indisponível)", values: [] };
     const geography = geographyResult.status === "fulfilled" ? geographyResult.value : null;
     const bathymetry = bathymetryResult.status === "fulfilled" ? bathymetryResult.value : null;
 
@@ -308,6 +391,33 @@ export async function GET(request: Request) {
     };
 
     const centralChl = chlorophyllGrid.find((p, i) => grid[i]?.row === 1 && grid[i]?.col === 1) || null;
+
+    const weeklyForecast = Array.from({ length: 7 }, (_, dayIndex) => {
+      const date = dateKeyInTimeZone(dayIndex);
+      const weatherIndexes = weatherTimes.map((time, index) => String(time).slice(0, 10) === date ? index : -1).filter((index) => index >= 0);
+      const marineIndexes = marineTimes.map((time, index) => String(time).slice(0, 10) === date ? index : -1).filter((index) => index >= 0);
+      const middayTarget = new Date(`${date}T12:00:00-03:00`).getTime();
+      const wi = weatherTimes.length ? nearestIndex(weatherTimes, middayTarget) : 0;
+      const mi = marineTimes.length ? nearestIndex(marineTimes, middayTarget) : 0;
+      const chl = Array.isArray(weeklyChlorophyll?.values)
+        ? weeklyChlorophyll.values.find((item: any) => item?.date === date)
+        : null;
+      return {
+        date,
+        time: weatherTimes[wi] || marineTimes[mi] || `${date}T12:00:00`,
+        windSpeedKmh: average(weatherIndexes.map((index) => weather?.hourly?.wind_speed_10m?.[index])) ?? weather?.hourly?.wind_speed_10m?.[wi] ?? null,
+        windDirectionDeg: weather?.hourly?.wind_direction_10m?.[wi] ?? null,
+        windDirection: directionName(weather?.hourly?.wind_direction_10m?.[wi]),
+        gustKmh: maximum(weatherIndexes.map((index) => weather?.hourly?.wind_gusts_10m?.[index])) ?? weather?.hourly?.wind_gusts_10m?.[wi] ?? null,
+        waveHeightM: maximum(marineIndexes.map((index) => marine?.hourly?.wave_height?.[index])) ?? marine?.hourly?.wave_height?.[mi] ?? null,
+        waveDirection: directionName(marine?.hourly?.wave_direction?.[mi]),
+        seaTemperatureC: average(marineIndexes.map((index) => marine?.hourly?.sea_surface_temperature?.[index])) ?? marine?.hourly?.sea_surface_temperature?.[mi] ?? null,
+        currentKmh: average(marineIndexes.map((index) => marine?.hourly?.ocean_current_velocity?.[index])) ?? marine?.hourly?.ocean_current_velocity?.[mi] ?? null,
+        currentDirection: directionName(marine?.hourly?.ocean_current_direction?.[mi]),
+        chlorophyllMgM3: Number.isFinite(Number(chl?.mgM3)) ? Number(chl.mgM3) : (dayIndex === 0 ? centralChl?.mgM3 ?? null : null),
+        chlorophyllModel: chl?.model || (dayIndex === 0 && centralChl?.mgM3 != null ? "VIIRS observado" : null),
+      };
+    });
 
     const forecast: any[] = [];
     const baseTimes = weatherTimes.length ? weatherTimes : marineTimes;
@@ -355,6 +465,7 @@ export async function GET(request: Request) {
         condition: conditionLabel(current.windSpeedKmh, current.waveHeightM),
       },
       tide: { extrema },
+      weeklyForecast,
       forecast,
       maps: {
         wind: windGrid.map((value, index) => ({ ...grid[index], ...value })),
@@ -364,6 +475,7 @@ export async function GET(request: Request) {
         weather: weather ? "Open-Meteo Forecast" : "Open-Meteo Forecast (temporariamente indisponível)",
         marine: marine ? "Open-Meteo Marine" : "Open-Meteo Marine (temporariamente indisponível)",
         chlorophyll: chlorophyllResult.status === "fulfilled" ? "NOAA CoastWatch / VIIRS gap-filled daily" : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
+        chlorophyllForecast: weeklyChlorophyll?.source || "Copernicus Marine (temporariamente indisponível)",
         geography: geography ? "OpenStreetMap / Nominatim" : "Referência geográfica indisponível",
         bathymetry: bathymetry ? "GEBCO_2026 / Ocean Data Bank" : "Batimetria temporariamente indisponível",
       },

@@ -578,6 +578,28 @@ export default function PositionForecast() {
             <article><Droplets /><small>CLOROFILA-A</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>Satélite VIIRS</b><span>{data.current.chlorophyllTime ? String(data.current.chlorophyllTime).slice(0, 10) : "Sem leitura"}</span></article>
           </div>
 
+
+          <article className="position-panel weekly-ocean-panel">
+            <div className="position-panel-title weekly-ocean-title">
+              <div><small>PRÓXIMOS 7 DIAS</small><h3>Previsão semanal de vento, mar e clorofila</h3><p>Clorofila futura usa o modelo biogeoquímico oficial do Copernicus Marine.</p></div>
+              <span>7 dias</span>
+            </div>
+            <div className="weekly-ocean-grid">
+              {(data.weeklyForecast || []).map((item: any, index: number) => (
+                <div className="weekly-ocean-card" key={`${item.date}-${index}`}>
+                  <time>{new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(`${item.date}T12:00:00`))}</time>
+                  <div><Wind /><span><small>VENTO MÉDIO</small><b>{fmt(item.windSpeedKmh, 0)} km/h</b><em>{item.windDirection || "—"} · raj. {fmt(item.gustKmh, 0)}</em></span></div>
+                  <div><Waves /><span><small>ONDA MÁX.</small><b>{fmt(item.waveHeightM)} m</b><em>{item.waveDirection || "—"}</em></span></div>
+                  <div><Droplets /><span><small>CLOROFILA-A</small><b>{fmt(item.chlorophyllMgM3, 2)} mg/m³</b><em>{item.chlorophyllModel || "Sem previsão disponível"}</em></span></div>
+                  <div><Thermometer /><span><small>TEMP. MAR</small><b>{fmt(item.seaTemperatureC)} °C</b><em>superfície</em></span></div>
+                </div>
+              ))}
+            </div>
+            {!data.weeklyForecast?.some((item: any) => Number.isFinite(Number(item.chlorophyllMgM3)) && item.chlorophyllModel === "Copernicus Marine / NEMO") && (
+              <small className="weekly-chl-note">A clorofila de hoje continua vindo do VIIRS. Para a previsão dos próximos dias, configure na Vercel <b>COPERNICUSMARINE_SERVICE_USERNAME</b> e <b>COPERNICUSMARINE_SERVICE_PASSWORD</b>. A conta do Copernicus Marine é gratuita.</small>
+            )}
+          </article>
+
           <article className="position-panel hourly-panel">
             <div className="position-panel-title hourly-title">
               <div><small>PRÓXIMAS HORAS</small><h3>Vento, ondas e correntes de maré por horário</h3><p>Até 72 horas · intervalos de 3 horas · tudo visível no desktop</p></div>
@@ -664,7 +686,7 @@ export default function PositionForecast() {
           <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
 
           <div className="position-source-note">
-            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · OpenStreetMap
+            <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · {data.sources.chlorophyllForecast || "Clorofila semanal indisponível"} · OpenStreetMap
             <span>{data.disclaimer}</span>
           </div>
         </>
