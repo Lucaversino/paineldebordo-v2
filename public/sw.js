@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v179-mapa-ambiental-windy";
+const CACHE = "painel-bordo-v181-remove-mapa-posicao";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

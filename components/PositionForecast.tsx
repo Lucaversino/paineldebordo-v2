@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
-import NauticalMap from "./NauticalMap";
 import EnvironmentalOverlayMap from "./EnvironmentalOverlayMap";
 
 const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
@@ -672,10 +671,11 @@ export default function PositionForecast() {
               mode={mapMode}
               wind={data?.maps?.wind || []}
               chlorophyll={data?.maps?.chlorophyll || []}
+              currentWindDirection={data?.current?.windDirection}
+              currentWindDirectionDeg={data?.current?.windDirectionDeg}
             />
           </article>
 
-          <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
 
           {finalAnalysis && (
             <article className="position-panel forecast-final-analysis">

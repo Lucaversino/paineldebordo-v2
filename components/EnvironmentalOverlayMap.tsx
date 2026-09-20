@@ -38,6 +38,8 @@ type Props = {
   mode: EnvironmentalMapMode;
   wind: GridPoint[];
   chlorophyll: GridPoint[];
+  currentWindDirection?: string | null;
+  currentWindDirectionDeg?: number | null;
 };
 
 function nauticalPart(value: number, dir: "S" | "W") {
@@ -51,7 +53,15 @@ function fmt(value: number, digits = 1) {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chlorophyll }: Props) {
+function cardinalDirection(deg?: number | null) {
+  const value = Number(deg);
+  if (!Number.isFinite(value)) return "—";
+  const names = ["Norte", "Nordeste", "Leste", "Sudeste", "Sul", "Sudoeste", "Oeste", "Noroeste"];
+  const normalized = ((value % 360) + 360) % 360;
+  return names[Math.round(normalized / 45) % 8];
+}
+
+export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chlorophyll, currentWindDirection, currentWindDirectionDeg }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const heatRef = useRef<HeatmapLayer | null>(null);
@@ -156,7 +166,9 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
 
       const labelFeature = new Feature({ geometry: new Point(coordinate) });
       if (mode === "wind") {
-        const rotation = (Number(item.directionDeg || 0) * Math.PI) / 180;
+        // directionDeg segue a convenção meteorológica: informa DE ONDE o vento vem.
+        // A seta do mapa deve acompanhar o deslocamento do vento, portanto aponta 180° adiante.
+        const rotation = (((Number(item.directionDeg || 0) + 180) % 360) * Math.PI) / 180;
         labelFeature.setStyle([
           new Style({
             text: new Text({
@@ -217,6 +229,8 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
     markerRef.current?.setPosition(fromLonLat([lon, lat]));
   }
 
+  const windName = String(currentWindDirection || "").trim() || cardinalDirection(currentWindDirectionDeg);
+
   return (
     <div className="environment-map-shell">
       <div ref={hostRef} className="environment-map-canvas" aria-label={mode === "wind" ? "Mapa colorido de vento" : "Mapa colorido de clorofila"} />
@@ -225,7 +239,14 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
         <button type="button" onClick={() => changeZoom(-1)} title="Diminuir zoom"><Minus /></button>
         <button type="button" onClick={centerPosition} title="Centralizar"><Crosshair /></button>
       </div>
-      <div className="environment-map-badge">{mode === "wind" ? "VENTO ATUAL" : "CLOROFILA · SATÉLITE"}</div>
+      <div className={`environment-map-badge ${mode === "wind" ? "wind-current-badge" : ""}`}>
+        {mode === "wind" ? (
+          <>
+            <small>VENTO ATUAL</small>
+            <strong>{windName.toUpperCase()}</strong>
+          </>
+        ) : "CLOROFILA · SATÉLITE"}
+      </div>
       <div className="environment-map-coordinate">
         <b>{nauticalPart(lat, "S")}</b>
         <b>{nauticalPart(lon, "W")}</b>
@@ -236,7 +257,7 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
         <i className={mode === "wind" ? "wind-scale" : "chlorophyll-scale"} />
         <span>{mode === "wind" ? `${fmt(max, 0)} km/h` : `${fmt(max, 2)} mg/m³`}</span>
       </div>
-      <small className="environment-map-note">Mapa interpolado a partir dos pontos consultados ao redor da posição. As cores acompanham o mapa durante zoom e movimento.</small>
+      <small className="environment-map-note">{mode === "wind" ? "As setas mostram PARA ONDE o vento está seguindo. O nome do vento indica DE ONDE ele sopra. " : ""}Mapa interpolado a partir dos pontos consultados ao redor da posição. As cores acompanham o mapa durante zoom e movimento.</small>
     </div>
   );
 }
