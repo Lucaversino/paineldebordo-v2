@@ -501,6 +501,10 @@ export default function PositionForecast() {
           <button className="position-last" onClick={useLastSet} disabled={busy || locating}>Usar última largada</button>
           <button className="position-clear" onClick={clearSearch} disabled={busy || locating}><X /> Limpar campos</button>
         </div>
+        <div className="position-share-actions">
+          <button type="button" className="position-pdf-big" onClick={exportPdf} disabled={!data || busy}><Download /><span><b>FAZER PDF</b><small>Cards grandes e fáceis de ler</small></span></button>
+          <button type="button" className="position-share-big" onClick={shareWhatsApp} disabled={!data || busy || shareBusy}><Share2 /><span><b>{shareBusy ? "COMPARTILHANDO..." : "COMPARTILHAR PREVISÃO"}</b><small>Enviar PDF pelo celular ou WhatsApp</small></span></button>
+        </div>
         {notice && <p className="position-notice">{notice}</p>}
         {error && <p className="position-error">{error}</p>}
       </div>

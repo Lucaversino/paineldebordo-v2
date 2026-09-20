@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v173-copernicus-marine";
+const CACHE = "painel-bordo-v174-copernicus-marine";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
