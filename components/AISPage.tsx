@@ -423,6 +423,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const vesselSourceRef = useRef<VectorSource | null>(null);
   const freeVesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
+  const probeSourceRef = useRef<VectorSource | null>(null);
   const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
@@ -464,6 +465,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
+  const [mapProbe, setMapProbe] = useState<{
+    lat: number;
+    lon: number;
+    depthMeters: number | null;
+    depthStatus: "loading" | "ready" | "land" | "unavailable";
+  } | null>(null);
+  const probeRequestRef = useRef(0);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -486,7 +494,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
-  useEffect(() => { areaRadiusRef.current = 50; if (areaCenter) drawAreaSelection(areaCenter.lat, areaCenter.lon, 50); }, [areaCenter]);
+  useEffect(() => { areaRadiusRef.current = 50; }, []);
   const [tracked, setTracked] = useState<Vessel | null>(null);
   const [showEmptyHint, setShowEmptyHint] = useState(false);
   const [status, setStatus] = useState<AisStatus>("idle");
@@ -793,13 +801,70 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     upsertMapVessels(dedupeVessels(vessels));
   }
 
+  async function inspectMapPoint(lat: number, lon: number) {
+    const seq = ++probeRequestRef.current;
+    const source = probeSourceRef.current;
+    source?.clear();
+
+    const marker = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
+    marker.setStyle(new Style({
+      image: new CircleStyle({
+        radius: 6,
+        fill: new Fill({ color: "#2bd4aa" }),
+        stroke: new Stroke({ color: "#ffffff", width: 2 }),
+      }),
+    }));
+    source?.addFeature(marker);
+
+    // V141: ao escolher um novo ponto, o círculo antigo some.
+    // O círculo de 50 km só é desenhado quando a busca de área é realmente executada.
+    areaSourceRef.current?.clear();
+    setAreaCenter({ lat, lon });
+    setMapProbe({ lat, lon, depthMeters: null, depthStatus: "loading" });
+
+    try {
+      const response = await fetch(
+        `/api/bathymetry?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+        { cache: "no-store", signal: AbortSignal.timeout(8000) },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (seq !== probeRequestRef.current) return;
+
+      if (!response.ok || !Number.isFinite(Number(data?.elevationMeters))) {
+        setMapProbe({ lat, lon, depthMeters: null, depthStatus: "unavailable" });
+        return;
+      }
+
+      const elevation = Number(data.elevationMeters);
+      if (elevation >= 0) {
+        setMapProbe({ lat, lon, depthMeters: 0, depthStatus: "land" });
+      } else {
+        setMapProbe({
+          lat,
+          lon,
+          depthMeters: Math.round(Math.abs(elevation)),
+          depthStatus: "ready",
+        });
+      }
+    } catch {
+      if (seq === probeRequestRef.current) {
+        setMapProbe({ lat, lon, depthMeters: null, depthStatus: "unavailable" });
+      }
+    }
+  }
+
+  function clearMapProbe() {
+    probeRequestRef.current += 1;
+    probeSourceRef.current?.clear();
+    setMapProbe(null);
+  }
+
   function chooseAreaCenterFromMap() {
     const map = mapRef.current;
     if (!map) return;
     const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
-    setAreaCenter({ lat, lon });
-    drawAreaSelection(lat, lon, areaRadius);
-    setStatusMessage(`Centro da área definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+    void inspectMapPoint(lat, lon);
+    setStatusMessage(`Centro da área definido · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
   }
 
   function applyManualAreaCoordinates(closeMobilePanel = false) {
@@ -812,9 +877,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setManualCoordError("");
     const coords = { lat, lon };
     setAreaCenter(coords);
-    drawAreaSelection(lat, lon, 50);
-    centerOn(lat, lon, 8, true);
-    setStatusMessage(`Centro manual definido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+    areaSourceRef.current?.clear();
+    centerOn(lat, lon, 8);
+    void inspectMapPoint(lat, lon);
+    setStatusMessage(`Centro manual definido · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
     if (closeMobilePanel) setMobilePanel(null);
   }
 
@@ -1478,11 +1544,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         const useAsArea = forArea || searchModeRef.current === "area";
         setDevicePosition(coords);
-        centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, true);
+        centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, !useAsArea);
         if (useAsArea) {
           setAreaCenter(coords);
-          drawAreaSelection(coords.lat, coords.lon, 50);
-          setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordMarine(coords.lat, true)} · ${formatCoordMarine(coords.lon, false)}`);
+          areaSourceRef.current?.clear();
+          void inspectMapPoint(coords.lat, coords.lon);
+          setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordOperational(coords.lat, true)} · ${formatCoordOperational(coords.lon, false)}`);
         } else {
           setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
         }
@@ -1543,6 +1610,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         image: new CircleStyle({ radius: 8, fill: new Fill({ color: "#2a92ff" }), stroke: new Stroke({ color: "#ffffff", width: 3 }) }),
       }),
     });
+    const probeSource = new VectorSource();
+    const probeLayer = new VectorLayer({ source: probeSource });
     const view = new View({ center: fromLonLat([fallbackLon, fallbackLat]), zoom: 10.5, minZoom: 3, maxZoom: 18 });
     street.setZIndex(0);
     dhn.setZIndex(5);
@@ -1550,11 +1619,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     freeVesselLayer.setZIndex(20);
     vesselLayer.setZIndex(30);
     positionLayer.setZIndex(40);
+    probeLayer.setZIndex(45);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer],
+      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer],
       view,
     });
 
@@ -1582,10 +1652,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     vesselSourceRef.current = vesselSource;
     freeVesselSourceRef.current = freeVesselSource;
     positionSourceRef.current = positionSource;
+    probeSourceRef.current = probeSource;
     areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
     dhnLayerRef.current = dhn;
-    drawAreaSelection(fallbackLat, fallbackLon, 50);
 
     const updateCenter = () => {
       const [lon, lat] = toLonLat(view.getCenter() || fromLonLat([fallbackLon, fallbackLat]));
@@ -1616,11 +1686,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         view.animate({ center: fromLonLat([vessel.lon, vessel.lat]), duration: 150 });
         return;
       }
-      if (searchModeRef.current !== "area") return;
       const [lon, lat] = toLonLat(event.coordinate);
-      setAreaCenter({ lat, lon });
-      drawAreaSelection(lat, lon, areaRadiusRef.current);
-      setStatusMessage(`Área selecionada no mapa · ${areaRadiusRef.current} km`);
+      trackedRef.current = null;
+      setTracked(null);
+      setCardAnchor(null);
+      void inspectMapPoint(lat, lon);
+      setStatusMessage(`Ponto marcado · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
     };
     map.on("singleclick", selectMapFeature);
     scheduleFreeMapLayer(true);
@@ -1762,7 +1833,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         setDevicePosition(coords);
         setAreaCenter(coords);
-        drawAreaSelection(coords.lat, coords.lon, 50);
         centerOn(coords.lat, coords.lon, 11, true);
       },
       () => undefined,
@@ -2070,6 +2140,32 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             </div>
           )}
         </div>
+
+        {mapProbe && (
+          <div className="ais-v141-point-card">
+            <div className="ais-v141-point-head">
+              <span><Crosshair /><b>PONTO NO MAPA</b></span>
+              <button type="button" onClick={clearMapProbe} aria-label="Fechar ponto">×</button>
+            </div>
+            <div className="ais-v141-point-coords">
+              <span><small>LATITUDE</small><strong>{formatCoordOperational(mapProbe.lat, true)}</strong></span>
+              <span><small>LONGITUDE</small><strong>{formatCoordOperational(mapProbe.lon, false)}</strong></span>
+            </div>
+            <div className={`ais-v141-depth ${mapProbe.depthStatus}`}>
+              <small>METRAGEM / PROFUNDIDADE</small>
+              <b>
+                {mapProbe.depthStatus === "loading"
+                  ? "calculando..."
+                  : mapProbe.depthStatus === "ready"
+                    ? `~ ${mapProbe.depthMeters} m`
+                    : mapProbe.depthStatus === "land"
+                      ? "terra / 0 m"
+                      : "indisponível"}
+              </b>
+              <em>estimativa batimétrica</em>
+            </div>
+          </div>
+        )}
 
         <button
           type="button"
