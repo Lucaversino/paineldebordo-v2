@@ -4716,3 +4716,31 @@ main.loginpage{
     top:116px!important;
   }
 }
+
+
+/* V153 — configuração do mapa acima da telemetria no mobile */
+@media(max-width:780px){
+  .ais-v146-settings-panel{
+    left:82px!important;
+    right:auto!important;
+    top:auto!important;
+    bottom:286px!important;
+    width:196px!important;
+    z-index:1850!important;
+  }
+}
+@media(max-width:430px){
+  .ais-v146-settings-panel{
+    left:74px!important;
+    bottom:278px!important;
+    width:192px!important;
+  }
+}
+@media(max-height:720px) and (max-width:780px){
+  .ais-v146-settings-panel{
+    left:78px!important;
+    bottom:244px!important;
+    max-height:42vh!important;
+    overflow:auto!important;
+  }
+}

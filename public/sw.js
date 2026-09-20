@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v152-mobile-auto-nav";
+const CACHE = "painel-bordo-v153-settings-position";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
