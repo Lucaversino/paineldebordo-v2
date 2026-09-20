@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v160-mobile-ais-cleanup";
+const CACHE = "painel-bordo-v161-fixed-nav-boat";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
