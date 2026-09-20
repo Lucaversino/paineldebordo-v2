@@ -579,13 +579,13 @@ export default function PositionForecast() {
             <article><Waves /><small>MAR / ONDA</small><strong>{fmt(data.current.waveHeightM)} m</strong><b>{data.current.waveDirection}</b><span>Período {fmt(data.current.wavePeriodS)} s · swell {fmt(data.current.swellHeightM)} m</span></article>
             <article><Navigation /><small>CORRENTE DE MARÉ</small><strong>{fmt(toMph(data.current.currentKmh), 2)} mph</strong><b>{data.current.currentDirection || "—"} · {fmt(data.current.currentDirectionDeg, 0)}°</b><span>milhas por hora · modelo oceânico</span></article>
             <article><Thermometer /><small>TEMPERATURA DO MAR</small><strong>{fmt(data.current.seaTemperatureC)} °C</strong><b>Superfície</b><span>Temperatura superficial modelada</span></article>
-            <article><Droplets /><small>CLOROFILA-A</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>{data.current.chlorophyllSource?.includes("Copernicus") ? "Copernicus Marine" : data.current.chlorophyllSource?.includes("VIIRS") ? "VIIRS · fallback" : "Sem fonte"}</b><span>{data.current.chlorophyllTime ? String(data.current.chlorophyllTime).slice(0, 10) : "Sem leitura"}</span></article>
+            <article><Droplets /><small>CLOROFILA-A ATUAL</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>{data.current.chlorophyllSource?.includes("VIIRS") ? "VIIRS · SATÉLITE" : "Sem leitura de satélite"}</b><span>{data.current.chlorophyllTime ? `Observado: ${String(data.current.chlorophyllTime).slice(0, 10)}` : "Sem observação válida"}</span></article>
           </div>
 
 
           <article className="position-panel weekly-ocean-panel">
             <div className="position-panel-title weekly-ocean-title">
-              <div><small>PRÓXIMOS 7 DIAS</small><h3>Previsão semanal de vento, mar e clorofila</h3></div>
+              <div><small>PRÓXIMOS 7 DIAS · COPERNICUS MARINE</small><h3>Previsão semanal de vento, mar e clorofila</h3></div>
               <span>7 dias</span>
             </div>
             <div className="weekly-ocean-grid">

@@ -391,22 +391,13 @@ export async function GET(request: Request) {
     };
 
     const centralChl = chlorophyllGrid.find((p, i) => grid[i]?.row === 1 && grid[i]?.col === 1) || null;
-    // V175: a leitura principal de clorofila atual passa a vir do mesmo modelo
-    // Copernicus Marine usado na previsão. VIIRS fica somente como fallback.
-    const todayKey = dateKeyInTimeZone(0);
-    const copernicusCurrent = Array.isArray(weeklyChlorophyll?.values)
-      ? weeklyChlorophyll.values.find((item: any) => item?.date === todayKey)
+    // V176: leitura ATUAL volta a ser observação por satélite NOAA CoastWatch / VIIRS.
+    // Copernicus Marine fica reservado para a PREVISÃO diária/semanal.
+    const currentChlorophyllMgM3 = centralChl?.mgM3 ?? null;
+    const currentChlorophyllSource = centralChl?.mgM3 != null
+      ? "NOAA CoastWatch / VIIRS · satélite"
       : null;
-    const copernicusCurrentValue = Number(copernicusCurrent?.mgM3);
-    const currentChlorophyllMgM3 = Number.isFinite(copernicusCurrentValue)
-      ? copernicusCurrentValue
-      : (centralChl?.mgM3 ?? null);
-    const currentChlorophyllSource = Number.isFinite(copernicusCurrentValue)
-      ? "Copernicus Marine / NEMO-PISCES"
-      : (centralChl?.mgM3 != null ? "NOAA CoastWatch / VIIRS (fallback)" : null);
-    const currentChlorophyllTime = Number.isFinite(copernicusCurrentValue)
-      ? todayKey
-      : (centralChl?.time ?? null);
+    const currentChlorophyllTime = centralChl?.time ?? null;
 
     const weeklyForecast = Array.from({ length: 7 }, (_, dayIndex) => {
       const date = dateKeyInTimeZone(dayIndex);
@@ -430,8 +421,8 @@ export async function GET(request: Request) {
         seaTemperatureC: average(marineIndexes.map((index) => marine?.hourly?.sea_surface_temperature?.[index])) ?? marine?.hourly?.sea_surface_temperature?.[mi] ?? null,
         currentKmh: average(marineIndexes.map((index) => marine?.hourly?.ocean_current_velocity?.[index])) ?? marine?.hourly?.ocean_current_velocity?.[mi] ?? null,
         currentDirection: directionName(marine?.hourly?.ocean_current_direction?.[mi]),
-        chlorophyllMgM3: Number.isFinite(Number(chl?.mgM3)) ? Number(chl.mgM3) : (dayIndex === 0 ? currentChlorophyllMgM3 : null),
-        chlorophyllModel: chl?.model || (dayIndex === 0 ? currentChlorophyllSource : null),
+        chlorophyllMgM3: Number.isFinite(Number(chl?.mgM3)) ? Number(chl.mgM3) : null,
+        chlorophyllModel: chl?.model || null,
       };
     });
 
@@ -467,6 +458,7 @@ export async function GET(request: Request) {
     }
 
     return Response.json({
+      queriedAt: new Date().toISOString(),
       position: {
         lat,
         lon,
