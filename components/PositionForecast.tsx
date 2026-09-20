@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
+import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
 import NauticalMap from "./NauticalMap";
 
 const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
@@ -443,6 +444,7 @@ export default function PositionForecast() {
         `Corrente de maré: ${fmt(toMph(data.current.currentKmh), 2)} mph · ${data.current.currentDirection || "—"}`,
         `Temperatura do mar: ${fmt(data.current.seaTemperatureC)} °C`,
         `Clorofila-a: ${fmt(data.current.chlorophyllMgM3, 2)} mg/m³`,
+        finalAnalysis?.summary ? `Análise final: ${finalAnalysis.summary}` : null,
       ].filter(Boolean).join("\n");
 
       const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
@@ -466,6 +468,7 @@ export default function PositionForecast() {
   const chlMin = chlorophyllNumbers.length ? Math.min(...chlorophyllNumbers) : 0;
   const chlMax = chlorophyllNumbers.length ? Math.max(...chlorophyllNumbers) : 1;
   const windMax = useMemo(() => Math.max(1, ...(data?.maps?.wind || []).map((x: any) => Number(x.speedKmh) || 0)), [data]);
+  const finalAnalysis = useMemo(() => data ? buildForecastFinalAnalysis(data) : null, [data]);
 
   return (
     <section className="position-forecast-page">
@@ -697,6 +700,39 @@ export default function PositionForecast() {
           </article>
 
           <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
+
+          {finalAnalysis && (
+            <article className="position-panel forecast-final-analysis">
+              <div className="forecast-analysis-header">
+                <div>
+                  <small>LEITURA AUTOMÁTICA DOS DADOS</small>
+                  <h3>ANÁLISE FINAL</h3>
+                  <p>{finalAnalysis.summary}</p>
+                </div>
+                <span className={`forecast-analysis-status ${String(data.current.condition || "").toLowerCase().replace(/\s+/g, "-")}`}>{finalAnalysis.headline}</span>
+              </div>
+
+              <div className="forecast-analysis-grid">
+                {finalAnalysis.items.map((item, index) => (
+                  <div className={`forecast-analysis-item tone-${item.tone}`} key={`${item.title}-${index}`}>
+                    <small>{item.title}</small>
+                    <strong>{item.value}</strong>
+                    <p>{item.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="forecast-analysis-explain">
+                <Compass />
+                <div>
+                  <b>COMO ENTENDER</b>
+                  <p>O satélite mostra a clorofila observada na superfície hoje. O Copernicus mostra a tendência prevista para os próximos dias. Diferenças entre os dois são normais porque usam métodos e resoluções diferentes.</p>
+                </div>
+              </div>
+
+              <div className="forecast-analysis-warning">{finalAnalysis.fishingNote}</div>
+            </article>
+          )}
 
           <div className="position-source-note">
             <b>Fontes:</b> {data.sources.weather} · {data.sources.marine} · {data.sources.chlorophyll} · {data.sources.chlorophyllForecast || "Clorofila semanal indisponível"} · OpenStreetMap
