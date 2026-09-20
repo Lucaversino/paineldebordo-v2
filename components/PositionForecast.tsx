@@ -581,7 +581,7 @@ export default function PositionForecast() {
 
           <article className="position-panel weekly-ocean-panel">
             <div className="position-panel-title weekly-ocean-title">
-              <div><small>PRÓXIMOS 7 DIAS</small><h3>Previsão semanal de vento, mar e clorofila</h3><p>Clorofila futura usa o modelo biogeoquímico oficial do Copernicus Marine.</p></div>
+              <div><small>PRÓXIMOS 7 DIAS</small><h3>Previsão semanal de vento, mar e clorofila</h3></div>
               <span>7 dias</span>
             </div>
             <div className="weekly-ocean-grid">
@@ -595,9 +595,6 @@ export default function PositionForecast() {
                 </div>
               ))}
             </div>
-            {!data.weeklyForecast?.some((item: any) => Number.isFinite(Number(item.chlorophyllMgM3)) && item.chlorophyllModel === "Copernicus Marine / NEMO") && (
-              <small className="weekly-chl-note">A clorofila de hoje continua vindo do VIIRS. Para a previsão dos próximos dias, configure na Vercel <b>COPERNICUSMARINE_SERVICE_USERNAME</b> e <b>COPERNICUSMARINE_SERVICE_PASSWORD</b>. A conta do Copernicus Marine é gratuita.</small>
-            )}
           </article>
 
           <article className="position-panel hourly-panel">
@@ -630,6 +627,18 @@ export default function PositionForecast() {
                     <b>{item.currentDirection || "—"}</b>
                     <em>milhas/h · {fmt(item.currentDirectionDeg, 0)}°</em>
                   </div>
+                  {(() => {
+                    const day = (data.weeklyForecast || []).find((row: any) => row.date === String(item.time || "").slice(0, 10));
+                    return (
+                      <div className="hourly-block chlorophyll-block-mini">
+                        <div className="hourly-icon"><Droplets /></div>
+                        <span>CLOROFILA-A</span>
+                        <strong>{fmt(day?.chlorophyllMgM3, 2)} <small>mg/m³</small></strong>
+                        <b>{day?.chlorophyllModel ? "Copernicus Marine" : "—"}</b>
+                        <em>previsão diária</em>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
