@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Eye, EyeOff, LockKeyhole, Mail, ShipWheel, User, UserPlus } from "lucide-react";
 import { createSupabaseBrowserClient } from "../../lib/supabase/client";
 import PwaControls from "../../components/PwaControls";
@@ -17,7 +17,6 @@ function GoogleLogo() {
 }
 
 export default function LoginPage() {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +32,7 @@ export default function LoginPage() {
     setError("");
     setMessage("");
     try {
+      const supabase = createSupabaseBrowserClient();
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
@@ -60,13 +60,16 @@ export default function LoginPage() {
   async function loginGoogle() {
     setBusy(true);
     setError("");
-    const redirectTo = `${window.location.origin}/auth/callback`;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo },
-    });
-    if (error) {
-      setError(error.message);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (error) throw error;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível entrar com o Google.");
       setBusy(false);
     }
   }
