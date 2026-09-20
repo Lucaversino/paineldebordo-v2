@@ -4003,3 +4003,169 @@ main.loginpage{
     height:32px!important;
   }
 }
+
+
+/* V146 — waypoint editável + navegação GPS + XTE */
+.ais-v146-waypoint-coords{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+}
+.ais-v146-waypoint-coords label{
+  display:grid;
+  gap:2px;
+}
+.ais-v146-waypoint-coords span{
+  font:900 5.5px system-ui;
+  letter-spacing:.06em;
+  color:#6e989e;
+}
+.ais-v146-waypoint-coords input{
+  width:100%;
+  height:28px;
+  border:1px solid #294d55;
+  border-radius:7px;
+  background:#06171d;
+  color:#effffb;
+  padding:0 6px;
+  outline:0;
+  font:900 9px ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.ais-v146-waypoint-error{
+  padding:4px 6px;
+  border:1px solid #70474b;
+  border-radius:6px;
+  background:#301b20;
+  color:#f0a1a6;
+  font:800 6px system-ui;
+}
+.ais-v146-goto{
+  width:100%;
+  height:31px;
+  border:1px solid #3e79af;
+  border-radius:7px;
+  background:#123b5c;
+  color:#a8dcff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  font:900 8px system-ui;
+  cursor:pointer;
+}
+.ais-v146-goto svg{width:13px;height:13px}
+
+.ais-v146-settings-panel{
+  position:absolute;
+  z-index:96;
+  left:66px;
+  top:330px;
+  width:205px;
+  padding:7px;
+  border:1px solid #345962;
+  border-radius:10px;
+  background:#061b21ee;
+  box-shadow:0 10px 28px #00111870;
+  backdrop-filter:blur(12px);
+  display:grid;
+  gap:7px;
+  pointer-events:auto;
+}
+.ais-v146-settings-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.ais-v146-settings-head>span{display:flex;align-items:center;gap:5px;color:#8ed7ff}
+.ais-v146-settings-head svg{width:12px;height:12px}
+.ais-v146-settings-head b{font-size:6.5px;letter-spacing:.06em}
+.ais-v146-settings-head>button{
+  width:20px;height:20px;border:1px solid #31545d;border-radius:6px;
+  background:#0a252c;color:#9fc0c4;font-size:13px
+}
+.ais-v146-settings-panel label{display:grid;gap:4px}
+.ais-v146-settings-panel label>span{
+  display:flex;justify-content:space-between;gap:6px;
+  font:800 6px system-ui;color:#7fa1a7
+}
+.ais-v146-settings-panel label b{color:#e7fbff}
+.ais-v146-settings-panel input[type=number]{
+  height:29px;border:1px solid #294d55;border-radius:7px;background:#06171d;color:#effffb;
+  padding:0 7px;outline:0;font:900 9px ui-monospace,SFMono-Regular,Menlo,monospace
+}
+.ais-v146-settings-panel input[type=range]{width:100%;accent-color:#55b9ee}
+.ais-v146-settings-panel>small{font-size:5.5px;line-height:1.35;color:#668b91}
+
+.ais-v146-nav-card{
+  position:absolute;
+  z-index:97;
+  right:10px;
+  top:58px;
+  width:190px;
+  padding:7px;
+  border:1px solid #3d7eb7;
+  border-radius:10px;
+  background:#071f32ee;
+  box-shadow:0 10px 28px #00111878;
+  backdrop-filter:blur(12px);
+  display:grid;
+  gap:6px;
+  pointer-events:auto;
+}
+.ais-v146-nav-card.xte-alert{
+  border-color:#c95d60;
+  background:#32191fee;
+}
+.ais-v146-nav-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.ais-v146-nav-head>span{display:flex;align-items:center;gap:5px;min-width:0;color:#79cfff}
+.ais-v146-nav-head svg{width:13px;height:13px;flex:none}
+.ais-v146-nav-head b{font-size:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ais-v146-nav-head>button{
+  width:20px;height:20px;border:1px solid #3a6179;border-radius:6px;background:#0d2a3b;color:#a7cce0;font-size:13px
+}
+.ais-v146-nav-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:4px;
+}
+.ais-v146-nav-grid>span{
+  min-width:0;
+  padding:5px;
+  border:1px solid #244d67;
+  border-radius:7px;
+  background:#061824;
+  display:grid;
+  gap:1px;
+}
+.ais-v146-nav-grid small{font-size:5px;font-weight:900;letter-spacing:.05em;color:#638ba3}
+.ais-v146-nav-grid b{font:900 10px ui-monospace,SFMono-Regular,Menlo,monospace;color:#f0fbff;white-space:nowrap}
+.ais-v146-nav-footer{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.ais-v146-nav-footer span{font:900 6px system-ui;color:#74cfae}
+.ais-v146-nav-card.xte-alert .ais-v146-nav-footer span{color:#ff9b9f}
+.ais-v146-nav-footer button{
+  height:24px;padding:0 8px;border:1px solid #6b4045;border-radius:6px;background:#311b20;color:#f0a1a6;font:900 6px system-ui
+}
+
+@media(max-width:780px){
+  .ais-v146-settings-panel{
+    left:58px;
+    top:auto;
+    bottom:132px;
+    width:188px;
+    padding:7px;
+  }
+  .ais-v146-nav-card{
+    right:8px;
+    top:58px;
+    width:170px;
+    padding:6px;
+  }
+  .ais-v146-nav-grid b{font-size:9px}
+  .ais-v146-nav-grid small{font-size:4.8px}
+  .ais-v143-gps-card{top:58px}
+  .ais-v143-waypoint-panel{
+    width:198px;
+    max-height:calc(100dvh - 205px);
+    overflow:auto;
+  }
+}

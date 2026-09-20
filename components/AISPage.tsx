@@ -18,6 +18,7 @@ import {
   Ruler,
   Save,
   Search,
+  Settings,
   Ship,
   Trash2,
   WalletCards,
@@ -304,6 +305,48 @@ function formatCoordOperational(value: number, latitude = true) {
   return `${degrees}º ${minuteDigits} ${hemisphere}`;
 }
 
+function coordDigitsFromDecimal(value: number, latitude: boolean) {
+  const absolute = Math.abs(value);
+  let degrees = Math.floor(absolute);
+  let minutes = (absolute - degrees) * 60;
+  if (Number(minutes.toFixed(2)) >= 60) {
+    degrees += 1;
+    minutes = 0;
+  }
+  const degreeWidth = latitude ? 2 : (degrees >= 100 ? 3 : 2);
+  return `${String(degrees).padStart(degreeWidth, "0")}${minutes.toFixed(2).replace(".", "").padStart(4, "0")}`;
+}
+
+function formatEtaMinutes(value: number | null) {
+  if (value == null || !Number.isFinite(value) || value < 0) return "—";
+  if (value < 1) return "< 1 min";
+  const rounded = Math.round(value);
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  return hours ? `${hours}h ${String(minutes).padStart(2, "0")}min` : `${minutes} min`;
+}
+
+function initialBearingRad(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const toRad = (value: number) => value * Math.PI / 180;
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dLon = toRad(b.lon - a.lon);
+  return Math.atan2(
+    Math.sin(dLon) * Math.cos(lat2),
+    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon),
+  );
+}
+
+function crossTrackErrorNm(start: { lat: number; lon: number }, end: { lat: number; lon: number }, current: { lat: number; lon: number }) {
+  const earthRadiusNm = 3440.065;
+  const distanceNm = haversineKm(start, current) / 1.852;
+  if (distanceNm < 0.001) return 0;
+  const angularDistance = distanceNm / earthRadiusNm;
+  const theta13 = initialBearingRad(start, current);
+  const theta12 = initialBearingRad(start, end);
+  return Math.asin(Math.sin(angularDistance) * Math.sin(theta13 - theta12)) * earthRadiusNm;
+}
+
 function waypointSymbol(icon: WaypointIcon) {
   if (icon === "diamond") return "◆";
   if (icon === "triangle") return "▲";
@@ -339,9 +382,9 @@ function trackedDateParts(value?: string) {
 }
 
 function coordinateDigitsToDecimal(raw: string, latitude: boolean) {
-  const digits = raw.replace(/\D/g, "").slice(0, 6);
-  if (digits.length < 4) return null;
+  const digits = raw.replace(/\D/g, "").slice(0, latitude ? 6 : 7);
   const degreeDigits = latitude ? 2 : (digits.length >= 7 ? 3 : 2);
+  if (digits.length < degreeDigits + 2) return null;
   const degrees = Number(digits.slice(0, degreeDigits));
   const minuteDigits = digits.slice(degreeDigits);
   if (!minuteDigits) return null;
@@ -461,6 +504,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const probeSourceRef = useRef<VectorSource | null>(null);
   const waypointSourceRef = useRef<VectorSource | null>(null);
   const measureSourceRef = useRef<VectorSource | null>(null);
+  const navigationSourceRef = useRef<VectorSource | null>(null);
   const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
@@ -470,6 +514,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const areaRadiusRef = useRef<50>(50);
   const measureModeRef = useRef(false);
   const measureStartRef = useRef<{ lat: number; lon: number } | null>(null);
+  const navigationStartRef = useRef<{ lat: number; lon: number } | null>(null);
+  const navigationTrailRef = useRef<Array<{ lat: number; lon: number }>>([]);
+  const smoothedSpeedRef = useRef<number | null>(null);
+  const gpsPreviousRef = useRef<{ lat: number; lon: number; at: number } | null>(null);
   const gpsCenteredRef = useRef(false);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
@@ -513,14 +561,39 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [waypointColor, setWaypointColor] = useState("#ffb52e");
   const [waypointSaving, setWaypointSaving] = useState(false);
   const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
+  const [waypointLatDigits, setWaypointLatDigits] = useState("");
+  const [waypointLonDigits, setWaypointLonDigits] = useState("");
+  const [waypointCoordError, setWaypointCoordError] = useState("");
   const [measureMode, setMeasureMode] = useState(false);
   const [measureStart, setMeasureStart] = useState<{ lat: number; lon: number } | null>(null);
   const [measureResult, setMeasureResult] = useState<{ km: number; nm: number } | null>(null);
+  const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
+  const [xteLimitNm, setXteLimitNm] = useState(0.25);
+  const [speedDampingPct, setSpeedDampingPct] = useState(65);
+  const [gpsRawSpeedKnots, setGpsRawSpeedKnots] = useState<number | null>(null);
+  const [navigationTarget, setNavigationTarget] = useState<MapWaypoint | null>(null);
+  const [navigationSpeedKnots, setNavigationSpeedKnots] = useState<number | null>(null);
+  const [navigationDistanceNm, setNavigationDistanceNm] = useState<number | null>(null);
+  const [navigationEtaMinutes, setNavigationEtaMinutes] = useState<number | null>(null);
+  const [navigationXteNm, setNavigationXteNm] = useState<number | null>(null);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
+    try {
+      const savedXte = Number(window.localStorage.getItem("painel-map-xte-nm"));
+      const savedDamping = Number(window.localStorage.getItem("painel-map-speed-damping"));
+      if (Number.isFinite(savedXte) && savedXte >= 0.05 && savedXte <= 5) setXteLimitNm(savedXte);
+      if (Number.isFinite(savedDamping) && savedDamping >= 0 && savedDamping <= 95) setSpeedDampingPct(savedDamping);
+    } catch {}
     return () => document.body.classList.remove("ais-mobile-active");
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("painel-map-xte-nm", String(xteLimitNm));
+      window.localStorage.setItem("painel-map-speed-damping", String(speedDampingPct));
+    } catch {}
+  }, [xteLimitNm, speedDampingPct]);
 
   useEffect(() => {
     // V138: remove apenas caches/configurações antigas do AIS. Dados de usuário ficam no servidor.
@@ -895,13 +968,40 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
+  function waypointEditorCoords() {
+    if (!waypointLatDigits && !waypointLonDigits) return mapProbe;
+    const lat = coordinateDigitsToDecimal(waypointLatDigits, true);
+    const lon = coordinateDigitsToDecimal(waypointLonDigits, false);
+    if (lat == null || lon == null) return null;
+    return { lat, lon };
+  }
+
+  function drawProbePoint(lat: number, lon: number) {
+    const source = probeSourceRef.current;
+    source?.clear();
+    const marker = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
+    marker.setStyle(new Style({
+      image: new CircleStyle({
+        radius: 5,
+        fill: new Fill({ color: "#2bd4aa" }),
+        stroke: new Stroke({ color: "#ffffff", width: 2 }),
+      }),
+    }));
+    source?.addFeature(marker);
+  }
+
   async function saveWaypoint() {
-    if (!mapProbe) {
-      setStatusMessage("Toque no mapa para escolher a posição do waypoint.");
+    const editedCoords = waypointEditorCoords();
+    if (!editedCoords) {
+      setWaypointCoordError("Confira latitude e longitude.");
+      setStatusMessage("Confira a latitude e longitude do waypoint.");
       return;
     }
+    setWaypointCoordError("");
     if (waypointSaving) return;
     setWaypointSaving(true);
+    setMapProbe(editedCoords);
+    drawProbePoint(editedCoords.lat, editedCoords.lon);
     try {
       const response = await aisFetch("/api/waypoints", {
         method: "POST",
@@ -909,8 +1009,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         body: JSON.stringify({
           id: selectedWaypointId,
           name: waypointName.trim() || `WP ${String(waypoints.length + 1).padStart(2, "0")}`,
-          latitude: mapProbe.lat,
-          longitude: mapProbe.lon,
+          latitude: editedCoords.lat,
+          longitude: editedCoords.lon,
           icon: waypointIcon,
           color: waypointColor,
         }),
@@ -1028,6 +1128,62 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(`Distância medida: ${nm.toFixed(2)} milhas náuticas`);
   }
 
+  function stopWaypointNavigation() {
+    navigationSourceRef.current?.clear();
+    navigationStartRef.current = null;
+    navigationTrailRef.current = [];
+    smoothedSpeedRef.current = null;
+    setNavigationTarget(null);
+    setNavigationSpeedKnots(null);
+    setNavigationDistanceNm(null);
+    setNavigationEtaMinutes(null);
+    setNavigationXteNm(null);
+    setStatusMessage("Navegação para waypoint encerrada.");
+  }
+
+  function startWaypointNavigation(item?: MapWaypoint | null) {
+    const coords = waypointEditorCoords();
+    const saved = item || (selectedWaypointId != null ? waypoints.find((wp) => wp.id === selectedWaypointId) || null : null);
+    if (!coords || !saved) {
+      setWaypointCoordError("Salve ou selecione um waypoint válido antes de navegar.");
+      return;
+    }
+
+    const target: MapWaypoint = {
+      ...saved,
+      name: waypointName.trim() || saved.name || "Waypoint",
+      latitude: coords.lat,
+      longitude: coords.lon,
+      icon: waypointIcon,
+      color: waypointColor,
+    };
+
+    clearMeasurement();
+    setMeasureMode(false);
+    setMapSettingsOpen(false);
+    setWaypointPanelOpen(false);
+    setNavigationTarget(target);
+    navigationStartRef.current = devicePosition ? { ...devicePosition } : null;
+    navigationTrailRef.current = devicePosition ? [{ ...devicePosition }] : [];
+    smoothedSpeedRef.current = null;
+
+    if (devicePosition) {
+      const line = new LineString([
+        fromLonLat([devicePosition.lon, devicePosition.lat]),
+        fromLonLat([coords.lon, coords.lat]),
+      ]);
+      mapRef.current?.getView().fit(line.getExtent(), {
+        padding: [90, 80, 150, 80],
+        maxZoom: 12,
+        duration: 350,
+      });
+      setStatusMessage(`Navegando para ${target.name} pelo GPS.`);
+    } else {
+      locateDevice();
+      setStatusMessage(`Navegação para ${target.name} iniciada. Aguardando GPS do celular...`);
+    }
+  }
+
   function openSavedWaypoint(item: MapWaypoint) {
     const lat = Number(item.latitude);
     const lon = Number(item.longitude);
@@ -1037,6 +1193,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setWaypointName(item.name);
     setWaypointIcon(item.icon);
     setWaypointColor(item.color);
+    setWaypointLatDigits(coordDigitsFromDecimal(lat, true));
+    setWaypointLonDigits(coordDigitsFromDecimal(lon, false));
+    setWaypointCoordError("");
     centerOn(lat, lon, 12);
     setMobilePanel(null);
     setWaypointPanelOpen(true);
@@ -1045,24 +1204,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function openWaypointPanel() {
     setWaypointPanelOpen((open) => !open);
+    setMapSettingsOpen(false);
     if (!waypointPanelOpen && selectedWaypointId == null) {
       setWaypointName("");
+      if (mapProbe) {
+        setWaypointLatDigits(coordDigitsFromDecimal(mapProbe.lat, true));
+        setWaypointLonDigits(coordDigitsFromDecimal(mapProbe.lon, false));
+      }
+      setWaypointCoordError("");
     }
   }
 
   function inspectMapPoint(lat: number, lon: number) {
-    const source = probeSourceRef.current;
-    source?.clear();
-
-    const marker = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
-    marker.setStyle(new Style({
-      image: new CircleStyle({
-        radius: 5,
-        fill: new Fill({ color: "#2bd4aa" }),
-        stroke: new Stroke({ color: "#ffffff", width: 2 }),
-      }),
-    }));
-    source?.addFeature(marker);
+    drawProbePoint(lat, lon);
+    setWaypointLatDigits(coordDigitsFromDecimal(lat, true));
+    setWaypointLonDigits(coordDigitsFromDecimal(lon, false));
+    setWaypointCoordError("");
 
     // V142: ponto simples. Sem metragem/profundidade.
     // O círculo de 50 km continua aparecendo somente durante uma busca de área.
@@ -1835,6 +1992,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
     const measureSource = new VectorSource();
     const measureLayer = new VectorLayer({ source: measureSource });
+    const navigationSource = new VectorSource();
+    const navigationLayer = new VectorLayer({ source: navigationSource });
     const view = new View({ center: fromLonLat([fallbackLon, fallbackLat]), zoom: 10.5, minZoom: 3, maxZoom: 18 });
     street.setZIndex(0);
     dhn.setZIndex(5);
@@ -1844,12 +2003,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     positionLayer.setZIndex(40);
     probeLayer.setZIndex(45);
     measureLayer.setZIndex(48);
+    navigationLayer.setZIndex(49);
     waypointLayer.setZIndex(50);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, waypointLayer],
+      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer],
       view,
     });
 
@@ -1880,6 +2040,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     probeSourceRef.current = probeSource;
     waypointSourceRef.current = waypointSource;
     measureSourceRef.current = measureSource;
+    navigationSourceRef.current = navigationSource;
     areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
     dhnLayerRef.current = dhn;
@@ -2089,6 +2250,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
+        const sampleAt = Number(position.timestamp) || Date.now();
+        const nativeSpeed = Number(position.coords.speed);
+        let rawKnots = Number.isFinite(nativeSpeed) && nativeSpeed >= 0 ? nativeSpeed * 1.943844492 : null;
+        const previous = gpsPreviousRef.current;
+        if (rawKnots == null && previous && sampleAt > previous.at) {
+          const hours = (sampleAt - previous.at) / 3_600_000;
+          if (hours > 0) rawKnots = (haversineKm(previous, coords) / 1.852) / hours;
+        }
+        gpsPreviousRef.current = { ...coords, at: sampleAt };
+        if (rawKnots != null && Number.isFinite(rawKnots) && rawKnots < 120) setGpsRawSpeedKnots(rawKnots);
         setDevicePosition(coords);
         const source = positionSourceRef.current;
         source?.clear();
@@ -2105,6 +2276,80 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
+
+  useEffect(() => {
+    if (!navigationTarget || !devicePosition) return;
+
+    const destination = {
+      lat: Number(navigationTarget.latitude),
+      lon: Number(navigationTarget.longitude),
+    };
+    if (!Number.isFinite(destination.lat) || !Number.isFinite(destination.lon)) return;
+
+    if (!navigationStartRef.current) navigationStartRef.current = { ...devicePosition };
+    const start = navigationStartRef.current;
+
+    const trail = navigationTrailRef.current;
+    const lastTrail = trail[trail.length - 1];
+    if (!lastTrail || haversineKm(lastTrail, devicePosition) >= 0.01) {
+      trail.push({ ...devicePosition });
+      if (trail.length > 500) trail.splice(0, trail.length - 500);
+    }
+
+    const damping = Math.max(0, Math.min(0.95, speedDampingPct / 100));
+    if (gpsRawSpeedKnots != null && Number.isFinite(gpsRawSpeedKnots)) {
+      smoothedSpeedRef.current = smoothedSpeedRef.current == null
+        ? gpsRawSpeedKnots
+        : smoothedSpeedRef.current * damping + gpsRawSpeedKnots * (1 - damping);
+    }
+    const speedKnots = smoothedSpeedRef.current;
+    const distanceNm = haversineKm(devicePosition, destination) / 1.852;
+    const etaMinutes = speedKnots != null && speedKnots >= 0.3 ? (distanceNm / speedKnots) * 60 : null;
+    const xteNm = start ? crossTrackErrorNm(start, destination, devicePosition) : 0;
+
+    setNavigationSpeedKnots(speedKnots);
+    setNavigationDistanceNm(distanceNm);
+    setNavigationEtaMinutes(etaMinutes);
+    setNavigationXteNm(xteNm);
+
+    const source = navigationSourceRef.current;
+    if (!source) return;
+    source.clear();
+
+    if (start) {
+      const planned = new Feature({
+        geometry: new LineString([
+          fromLonLat([start.lon, start.lat]),
+          fromLonLat([destination.lon, destination.lat]),
+        ]),
+      });
+      planned.setStyle(new Style({
+        stroke: new Stroke({ color: "rgba(86,170,255,.55)", width: 1.5, lineDash: [7, 7] }),
+      }));
+      source.addFeature(planned);
+    }
+
+    if (trail.length >= 2) {
+      const track = new Feature({
+        geometry: new LineString(trail.map((point) => fromLonLat([point.lon, point.lat]))),
+      });
+      track.setStyle(new Style({
+        stroke: new Stroke({ color: "#2bd4aa", width: 2.2 }),
+      }));
+      source.addFeature(track);
+    }
+
+    const activeLeg = new Feature({
+      geometry: new LineString([
+        fromLonLat([devicePosition.lon, devicePosition.lat]),
+        fromLonLat([destination.lon, destination.lat]),
+      ]),
+    });
+    activeLeg.setStyle(new Style({
+      stroke: new Stroke({ color: "#ffd05b", width: 3 }),
+    }));
+    source.addFeature(activeLeg);
+  }, [navigationTarget, devicePosition, gpsRawSpeedKnots, speedDampingPct]);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
@@ -2296,6 +2541,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância livre no mapa">
             <Ruler /><span>MEDIR</span>
           </button>
+          <button
+            type="button"
+            className={`ais-v143-map-tool settings ${mapSettingsOpen ? "active" : ""}`}
+            onClick={() => { setMapSettingsOpen((open) => !open); setWaypointPanelOpen(false); }}
+            title="Configurações do mapa"
+          >
+            <Settings /><span>MAPA</span>
+          </button>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
 
@@ -2416,7 +2669,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           )}
         </div>
 
-        {devicePosition && (
+        {devicePosition && !navigationTarget && (
           <div className="ais-v143-gps-card">
             <div><LocateFixed /><b>GPS ATUAL</b></div>
             <strong>{formatCoordOperational(devicePosition.lat, true)}</strong>
@@ -2430,9 +2683,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span><Flag /><b>WAYPOINT</b><em>{waypoints.length}</em></span>
               <button type="button" onClick={() => setWaypointPanelOpen(false)}>×</button>
             </div>
-            <div className="ais-v143-waypoint-pos">
-              {mapProbe ? <><b>{formatCoordOperational(mapProbe.lat, true)}</b><b>{formatCoordOperational(mapProbe.lon, false)}</b></> : <span>Toque no mapa para marcar</span>}
+            <div className="ais-v146-waypoint-coords">
+              <label><span>LAT S</span><input inputMode="numeric" maxLength={6} value={waypointLatDigits} onChange={(e) => { setWaypointLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setWaypointCoordError(""); }} placeholder="254565" /></label>
+              <label><span>LON W</span><input inputMode="numeric" maxLength={7} value={waypointLonDigits} onChange={(e) => { setWaypointLonDigits(e.target.value.replace(/\D/g, "").slice(0, 7)); setWaypointCoordError(""); }} placeholder="473545" /></label>
             </div>
+            {waypointCoordError && <div className="ais-v146-waypoint-error">{waypointCoordError}</div>}
             <input value={waypointName} onChange={(e) => setWaypointName(e.target.value.slice(0, 40))} placeholder="Nome do waypoint" />
             <div className="ais-v143-waypoint-icons">
               {(["circle","diamond","triangle","cross","star"] as WaypointIcon[]).map((icon) => (
@@ -2451,6 +2706,45 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <button type="button" className="save" onClick={() => void saveWaypoint()} disabled={!mapProbe || waypointSaving}>
                 <Save /> {waypointSaving ? "SALVANDO" : "SALVAR"}
               </button>
+            </div>
+            {selectedWaypointId != null && (
+              <button type="button" className="ais-v146-goto" onClick={() => startWaypointNavigation()}>
+                <Navigation /> IR PARA
+              </button>
+            )}
+          </div>
+        )}
+
+        {mapSettingsOpen && (
+          <div className="ais-v146-settings-panel">
+            <div className="ais-v146-settings-head"><span><Settings /><b>CONFIGURAÇÃO DO MAPA</b></span><button type="button" onClick={() => setMapSettingsOpen(false)}>×</button></div>
+            <label>
+              <span>XTE MÁXIMO <b>{xteLimitNm.toFixed(2)} MN</b></span>
+              <input type="number" min="0.05" max="5" step="0.05" value={xteLimitNm} onChange={(e) => setXteLimitNm(Math.max(0.05, Math.min(5, Number(e.target.value) || 0.25)))} />
+            </label>
+            <label>
+              <span>DAMPING VELOCIDADE <b>{speedDampingPct}%</b></span>
+              <input type="range" min="0" max="90" step="5" value={speedDampingPct} onChange={(e) => setSpeedDampingPct(Number(e.target.value))} />
+            </label>
+            <small>XTE padrão: 0,25 MN. Maior damping = velocidade mais estável.</small>
+          </div>
+        )}
+
+        {navigationTarget && (
+          <div className={`ais-v146-nav-card ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
+            <div className="ais-v146-nav-head">
+              <span><Navigation /><b>IR PARA · {navigationTarget.name}</b></span>
+              <button type="button" onClick={stopWaypointNavigation}>×</button>
+            </div>
+            <div className="ais-v146-nav-grid">
+              <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? `${navigationSpeedKnots.toFixed(1)} MN/h` : "—"}</b></span>
+              <span><small>DISTÂNCIA</small><b>{navigationDistanceNm != null ? `${navigationDistanceNm.toFixed(2)} MN` : "—"}</b></span>
+              <span><small>ETA</small><b>{formatEtaMinutes(navigationEtaMinutes)}</b></span>
+              <span><small>XTE</small><b>{navigationXteNm != null ? `${Math.abs(navigationXteNm).toFixed(2)} MN` : "—"}</b></span>
+            </div>
+            <div className="ais-v146-nav-footer">
+              <span>{navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "FORA DO XTE" : `XTE OK · limite ${xteLimitNm.toFixed(2)} MN`}</span>
+              <button type="button" onClick={stopWaypointNavigation}>PARAR</button>
             </div>
           </div>
         )}

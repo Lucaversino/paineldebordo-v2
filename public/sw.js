@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v145-area-time";
+const CACHE = "painel-bordo-v146-gps-navigation";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
