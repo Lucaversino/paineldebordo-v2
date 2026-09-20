@@ -14,6 +14,13 @@ type Props = {
   lon: number;
 };
 
+function nauticalCoordinate(value: number, direction: "S" | "W") {
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutes = (absolute - degrees) * 60;
+  return `${String(degrees).padStart(2, "0")}º ${minutes.toFixed(2).replace(".", ",")}' ${direction}`;
+}
+
 export default function NauticalMap({ lat, lon }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -103,7 +110,7 @@ export default function NauticalMap({ lat, lon }: Props) {
         </div>
         <div className="nautical-map-coordinate">
           <b>POSIÇÃO ANALISADA</b>
-          <span>{Math.abs(lat).toFixed(4)}° S · {Math.abs(lon).toFixed(4)}° W</span>
+          <span>{nauticalCoordinate(lat, "S")} · {nauticalCoordinate(lon, "W")}</span>
         </div>
       </div>
       <small className="nautical-warning">Mapa de apoio operacional. Para navegação, confirme a posição e as condições em equipamentos e cartas oficiais.</small>

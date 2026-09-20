@@ -24,6 +24,7 @@ import {
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
 import NauticalMap from "./NauticalMap";
+import EnvironmentalOverlayMap from "./EnvironmentalOverlayMap";
 
 const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
 
@@ -463,11 +464,6 @@ export default function PositionForecast() {
     }
   }
 
-  const mapValues = mapMode === "wind" ? data?.maps?.wind || [] : data?.maps?.chlorophyll || [];
-  const chlorophyllNumbers = useMemo(() => (data?.maps?.chlorophyll || []).map((x: any) => Number(x.mgM3)).filter(Number.isFinite), [data]);
-  const chlMin = chlorophyllNumbers.length ? Math.min(...chlorophyllNumbers) : 0;
-  const chlMax = chlorophyllNumbers.length ? Math.max(...chlorophyllNumbers) : 1;
-  const windMax = useMemo(() => Math.max(1, ...(data?.maps?.wind || []).map((x: any) => Number(x.speedKmh) || 0)), [data]);
   const finalAnalysis = useMemo(() => data ? buildForecastFinalAnalysis(data) : null, [data]);
 
   return (
@@ -664,39 +660,19 @@ export default function PositionForecast() {
 
           <article className="position-panel environmental-map-panel">
             <div className="position-panel-title map-title">
-              <div><small>MAPA AMBIENTAL</small><h3>Área ao redor da posição</h3><p>Grade simples de aproximadamente 20 km entre pontos.</p></div>
+              <div><small>MAPA AMBIENTAL</small><h3>Área ao redor da posição</h3><p>Mapa interativo com cores interpoladas a partir dos pontos consultados ao redor da posição.</p></div>
               <div className="map-mode-buttons">
                 <button className={mapMode === "wind" ? "active" : ""} onClick={() => setMapMode("wind")}><Wind /> Vento</button>
                 <button className={mapMode === "chlorophyll" ? "active" : ""} onClick={() => setMapMode("chlorophyll")}><Droplets /> Clorofila</button>
               </div>
             </div>
-            <div className="environment-grid-wrap">
-              <div className="north-label">N</div>
-              <div className="environment-grid">
-                {mapValues.map((item: any, index: number) => {
-                  const value = mapMode === "wind" ? Number(item.speedKmh) : Number(item.mgM3);
-                  const color = mapMode === "wind" ? windColor(Number.isFinite(value) ? value : null, windMax) : chlorophyllColor(Number.isFinite(value) ? value : null, chlMin, chlMax);
-                  const center = item.row === 1 && item.col === 1;
-                  return (
-                    <div className={`environment-cell ${center ? "center" : ""}`} key={`${item.row}-${item.col}-${index}`} style={{ background: color }}>
-                      {center && <i>POSIÇÃO</i>}
-                      {mapMode === "wind" ? (
-                        <><span className="map-arrow" style={{ transform: `rotate(${Number(item.directionDeg || 0)}deg)` }}>↑</span><strong>{fmt(item.speedKmh, 0)} km/h</strong><small>{item.direction}</small></>
-                      ) : (
-                        <><Droplets /><strong>{fmt(item.mgM3, 2)}</strong><small>mg/m³</small></>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="map-compass"><span>O</span><b>•</b><span>L</span></div>
-              <div className="south-label">S</div>
-            </div>
-            <div className="map-legend">
-              <span>{mapMode === "wind" ? "Menos vento" : "Menor concentração"}</span>
-              <i className={mapMode === "wind" ? "wind-scale" : "chlorophyll-scale"} />
-              <span>{mapMode === "wind" ? "Mais vento" : "Maior concentração"}</span>
-            </div>
+            <EnvironmentalOverlayMap
+              lat={Number(data.position.lat)}
+              lon={Number(data.position.lon)}
+              mode={mapMode}
+              wind={data?.maps?.wind || []}
+              chlorophyll={data?.maps?.chlorophyll || []}
+            />
           </article>
 
           <NauticalMap lat={Number(data.position.lat)} lon={Number(data.position.lon)} />
