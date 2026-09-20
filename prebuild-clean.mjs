@@ -11,14 +11,14 @@ const legacyPaths = [
   ".sites-runtime",
   "tests",
   "vendor",
-  // Legacy AISStream WebSocket route from v56/v57. A V93 usa a nova rota
-  // app/api/ais-map para a camada automática; o caminho antigo continua removido
-  // para evitar conflito com arquivos rastreados de versões anteriores.
-  "app/api/ais-stream",
+  // O coletor AISStream V159 é um processo Node 24/7 para Railway.
+  // Ele não faz parte do bundle Next.js da Vercel e é removido apenas
+  // do workspace temporário durante o prebuild da aplicação web.
+  "worker",
 ];
 
 for (const path of legacyPaths) {
   await rm(path, { recursive: true, force: true });
 }
 
-console.log("Legacy files (including obsolete AISStream route) removed before build.");
+console.log("Legacy files and Railway-only worker removed before Vercel/Next build.");
