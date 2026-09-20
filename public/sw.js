@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v151-layout-svg";
+const CACHE = "painel-bordo-v152-mobile-auto-nav";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -8,7 +8,7 @@ const ASSETS = [
   "/icon-maskable-512.png",
   "/apple-touch-icon.png",
   "/favicon.ico",
-  "/icons/ais-fishing-boat-v151.svg"
+  "/icons/baco-malha-v152.svg"
 ];
 
 self.addEventListener("install", (event) => {

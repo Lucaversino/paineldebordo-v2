@@ -4588,3 +4588,131 @@ main.loginpage{
     left:56px!important;
   }
 }
+
+
+/* V152 — mobile limpo, fontes FREE automáticas e navegação persistente */
+.ais-v152-mobile-layerbar{display:none}
+
+@media(max-width:780px){
+  /* AIS FREE e VESSEL FREE continuam ativos em segundo plano, sem botões manuais no mobile. */
+  .ais-left-tools .ais-v128-marinesia-refresh,
+  .ais-left-tools .ais-v129-vessel-free-refresh{
+    display:none!important;
+  }
+
+  /* Remove a barra que ficava escondida atrás da busca FREE. */
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar{
+    display:none!important;
+  }
+
+  /* Versão compacta das fontes, logo abaixo do botão CONFIGURAÇÃO/MAPA. */
+  .ais-v152-mobile-layerbar{
+    width:43px;
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    gap:3px;
+    padding:4px;
+    border:1px solid #315861;
+    border-radius:9px;
+    background:#061b21e8;
+    box-shadow:0 6px 20px #00131d66;
+    backdrop-filter:blur(12px);
+    pointer-events:auto;
+  }
+  .ais-v152-mobile-layerbar>span{
+    height:20px;
+    min-width:0;
+    padding:0 2px;
+    border:1px solid #284b54;
+    border-radius:5px;
+    background:#071c22;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    font:950 5px system-ui;
+    letter-spacing:.02em;
+  }
+  .ais-v152-mobile-layerbar i{
+    width:5px;height:5px;border-radius:50%;display:block;flex:none;
+  }
+  .ais-v152-mobile-layerbar .free{color:#83bdff;border-color:#2f6fae}
+  .ais-v152-mobile-layerbar .free i{background:#2f8cff}
+  .ais-v152-mobile-layerbar .marinesia{color:#72e6b9;border-color:#28775f}
+  .ais-v152-mobile-layerbar .marinesia i{background:#24c98c}
+  .ais-v152-mobile-layerbar .premium{color:#f0cf79;border-color:#80662c}
+  .ais-v152-mobile-layerbar .premium i{background:#d8aa3f}
+  .ais-v152-mobile-layerbar .auto{color:#8eb4bc}
+  .ais-v152-mobile-layerbar .auto svg{width:11px!important;height:11px!important}
+  .ais-v152-mobile-layerbar .auto.loading{color:#55d8ff}
+
+  /* Os dois indicadores que ficavam atrás da BUSCA PREMIUM vão para a direita,
+     acima do seletor PROA UP / RUMO UP / NORTE UP / SUL UP. */
+  .ais-v119-page .ais-bottom-status{
+    display:grid!important;
+    left:auto!important;
+    right:8px!important;
+    top:112px!important;
+    bottom:auto!important;
+    transform:none!important;
+    width:auto!important;
+    max-width:none!important;
+    gap:5px!important;
+    overflow:visible!important;
+    z-index:94!important;
+    pointer-events:none!important;
+  }
+  .ais-v119-page .ais-bottom-status span{
+    min-width:54px;
+    height:30px;
+    padding:0 6px!important;
+    border-radius:8px!important;
+    justify-content:center;
+    font-size:6px!important;
+    box-shadow:0 6px 18px #00131d55;
+  }
+  .ais-v119-page .ais-bottom-status span:nth-child(2){
+    display:none!important;
+  }
+  .ais-v119-page .ais-bottom-status svg{
+    width:12px!important;height:12px!important;
+  }
+
+  .ais-v147-orientation{
+    right:8px!important;
+    top:184px!important;
+  }
+
+  /* Mantém o card de posição longe da telemetria e dos controles. */
+  .ais-v141-point-card{
+    left:58px!important;
+    top:118px!important;
+    bottom:auto!important;
+    z-index:93!important;
+  }
+
+  /* Carteira alinhada abaixo da busca FREE. */
+  .ais-v119-wallet{
+    top:62px!important;
+    left:58px!important;
+  }
+}
+
+@media(max-width:430px){
+  .ais-v119-page .ais-bottom-status{
+    right:7px!important;
+    top:110px!important;
+  }
+  .ais-v147-orientation{
+    right:7px!important;
+    top:181px!important;
+  }
+  .ais-v119-wallet{
+    top:61px!important;
+    left:56px!important;
+  }
+  .ais-v141-point-card{
+    left:56px!important;
+    top:116px!important;
+  }
+}

@@ -399,7 +399,8 @@ function orientationLabel(mode: MapOrientationMode) {
   return "NORTE UP";
 }
 
-const NAV_BOAT_SRC = "/icons/ais-fishing-boat-v151.svg";
+const NAVIGATION_STORAGE_KEY = "painel-bordo-active-navigation-v152";
+const NAV_BOAT_SRC = "/icons/baco-malha-v152.svg";
 
 function navBoatFallbackStyle(headingDegrees = 0) {
   const rotation = (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180;
@@ -437,7 +438,7 @@ function gpsPositionStyle(navigating: boolean, headingDegrees = 0, imageReady = 
       anchor: [0.5, 0.5],
       anchorXUnits: "fraction",
       anchorYUnits: "fraction",
-      scale: 0.5,
+      scale: 0.027,
       rotation: (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180,
       rotateWithView: true,
     }),
@@ -615,6 +616,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const navigationStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const navigationTrailRef = useRef<Array<{ lat: number; lon: number }>>([]);
   const navigationTargetRef = useRef<MapWaypoint | null>(null);
+  const navigationPersistAtRef = useRef(0);
   const smoothedSpeedRef = useRef<number | null>(null);
   const gpsPreviousRef = useRef<{ lat: number; lon: number; at: number } | null>(null);
   const stableGpsHeadingRef = useRef<number | null>(null);
@@ -692,6 +694,49 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       if (Number.isFinite(savedXte) && savedXte >= 0.05 && savedXte <= 5) setXteLimitNm(savedXte);
       if (Number.isFinite(savedDamping) && savedDamping >= 0 && savedDamping <= 95) setSpeedDampingPct(savedDamping);
       if (["heading","course","north","south"].includes(savedOrientation)) setMapOrientationMode(savedOrientation as MapOrientationMode);
+
+      const savedNavigationRaw = window.localStorage.getItem(NAVIGATION_STORAGE_KEY);
+      if (savedNavigationRaw) {
+        const savedNavigation = JSON.parse(savedNavigationRaw);
+        const rawTarget = savedNavigation?.target;
+        const latitude = Number(rawTarget?.latitude);
+        const longitude = Number(rawTarget?.longitude);
+        if (rawTarget && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+          const target: MapWaypoint = {
+            id: Number(rawTarget.id) || Date.now(),
+            name: String(rawTarget.name || "Waypoint"),
+            latitude,
+            longitude,
+            icon: (["circle","diamond","triangle","cross","star"].includes(String(rawTarget.icon)) ? rawTarget.icon : "diamond") as WaypointIcon,
+            color: String(rawTarget.color || "#ffb52e"),
+            createdAt: String(rawTarget.createdAt || new Date().toISOString()),
+            updatedAt: String(rawTarget.updatedAt || new Date().toISOString()),
+          };
+          const rawStart = savedNavigation?.start;
+          const start = rawStart && Number.isFinite(Number(rawStart.lat)) && Number.isFinite(Number(rawStart.lon))
+            ? { lat: Number(rawStart.lat), lon: Number(rawStart.lon) }
+            : null;
+          const trail = Array.isArray(savedNavigation?.trail)
+            ? savedNavigation.trail
+                .map((point: any) => ({ lat: Number(point?.lat), lon: Number(point?.lon) }))
+                .filter((point: { lat: number; lon: number }) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+                .slice(-500)
+            : [];
+
+          navigationTargetRef.current = target;
+          navigationStartRef.current = start;
+          navigationTrailRef.current = trail;
+          setNavigationTarget(target);
+          setStatusMessage(`Navegação retomada para ${target.name}. Aguardando/atualizando GPS...`);
+
+          const savedNavOrientation = String(savedNavigation?.orientation || "");
+          const savedNavXte = Number(savedNavigation?.xteLimitNm);
+          const savedNavDamping = Number(savedNavigation?.speedDampingPct);
+          if (["heading","course","north","south"].includes(savedNavOrientation)) setMapOrientationMode(savedNavOrientation as MapOrientationMode);
+          if (Number.isFinite(savedNavXte) && savedNavXte >= 0.05 && savedNavXte <= 5) setXteLimitNm(savedNavXte);
+          if (Number.isFinite(savedNavDamping) && savedNavDamping >= 0 && savedNavDamping <= 95) setSpeedDampingPct(savedNavDamping);
+        }
+      }
     } catch {}
     return () => document.body.classList.remove("ais-mobile-active");
   }, []);
@@ -707,6 +752,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     navigationTargetRef.current = navigationTarget;
   }, [navigationTarget]);
+
+  useEffect(() => {
+    const persistBeforeBackground = () => {
+      if (navigationTargetRef.current) persistActiveNavigation(true);
+    };
+    const persistOnVisibility = () => {
+      if (document.visibilityState === "hidden") persistBeforeBackground();
+    };
+    window.addEventListener("pagehide", persistBeforeBackground);
+    document.addEventListener("visibilitychange", persistOnVisibility);
+    return () => {
+      window.removeEventListener("pagehide", persistBeforeBackground);
+      document.removeEventListener("visibilitychange", persistOnVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     const image = new Image();
@@ -1025,6 +1085,49 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
+  async function loadMarinesiaFreeLayerSilently() {
+    const map = mapRef.current;
+    if (!map) return;
+    const mapCenter = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
+    const lat = mapCenter[1];
+    const lon = mapCenter[0];
+
+    try {
+      const response = await aisFetch(
+        `/api/ais?action=area&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&radius=50&provider=marinesia`
+      );
+      const data: any = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+
+      const receivedAt = Date.now();
+      const rows: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
+        mmsi: String(raw?.mmsi || ""),
+        imo: String(raw?.imo || ""),
+        name: String(raw?.name || raw?.mmsi || raw?.imo || "Embarcação"),
+        lat: Number(raw?.lat),
+        lon: Number(raw?.lon),
+        sog: raw?.sog == null ? null : Number(raw.sog),
+        cog: raw?.cog == null ? null : Number(raw.cog),
+        heading: raw?.heading == null ? null : Number(raw.heading),
+        vesselType: String(raw?.vesselType || raw?.shipType || ""),
+        navStatusText: String(raw?.navStatusText || ""),
+        dataSource: String(raw?.dataSource || data?.provider || "Marinesia AIS"),
+        positionReceived: String(raw?.positionReceived || raw?.updateTime || data?.updatedAt || ""),
+        updateTime: String(raw?.updateTime || raw?.positionReceived || data?.updatedAt || ""),
+        receivedAt: Number(raw?.receivedAt) || receivedAt,
+      })).filter((vessel: Vessel) =>
+        Number.isFinite(vessel.lat) && Number.isFinite(vessel.lon) && Boolean(vessel.mmsi || vessel.imo)
+      );
+
+      if (rows.length) {
+        upsertMapVessels(dedupeVessels(rows));
+        setShowEmptyHint(false);
+      }
+    } catch {
+      // Atualização FREE automática é silenciosa para não interromper a navegação.
+    }
+  }
+
   function scheduleFreeMapLayer(force = false) {
     if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
     freeLayerTimerRef.current = window.setTimeout(() => loadFreeMapLayer(force), force ? 120 : 650);
@@ -1330,6 +1433,28 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     gpsAnimationFrameRef.current = window.requestAnimationFrame(animate);
   }
 
+  function persistActiveNavigation(force = false) {
+    const target = navigationTargetRef.current;
+    if (!target) return;
+    const now = Date.now();
+    if (!force && now - navigationPersistAtRef.current < 4000) return;
+    navigationPersistAtRef.current = now;
+
+    try {
+      window.localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({
+        version: 152,
+        active: true,
+        target,
+        start: navigationStartRef.current,
+        trail: navigationTrailRef.current.slice(-500),
+        xteLimitNm,
+        speedDampingPct,
+        orientation: mapOrientationMode,
+        savedAt: new Date(now).toISOString(),
+      }));
+    } catch {}
+  }
+
   function stopWaypointNavigation() {
     navigationSourceRef.current?.clear();
     navigationTargetRef.current = null;
@@ -1341,6 +1466,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setNavigationDistanceNm(null);
     setNavigationEtaMinutes(null);
     setNavigationXteNm(null);
+    navigationPersistAtRef.current = 0;
+    try { window.localStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
     if (devicePosition) drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
     setStatusMessage("Navegação para waypoint encerrada.");
   }
@@ -1371,6 +1498,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationStartRef.current = devicePosition ? { ...devicePosition } : null;
     navigationTrailRef.current = devicePosition ? [{ ...devicePosition }] : [];
     smoothedSpeedRef.current = null;
+    navigationPersistAtRef.current = 0;
+    persistActiveNavigation(true);
 
     if (devicePosition) {
       drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
@@ -2440,8 +2569,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => loadFreeMapLayer(true), 60_000);
-    return () => window.clearInterval(timer);
+    const refreshFreeSources = () => {
+      void loadFreeMapLayer(true);
+      void loadMarinesiaFreeLayerSilently();
+    };
+    const warmup = window.setTimeout(refreshFreeSources, 1200);
+    const timer = window.setInterval(refreshFreeSources, 60_000);
+    return () => {
+      window.clearTimeout(warmup);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -2531,6 +2668,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       trail.push({ ...devicePosition });
       if (trail.length > 500) trail.splice(0, trail.length - 500);
     }
+    persistActiveNavigation();
 
     const damping = Math.max(0, Math.min(0.95, speedDampingPct / 100));
     if (gpsRawSpeedKnots != null && Number.isFinite(gpsRawSpeedKnots)) {
@@ -2825,6 +2963,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           >
             <Settings /><span>MAPA</span>
           </button>
+          <div className="ais-v152-mobile-layerbar" aria-label="Fontes AIS automáticas">
+            <span className="free"><i />VF</span>
+            <span className="marinesia"><i />AF</span>
+            <span className="premium"><i />PR</span>
+            <span className={`auto ${freeMapStatus}`} title="APIs gratuitas atualizam automaticamente">
+              <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
+            </span>
+          </div>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
 
