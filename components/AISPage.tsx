@@ -6,6 +6,7 @@ import {
   Bookmark,
   Crosshair,
   FolderHeart,
+  Flag,
   History,
   LocateFixed,
   MapPinned,
@@ -14,6 +15,8 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  Ruler,
+  Save,
   Search,
   Ship,
   Trash2,
@@ -30,6 +33,7 @@ import VectorSource from "ol/source/Vector";
 import Translate from "ol/interaction/Translate";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
+import LineString from "ol/geom/LineString";
 import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
@@ -50,6 +54,18 @@ type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
 type MobilePanel = "areaSearch" | "saved" | "areaSaved" | "history" | null;
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
+type WaypointIcon = "circle" | "diamond" | "triangle" | "cross" | "star";
+
+type MapWaypoint = {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  icon: WaypointIcon;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type DhnChart = {
   number: string;
@@ -288,6 +304,25 @@ function formatCoordOperational(value: number, latitude = true) {
   return `${degrees}º ${minuteDigits} ${hemisphere}`;
 }
 
+function waypointSymbol(icon: WaypointIcon) {
+  if (icon === "diamond") return "◆";
+  if (icon === "triangle") return "▲";
+  if (icon === "cross") return "✚";
+  if (icon === "star") return "★";
+  return "●";
+}
+
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const radiusKm = 6371.0088;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return radiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
 function isFishingVessel(vessel: Vessel) {
   const type = String(vessel.vesselType || "").toLowerCase();
   const status = String(vessel.navStatusText || "").toLowerCase();
@@ -424,6 +459,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const freeVesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
   const probeSourceRef = useRef<VectorSource | null>(null);
+  const waypointSourceRef = useRef<VectorSource | null>(null);
+  const measureSourceRef = useRef<VectorSource | null>(null);
   const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
@@ -431,6 +468,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
+  const measureModeRef = useRef(false);
+  const measureStartRef = useRef<Vessel | null>(null);
+  const gpsCenteredRef = useRef(false);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
   // V139: trava síncrona para impedir clique duplo antes do React atualizar o estado loading.
@@ -466,6 +506,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
   const [mapProbe, setMapProbe] = useState<{ lat: number; lon: number } | null>(null);
+  const [waypoints, setWaypoints] = useState<MapWaypoint[]>([]);
+  const [waypointPanelOpen, setWaypointPanelOpen] = useState(false);
+  const [waypointName, setWaypointName] = useState("");
+  const [waypointIcon, setWaypointIcon] = useState<WaypointIcon>("diamond");
+  const [waypointColor, setWaypointColor] = useState("#ffb52e");
+  const [waypointSaving, setWaypointSaving] = useState(false);
+  const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measureStart, setMeasureStart] = useState<Vessel | null>(null);
+  const [measureResult, setMeasureResult] = useState<{ km: number; nm: number; from: string; to: string } | null>(null);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -489,6 +539,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
   useEffect(() => { areaRadiusRef.current = 50; }, []);
+  useEffect(() => {
+    measureModeRef.current = measureMode;
+    if (!measureMode) {
+      measureStartRef.current = null;
+      setMeasureStart(null);
+    }
+  }, [measureMode]);
   const [tracked, setTracked] = useState<Vessel | null>(null);
   const [showEmptyHint, setShowEmptyHint] = useState(false);
   const [status, setStatus] = useState<AisStatus>("idle");
@@ -795,6 +852,158 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     upsertMapVessels(dedupeVessels(vessels));
   }
 
+  function buildWaypointStyle(item: MapWaypoint, currentZoom: number) {
+    return new Style({
+      text: new Text({
+        text: waypointSymbol(item.icon),
+        font: item.icon === "star" ? "900 20px system-ui" : "900 18px system-ui",
+        fill: new Fill({ color: item.color || "#ffb52e" }),
+        stroke: new Stroke({ color: "#062027", width: 3 }),
+        offsetY: 0,
+      }),
+      image: new CircleStyle({
+        radius: 2,
+        fill: new Fill({ color: item.color || "#ffb52e" }),
+      }),
+      zIndex: 60,
+    });
+  }
+
+  function renderWaypoints(items: MapWaypoint[]) {
+    const source = waypointSourceRef.current;
+    if (!source) return;
+    source.clear();
+    items.forEach((item) => {
+      if (!Number.isFinite(Number(item.latitude)) || !Number.isFinite(Number(item.longitude))) return;
+      const feature = new Feature({
+        geometry: new Point(fromLonLat([Number(item.longitude), Number(item.latitude)])),
+      });
+      feature.set("waypoint", item);
+      feature.setStyle(() => buildWaypointStyle(item, mapRef.current?.getView().getZoom() || 10));
+      source.addFeature(feature);
+    });
+  }
+
+  async function loadWaypoints() {
+    try {
+      const response = await aisFetch("/api/waypoints");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      setWaypoints(Array.isArray(data?.waypoints) ? data.waypoints : []);
+    } catch {
+      // Waypoints não bloqueiam o AIS.
+    }
+  }
+
+  async function saveWaypoint() {
+    if (!mapProbe) {
+      setStatusMessage("Toque no mapa para escolher a posição do waypoint.");
+      return;
+    }
+    if (waypointSaving) return;
+    setWaypointSaving(true);
+    try {
+      const response = await aisFetch("/api/waypoints", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: selectedWaypointId,
+          name: waypointName.trim() || `WP ${String(waypoints.length + 1).padStart(2, "0")}`,
+          latitude: mapProbe.lat,
+          longitude: mapProbe.lon,
+          icon: waypointIcon,
+          color: waypointColor,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatusMessage(data?.error || "Não foi possível salvar o waypoint.");
+        return;
+      }
+      await loadWaypoints();
+      setSelectedWaypointId(data?.waypoint?.id ?? null);
+      setWaypointName(data?.waypoint?.name || waypointName);
+      setStatusMessage(`${data?.waypoint?.name || "Waypoint"} salvo no mapa ✓`);
+      setWaypointPanelOpen(false);
+    } catch {
+      setStatusMessage("Falha de conexão ao salvar waypoint.");
+    } finally {
+      setWaypointSaving(false);
+    }
+  }
+
+  async function deleteWaypoint(id: number) {
+    try {
+      const response = await aisFetch(`/api/waypoints?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) return;
+      setWaypoints((current) => current.filter((item) => item.id !== id));
+      setSelectedWaypointId(null);
+      setWaypointName("");
+      setWaypointPanelOpen(false);
+      setStatusMessage("Waypoint removido.");
+    } catch {
+      setStatusMessage("Não foi possível remover o waypoint.");
+    }
+  }
+
+  function clearMeasurement() {
+    measureSourceRef.current?.clear();
+    measureStartRef.current = null;
+    setMeasureStart(null);
+    setMeasureResult(null);
+  }
+
+  function toggleMeasureMode() {
+    setMeasureMode((current) => {
+      const next = !current;
+      if (!next) clearMeasurement();
+      return next;
+    });
+  }
+
+  function pickMeasureVessel(vessel: Vessel) {
+    const first = measureStartRef.current;
+    if (!first) {
+      measureStartRef.current = vessel;
+      setMeasureStart(vessel);
+      setMeasureResult(null);
+      measureSourceRef.current?.clear();
+      setStatusMessage(`Régua: primeiro barco ${vessel.name || vessel.mmsi}. Agora toque no segundo barco.`);
+      return;
+    }
+
+    const km = haversineKm({ lat: first.lat, lon: first.lon }, { lat: vessel.lat, lon: vessel.lon });
+    const nm = km / 1.852;
+    const source = measureSourceRef.current;
+    source?.clear();
+    const line = new Feature({
+      geometry: new LineString([
+        fromLonLat([first.lon, first.lat]),
+        fromLonLat([vessel.lon, vessel.lat]),
+      ]),
+    });
+    line.setStyle(new Style({
+      stroke: new Stroke({ color: "#ffdc72", width: 2.5, lineDash: [8, 6] }),
+    }));
+    source?.addFeature(line);
+    setMeasureResult({
+      km,
+      nm,
+      from: first.name || first.mmsi || "Barco 1",
+      to: vessel.name || vessel.mmsi || "Barco 2",
+    });
+    measureStartRef.current = null;
+    setMeasureStart(null);
+    setStatusMessage(`Distância: ${nm.toFixed(1)} MN · ${km.toFixed(1)} km`);
+  }
+
+  function openWaypointPanel() {
+    setWaypointPanelOpen((open) => !open);
+    if (!waypointPanelOpen && selectedWaypointId == null) {
+      setWaypointName("");
+    }
+  }
+
   function inspectMapPoint(lat: number, lon: number) {
     const source = probeSourceRef.current;
     source?.clear();
@@ -814,6 +1023,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     areaSourceRef.current?.clear();
     setAreaCenter({ lat, lon });
     setMapProbe({ lat, lon });
+    setSelectedWaypointId(null);
   }
 
   function clearMapProbe() {
@@ -1574,6 +1784,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
     const probeSource = new VectorSource();
     const probeLayer = new VectorLayer({ source: probeSource });
+    const waypointSource = new VectorSource();
+    const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
+    const measureSource = new VectorSource();
+    const measureLayer = new VectorLayer({ source: measureSource });
     const view = new View({ center: fromLonLat([fallbackLon, fallbackLat]), zoom: 10.5, minZoom: 3, maxZoom: 18 });
     street.setZIndex(0);
     dhn.setZIndex(5);
@@ -1582,11 +1796,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     vesselLayer.setZIndex(30);
     positionLayer.setZIndex(40);
     probeLayer.setZIndex(45);
+    measureLayer.setZIndex(48);
+    waypointLayer.setZIndex(50);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer],
+      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, waypointLayer],
       view,
     });
 
@@ -1615,6 +1831,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     freeVesselSourceRef.current = freeVesselSource;
     positionSourceRef.current = positionSource;
     probeSourceRef.current = probeSource;
+    waypointSourceRef.current = waypointSource;
+    measureSourceRef.current = measureSource;
     areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
     dhnLayerRef.current = dhn;
@@ -1639,6 +1857,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         { hitTolerance: 10 },
       );
       if (vessel) {
+        if (measureModeRef.current) {
+          pickMeasureVessel(vessel);
+          return;
+        }
         trackedRef.current = vessel;
         setTracked(vessel);
         setShowEmptyHint(false);
@@ -1648,6 +1870,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         view.animate({ center: fromLonLat([vessel.lon, vessel.lat]), duration: 150 });
         return;
       }
+
+      const waypoint = map.forEachFeatureAtPixel(
+        event.pixel,
+        (feature: any) => (feature.get("waypoint") || null) as MapWaypoint | null,
+        { hitTolerance: 10 },
+      );
+      if (waypoint) {
+        const lat = Number(waypoint.latitude);
+        const lon = Number(waypoint.longitude);
+        setMapProbe({ lat, lon });
+        setSelectedWaypointId(waypoint.id);
+        setWaypointName(waypoint.name);
+        setWaypointIcon(waypoint.icon);
+        setWaypointColor(waypoint.color);
+        setWaypointPanelOpen(true);
+        setStatusMessage(`${waypoint.name} · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
+        return;
+      }
+
       const [lon, lat] = toLonLat(event.coordinate);
       trackedRef.current = null;
       setTracked(null);
@@ -1776,7 +2017,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     refreshCredits();
     loadAisLibrary();
+    loadWaypoints();
   }, []);
+
+  useEffect(() => {
+    renderWaypoints(waypoints);
+  }, [waypoints]);
 
   // V140: mantém no mapa todos os barcos persistidos na biblioteca do usuário.
   useEffect(() => {
@@ -1790,16 +2036,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     const mobile = window.matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
     if (!mobile) return;
-    navigator.geolocation.getCurrentPosition(
+
+    const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         setDevicePosition(coords);
-        setAreaCenter(coords);
-        centerOn(coords.lat, coords.lon, 11, true);
+        const source = positionSourceRef.current;
+        source?.clear();
+        source?.addFeature(new Feature({ geometry: new Point(fromLonLat([coords.lon, coords.lat])) }));
+        if (!gpsCenteredRef.current) {
+          gpsCenteredRef.current = true;
+          setAreaCenter(coords);
+          centerOn(coords.lat, coords.lon, 11);
+        }
       },
       () => undefined,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 },
     );
+
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
@@ -1983,6 +2238,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
             <span>VESSEL FREE</span>
           </button>
+          <button type="button" className={`ais-v143-map-tool ${waypointPanelOpen ? "active" : ""}`} onClick={openWaypointPanel} title="Criar waypoint">
+            <Flag /><span>WP</span>
+          </button>
+          <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância entre dois barcos">
+            <Ruler /><span>MEDIR</span>
+          </button>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
 
@@ -2102,6 +2363,59 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             </div>
           )}
         </div>
+
+        {devicePosition && (
+          <div className="ais-v143-gps-card">
+            <div><LocateFixed /><b>GPS ATUAL</b></div>
+            <strong>{formatCoordOperational(devicePosition.lat, true)}</strong>
+            <strong>{formatCoordOperational(devicePosition.lon, false)}</strong>
+          </div>
+        )}
+
+        {waypointPanelOpen && (
+          <div className="ais-v143-waypoint-panel">
+            <div className="ais-v143-waypoint-head">
+              <span><Flag /><b>WAYPOINT</b><em>{waypoints.length}</em></span>
+              <button type="button" onClick={() => setWaypointPanelOpen(false)}>×</button>
+            </div>
+            <div className="ais-v143-waypoint-pos">
+              {mapProbe ? <><b>{formatCoordOperational(mapProbe.lat, true)}</b><b>{formatCoordOperational(mapProbe.lon, false)}</b></> : <span>Toque no mapa para marcar</span>}
+            </div>
+            <input value={waypointName} onChange={(e) => setWaypointName(e.target.value.slice(0, 40))} placeholder="Nome do waypoint" />
+            <div className="ais-v143-waypoint-icons">
+              {(["circle","diamond","triangle","cross","star"] as WaypointIcon[]).map((icon) => (
+                <button type="button" key={icon} className={waypointIcon === icon ? "active" : ""} onClick={() => setWaypointIcon(icon)} title={icon}>
+                  {waypointSymbol(icon)}
+                </button>
+              ))}
+            </div>
+            <div className="ais-v143-waypoint-colors">
+              {["#ffb52e","#2bd4aa","#4aa8ff","#ff5f6d","#f5f5f5"].map((color) => (
+                <button type="button" key={color} className={waypointColor === color ? "active" : ""} style={{ background: color }} onClick={() => setWaypointColor(color)} aria-label={`Cor ${color}`} />
+              ))}
+            </div>
+            <div className="ais-v143-waypoint-actions">
+              {selectedWaypointId != null && <button type="button" className="danger" onClick={() => void deleteWaypoint(selectedWaypointId)}><Trash2 /></button>}
+              <button type="button" className="save" onClick={() => void saveWaypoint()} disabled={!mapProbe || waypointSaving}>
+                <Save /> {waypointSaving ? "SALVANDO" : "SALVAR"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {measureMode && (
+          <div className="ais-v143-measure-badge">
+            <Ruler />
+            <span>
+              {measureResult
+                ? <><b>{measureResult.nm.toFixed(1)} MN</b><small>{measureResult.km.toFixed(1)} km</small></>
+                : measureStart
+                  ? <><b>1º barco OK</b><small>toque no segundo</small></>
+                  : <><b>RÉGUA</b><small>toque em 2 barcos</small></>}
+            </span>
+            {(measureStart || measureResult) && <button type="button" onClick={clearMeasurement}>×</button>}
+          </div>
+        )}
 
         {mapProbe && (
           <div className="ais-v141-point-card">

@@ -163,6 +163,20 @@ export const aisSearchHistory = pgTable("ais_search_history", {
 ]);
 
 
+export const mapWaypoints = pgTable("map_waypoints", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  name: text("name").notNull(),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  icon: text("icon").notNull().default("diamond"),
+  color: text("color").notNull().default("#ffb52e"),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_map_waypoints_owner_time").on(t.ownerId, t.id),
+]);
+
 export const forecastHistory = pgTable("forecast_history", {
   id: serial("id").primaryKey(),
   ownerId: text("owner_id").notNull(),

@@ -3815,3 +3815,96 @@ main.loginpage{
   .ais-v141-point-coords strong{font-size:10px}
 }
 
+
+
+/* V143 — busca menor, waypoint, GPS mobile e régua */
+.ais-v138-free-header{
+  width:min(560px,calc(100% - 360px))!important;
+}
+.ais-v143-map-tool{
+  width:58px!important;
+  min-width:58px!important;
+  height:34px!important;
+  padding:0 5px!important;
+  gap:3px!important;
+  border-color:#315b64!important;
+  background:#09242b!important;
+  color:#9fc1c7!important;
+  font:900 6px system-ui!important;
+}
+.ais-v143-map-tool svg{width:14px!important;height:14px!important}
+.ais-v143-map-tool span{display:inline!important}
+.ais-v143-map-tool.active{border-color:#2bd4aa!important;background:#103a33!important;color:#8cf0d7!important}
+.ais-v143-map-tool.measure.active{border-color:#dfba54!important;background:#3b3017!important;color:#ffe08b!important}
+
+.ais-v143-waypoint-panel{
+  position:absolute;z-index:94;left:66px;top:250px;width:205px;
+  padding:7px;border:1px solid #315b64;border-radius:10px;
+  background:#061b21ee;box-shadow:0 10px 28px #00111870;
+  backdrop-filter:blur(12px);display:grid;gap:6px;pointer-events:auto
+}
+.ais-v143-waypoint-head{display:flex;align-items:center;justify-content:space-between}
+.ais-v143-waypoint-head>span{display:flex;align-items:center;gap:5px;color:#82ead2}
+.ais-v143-waypoint-head svg{width:13px;height:13px}
+.ais-v143-waypoint-head b{font-size:7px;letter-spacing:.08em}
+.ais-v143-waypoint-head em{font-style:normal;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#13353a;display:grid;place-items:center;font-size:6px}
+.ais-v143-waypoint-head>button{width:21px;height:21px;border:1px solid #31545d;border-radius:6px;background:#0a252c;color:#9fc0c4;font-size:14px}
+.ais-v143-waypoint-pos{display:flex;justify-content:space-between;gap:5px;padding:5px;border:1px solid #21464e;border-radius:7px;background:#06171d}
+.ais-v143-waypoint-pos b{font:900 7px ui-monospace,SFMono-Regular,Menlo,monospace;color:#e9fbf7}
+.ais-v143-waypoint-pos span{font-size:7px;color:#789ca3}
+.ais-v143-waypoint-panel>input{height:31px;border:1px solid #294d55;border-radius:7px;background:#06171d;color:#effffb;padding:0 8px;outline:0;font:800 9px system-ui}
+.ais-v143-waypoint-icons{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.ais-v143-waypoint-icons button{height:29px;border:1px solid #294c53;border-radius:7px;background:#082229;color:#adc9ce;font-size:14px;cursor:pointer}
+.ais-v143-waypoint-icons button.active{border-color:#2bd4aa;background:#113b34;color:#dffff7}
+.ais-v143-waypoint-colors{display:flex;justify-content:center;gap:8px}
+.ais-v143-waypoint-colors button{width:20px;height:20px;border:2px solid #0b252b;border-radius:50%;box-shadow:0 0 0 1px #365960;cursor:pointer}
+.ais-v143-waypoint-colors button.active{box-shadow:0 0 0 2px #fff}
+.ais-v143-waypoint-actions{display:grid;grid-template-columns:auto 1fr;gap:5px}
+.ais-v143-waypoint-actions button{height:31px;border:1px solid #31545d;border-radius:7px;font:900 7px system-ui;display:flex;align-items:center;justify-content:center;gap:5px}
+.ais-v143-waypoint-actions button svg{width:12px;height:12px}
+.ais-v143-waypoint-actions .save{background:#29d4aa;border-color:#29d4aa;color:#03282e}
+.ais-v143-waypoint-actions .save:only-child{grid-column:1/-1}
+.ais-v143-waypoint-actions .danger{width:32px;background:#321d22;border-color:#6b3c42;color:#ee9aa0}
+
+.ais-v143-gps-card{display:none}
+.ais-v143-measure-badge{
+  position:absolute;z-index:93;left:50%;bottom:70px;transform:translateX(-50%);
+  min-width:150px;height:38px;padding:0 7px;border:1px solid #82672d;border-radius:10px;
+  background:#2b2414eF;color:#ffe090;box-shadow:0 8px 24px #00111866;
+  display:flex;align-items:center;gap:6px;pointer-events:auto
+}
+.ais-v143-measure-badge>svg{width:14px;height:14px;flex:none}
+.ais-v143-measure-badge>span{display:grid;line-height:1.05;min-width:0}
+.ais-v143-measure-badge b{font-size:8px;white-space:nowrap}
+.ais-v143-measure-badge small{font-size:6px;color:#cbb875;white-space:nowrap}
+.ais-v143-measure-badge button{margin-left:auto;width:21px;height:21px;border:1px solid #6c5729;border-radius:6px;background:#3b3018;color:#e8d48f}
+
+@media(max-width:780px){
+  .ais-v138-free-header{
+    width:calc(100% - 88px)!important;
+    left:calc(50% + 26px)!important;
+  }
+  .ais-v143-map-tool{
+    width:43px!important;min-width:43px!important;height:37px!important;padding:0!important;
+    display:grid!important;place-items:center!important;align-content:center!important;gap:0!important
+  }
+  .ais-v143-map-tool span{display:none!important}
+  .ais-v143-waypoint-panel{
+    left:58px;top:auto;bottom:132px;width:190px;padding:7px
+  }
+  .ais-v143-gps-card{
+    position:absolute;z-index:75;right:8px;top:58px;width:128px;
+    padding:6px;border:1px solid #397cc0;border-radius:9px;background:#071f32eF;
+    box-shadow:0 8px 24px #00111866;display:grid;gap:2px;pointer-events:none
+  }
+  .ais-v143-gps-card>div{display:flex;align-items:center;gap:4px;color:#70c8ff}
+  .ais-v143-gps-card svg{width:11px;height:11px}
+  .ais-v143-gps-card b{font-size:6px;letter-spacing:.06em}
+  .ais-v143-gps-card strong{font:900 8px ui-monospace,SFMono-Regular,Menlo,monospace;color:#eefaff}
+  .ais-v143-measure-badge{
+    bottom:120px;min-width:132px;height:34px;padding:0 6px
+  }
+  .ais-v143-measure-badge b{font-size:7px}
+  .ais-v143-measure-badge small{font-size:5.5px}
+  .ais-v141-point-card{bottom:72px!important}
+}
