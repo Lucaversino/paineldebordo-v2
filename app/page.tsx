@@ -89,7 +89,8 @@ export default function Home() {
     [loadError, setLoadError] = useState(""),
     [billing, setBilling] = useState<any>(null),
     [offlinePending, setOfflinePending] = useState(0),
-    [offlineSyncing, setOfflineSyncing] = useState(false);
+    [offlineSyncing, setOfflineSyncing] = useState(false),
+    [gpsPermissionMessage, setGpsPermissionMessage] = useState("");
   const primeOfflineManage = async () => {
     if (!navigator.onLine) return;
     try {
@@ -175,6 +176,62 @@ export default function Home() {
       window.removeEventListener(OFFLINE_QUEUE_EVENT, queueChanged);
     };
   }, []);
+
+  // V170: GPS automático enquanto o Dashboard estiver aberto.
+  // Não usa API externa nem créditos: somente navigator.geolocation do dispositivo.
+  useEffect(() => {
+    if (view !== "Dashboard") return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGpsPermissionMessage("GPS não disponível. Ative a localização do dispositivo.");
+      return;
+    }
+
+    let watchId: number | null = null;
+    let active = true;
+    const options: PositionOptions = { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 };
+
+    const savePosition = (position: GeolocationPosition) => {
+      if (!active) return;
+      const payload = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+        at: Number(position.timestamp) || Date.now(),
+        heading: Number.isFinite(Number(position.coords.heading)) ? Number(position.coords.heading) : null,
+        speed: Number.isFinite(Number(position.coords.speed)) ? Number(position.coords.speed) : null,
+      };
+      try {
+        localStorage.setItem("painel-bordo-device-position", JSON.stringify(payload));
+        window.dispatchEvent(new CustomEvent("painel-bordo-gps-position", { detail: payload }));
+      } catch {}
+      setGpsPermissionMessage("");
+    };
+
+    const onGpsError = (error: GeolocationPositionError) => {
+      if (!active) return;
+      setGpsPermissionMessage(error.code === 1
+        ? "Localização bloqueada. Ative o GPS e permita a localização para o PAINEL DE BORDO."
+        : "Não foi possível obter sua posição. Verifique se o GPS está ativado.");
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        savePosition(position);
+        if (!active) return;
+        watchId = navigator.geolocation.watchPosition(savePosition, onGpsError, options);
+      },
+      (error) => {
+        onGpsError(error);
+        if (!active || error.code === 1) return;
+        watchId = navigator.geolocation.watchPosition(savePosition, onGpsError, options);
+      },
+      options,
+    );
+
+    return () => {
+      active = false;
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [view]);
 
   // V80: largadas novas continuam registrando ambiente automaticamente.
   // O backfill histórico pesado fica manual em Configurações para não disputar recursos no carregamento.
@@ -448,6 +505,7 @@ export default function Home() {
         </header>
         {view === "Dashboard" ? (
           <section className="content">
+            {gpsPermissionMessage && <div className="gps-dashboard-message">{gpsPermissionMessage}</div>}
             {!loading && !loadError && <DailyDataUsage />}
             {loading ? (
               <div className="emptydash">

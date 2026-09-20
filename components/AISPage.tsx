@@ -2884,6 +2884,27 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    // V170: reaproveita imediatamente a última posição obtida no Dashboard,
+    // sem API externa e sem alterar o ícone atual do MEU BARCO.
+    try {
+      const cached = JSON.parse(localStorage.getItem("painel-bordo-device-position") || "null");
+      const lat = Number(cached?.lat);
+      const lon = Number(cached?.lon);
+      const heading = cached?.heading == null ? Number.NaN : Number(cached.heading);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        const coords = { lat, lon };
+        const resolvedHeading = Number.isFinite(heading) && heading >= 0 && heading < 360 ? heading : stableGpsHeadingRef.current;
+        setDevicePosition(coords);
+        drawGpsPositionMarker(coords, resolvedHeading);
+        setAreaCenter(coords);
+        if (!gpsCenteredRef.current) {
+          gpsCenteredRef.current = true;
+          centerOn(coords.lat, coords.lon, 11);
+        }
+      }
+    } catch {}
+
     const mobile = window.matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
     if (!mobile) return;
 
