@@ -5133,3 +5133,10 @@ main.loginpage{
   .ais-v167-route-points .point{width:25px;height:25px}
   .ais-v167-route-points>div{grid-template-columns:27px 1fr 24px}
 }
+
+/* V169 — card de rotas sempre acima dos controles do mapa */
+.ais-v119-page .ais-v167-route-panel,
+.ais-v167-route-panel{
+  z-index: 7000 !important;
+  isolation: isolate;
+}
