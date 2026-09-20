@@ -611,6 +611,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
+  const vesselFeatureRegistryRef = useRef<Map<string, Feature>>(new Map());
+  const vesselLabelVisibleRef = useRef<boolean | null>(null);
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
@@ -655,10 +657,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [mobileAreaAdvanced, setMobileAreaAdvanced] = useState(false);
   const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
   const [areaCost, setAreaCost] = useState<number | null>(null);
-  const [freeMapVessels, setFreeMapVessels] = useState<Vessel[]>([]);
-  const [freeMapSource, setFreeMapSource] = useState("AIS automático");
+  const [freeMapVesselCount, setFreeMapVesselCount] = useState(0);
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [freeMapUpdatedAt, setFreeMapUpdatedAt] = useState<number | null>(null);
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
@@ -855,7 +855,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [dhnOpacity, setDhnOpacity] = useState(0.58);
   const [dhnPanelOpen, setDhnPanelOpen] = useState(false);
   const [dhnLoadMessage, setDhnLoadMessage] = useState("Conectando ao serviço oficial IDEM-DHN...");
-  const [clockNow, setClockNow] = useState(() => new Date());
   const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
   const [historyItems, setHistoryItems] = useState<AisHistoryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -955,28 +954,75 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function findRegistryKey(vessel: Vessel) {
+    const directKey = vesselRegistryKey(vessel);
+    if (directKey && mapVesselRegistryRef.current.has(directKey)) return directKey;
+
+    // Fallback apenas quando a fonte mudou a chave principal (ex.: chegou MMSI depois do IMO).
     for (const [key, existing] of mapVesselRegistryRef.current.entries()) {
       if (sameRegistryVessel(existing, vessel)) return key;
     }
-    return vesselRegistryKey(vessel);
+    return directKey;
   }
 
-  function renderVesselRegistry() {
+  function vesselStyleSignature(vessel: Vessel) {
+    const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511
+      ? Number(vessel.heading)
+      : Number(vessel.cog || 0);
+    return [
+      Math.round(angle * 10) / 10,
+      String(vessel.name || vessel.mmsi || "").slice(0, 26),
+      String(vessel.dataSource || "").toLowerCase(),
+    ].join("|");
+  }
+
+  function syncVesselFeature(key: string, vessel: Vessel, previousKey?: string | null) {
     const source = vesselSourceRef.current;
-    const freeSource = freeVesselSourceRef.current;
     if (!source) return;
 
-    // Um único layer desenha todos os barcos. Isso impede que o mesmo MMSI/IMO
-    // apareça duplicado em Premium, Marinesia e Vessel Free.
-    source.clear();
-    freeSource?.clear();
+    let feature: Feature | undefined;
 
-    mapVesselRegistryRef.current.forEach((vessel) => {
-      const feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
-      feature.set("vessel", vessel);
-      feature.setStyle(() => buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+    if (previousKey && previousKey !== key) {
+      const previousFeature = vesselFeatureRegistryRef.current.get(previousKey);
+      const existingTarget = vesselFeatureRegistryRef.current.get(key);
+
+      if (previousFeature && existingTarget && previousFeature !== existingTarget) {
+        source.removeFeature(previousFeature);
+        vesselFeatureRegistryRef.current.delete(previousKey);
+        feature = existingTarget;
+      } else if (previousFeature) {
+        vesselFeatureRegistryRef.current.delete(previousKey);
+        vesselFeatureRegistryRef.current.set(key, previousFeature);
+        feature = previousFeature;
+      }
+    }
+
+    feature = feature || vesselFeatureRegistryRef.current.get(key);
+    if (!feature) {
+      feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
+      vesselFeatureRegistryRef.current.set(key, feature);
       source.addFeature(feature);
-    });
+    } else {
+      const geometry = feature.getGeometry();
+      if (geometry instanceof Point) {
+        const next = fromLonLat([vessel.lon, vessel.lat]);
+        const current = geometry.getCoordinates();
+        if (current[0] !== next[0] || current[1] !== next[1]) geometry.setCoordinates(next);
+      }
+    }
+
+    // Metadados podem mudar sem exigir novo desenho.
+    feature.set("vessel", vessel, true);
+
+    const showLabels = (mapRef.current?.getView().getZoom() || 10) >= 8;
+    const styleSignature = vesselStyleSignature(vessel);
+    if (
+      feature.get("_aisStyleSignature") !== styleSignature
+      || feature.get("_aisLabelsVisible") !== showLabels
+    ) {
+      feature.setStyle(buildVesselStyle(vessel, mapRef.current?.getView().getZoom() || 10));
+      feature.set("_aisStyleSignature", styleSignature, true);
+      feature.set("_aisLabelsVisible", showLabels, true);
+    }
   }
 
   function upsertMapVessels(vessels: Vessel[]) {
@@ -1008,6 +1054,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
       let targetKey = foundKey || vesselRegistryKey(merged);
       if (!targetKey) return;
+      const previousKey = foundKey;
 
       // Se o barco ganhou MMSI depois, muda para a chave mais forte sem duplicar.
       const strongestKey = vesselRegistryKey(merged);
@@ -1016,6 +1063,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         targetKey = strongestKey;
       }
       mapVesselRegistryRef.current.set(targetKey, merged);
+      syncVesselFeature(targetKey, merged, previousKey);
       accepted.push(merged);
 
       const selected = trackedRef.current;
@@ -1025,20 +1073,36 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }
     });
 
-    renderVesselRegistry();
     return accepted;
   }
 
   function dedupeVessels(vessels: Vessel[]) {
     const unique: Vessel[] = [];
+    const byMmsi = new Map<string, number>();
+    const byImo = new Map<string, number>();
+    const byNameOnly = new Map<string, number>();
+
     vessels.forEach((vessel) => {
-      const index = unique.findIndex((existing) => sameRegistryVessel(existing, vessel));
-      if (index < 0) {
+      const ids = normalizedVesselIds(vessel);
+      let index: number | undefined;
+
+      if (ids.mmsi) index = byMmsi.get(ids.mmsi);
+      if (index == null && ids.imo && ids.imo !== "0") index = byImo.get(ids.imo);
+      if (index == null && !ids.mmsi && (!ids.imo || ids.imo === "0") && ids.name) index = byNameOnly.get(ids.name);
+
+      if (index == null) {
+        index = unique.length;
         unique.push(vessel);
-        return;
+      } else if (vesselDataTime(vessel) >= vesselDataTime(unique[index])) {
+        unique[index] = vessel;
       }
-      if (vesselDataTime(vessel) >= vesselDataTime(unique[index])) unique[index] = vessel;
+
+      const chosen = normalizedVesselIds(unique[index]);
+      if (chosen.mmsi) byMmsi.set(chosen.mmsi, index);
+      if (chosen.imo && chosen.imo !== "0") byImo.set(chosen.imo, index);
+      if (!chosen.mmsi && (!chosen.imo || chosen.imo === "0") && chosen.name) byNameOnly.set(chosen.name, index);
     });
+
     return unique;
   }
 
@@ -1090,9 +1154,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon) && Boolean(v.mmsi));
 
       const uniqueRows = dedupeVessels(rows);
-      setFreeMapVessels(uniqueRows);
-      setFreeMapSource(String(data?.source || "AIS automático"));
-      setFreeMapUpdatedAt(data?.updatedAt ? new Date(data.updatedAt).getTime() : Date.now());
+      setFreeMapVesselCount(uniqueRows.length);
       setFreeMapStatus("ready");
       drawFreeMapVessels(uniqueRows);
       if (uniqueRows.length) setShowEmptyHint(false);
@@ -1213,7 +1275,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         geometry: new Point(fromLonLat([Number(item.longitude), Number(item.latitude)])),
       });
       feature.set("waypoint", item);
-      feature.setStyle(() => buildWaypointStyle(item, mapRef.current?.getView().getZoom() || 10));
+      feature.setStyle(buildWaypointStyle(item, mapRef.current?.getView().getZoom() || 10));
       source.addFeature(feature);
     });
   }
@@ -2450,6 +2512,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     mapRef.current = map;
     vesselSourceRef.current = vesselSource;
     freeVesselSourceRef.current = freeVesselSource;
+    vesselFeatureRegistryRef.current.clear();
+    vesselLabelVisibleRef.current = (view.getZoom() || 10) >= 8;
     positionSourceRef.current = positionSource;
     probeSourceRef.current = probeSource;
     waypointSourceRef.current = waypointSource;
@@ -2463,10 +2527,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const [lon, lat] = toLonLat(view.getCenter() || fromLonLat([fallbackLon, fallbackLat]));
       setCenter({ lat, lon });
       setZoom(Math.round(view.getZoom() || 10));
-      vesselSource.getFeatures().forEach((feature) => {
-        const vessel = feature.get("vessel") as Vessel | undefined;
-        if (vessel) feature.setStyle(() => buildVesselStyle(vessel, view.getZoom() || 10));
-      });
+
+      const showLabels = (view.getZoom() || 10) >= 8;
+      if (vesselLabelVisibleRef.current !== showLabels) {
+        vesselLabelVisibleRef.current = showLabels;
+        vesselSource.getFeatures().forEach((feature) => {
+          const vessel = feature.get("vessel") as Vessel | undefined;
+          if (!vessel) return;
+          feature.setStyle(buildVesselStyle(vessel, view.getZoom() || 10));
+          feature.set("_aisStyleSignature", vesselStyleSignature(vessel), true);
+          feature.set("_aisLabelsVisible", showLabels, true);
+        });
+      }
       const selected = trackedRef.current;
       if (selected) anchorCardForVessel(selected);
       scheduleFreeMapLayer(false);
@@ -2535,6 +2607,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       if (gpsAnimationFrameRef.current != null) window.cancelAnimationFrame(gpsAnimationFrameRef.current);
       gpsAnimationFrameRef.current = null;
       gpsFeatureRef.current = null;
+      vesselFeatureRegistryRef.current.clear();
+      vesselLabelVisibleRef.current = null;
       map.setTarget(undefined);
       mapRef.current = null;
     };
@@ -2630,11 +2704,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     dhnLayerRef.current?.setOpacity(dhnOpacity);
   }, [dhnOpacity]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClockNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const refreshFreeSources = () => {
@@ -2875,7 +2944,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         lon: Number(navigationTarget.longitude),
       })
     : null;
-  const navigationArrivalClock = formatArrivalClock(clockNow, navigationEtaMinutes);
+  const navigationArrivalClock = formatArrivalClock(new Date(), navigationEtaMinutes);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
@@ -3177,7 +3246,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         <div className="ais-map-header-controls ais-single-map-badge ais-v119-layerbar">
-          <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVessels.length}</span>
+          <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVesselCount}</span>
           <span className="ais-v119-layer marinesia"><i /> AIS Free</span>
           <span className="ais-v119-layer premium"><i /> Premium</span>
           {ENABLE_DHN_CHARTS && baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
@@ -3545,8 +3614,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               ×
             </button>
             <Radio />
-            <b>{freeMapVessels.length ? "Toque em um barco no mapa" : "Nenhum barco selecionado"}</b>
-            <span>{freeMapVessels.length ? "A camada AIS automática não consome créditos. A pesquisa manual continua separada." : "Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui."}</span>
+            <b>{freeMapVesselCount ? "Toque em um barco no mapa" : "Nenhum barco selecionado"}</b>
+            <span>{freeMapVesselCount ? "A camada AIS automática não consome créditos. A pesquisa manual continua separada." : "Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui."}</span>
           </div>
         )}
 

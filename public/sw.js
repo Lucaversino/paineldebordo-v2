@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v155-waypoint-card";
+const CACHE = "painel-bordo-v156-performance";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
