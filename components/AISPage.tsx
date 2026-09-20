@@ -1124,8 +1124,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage(isFree ? "Buscando barcos no AIS Free da região..." : `Pesquisando embarcações Premium em ${areaRadius} km...`);
     drawAreaSelection(selected.lat, selected.lon, areaRadius);
 
-    const toRows = (data: any, freeFallback = false): Vessel[] => (
-      (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
+    const toRows = (data: any, freeFallback = false): Vessel[] => {
+      const areaQueryReceivedAt = Date.now();
+      return (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
         mmsi: String(raw?.mmsi || ""),
         imo: String(raw?.imo || ""),
         name: raw?.name || "SEM NOME",
@@ -1141,9 +1142,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           : `Premium 50 km · ${raw?.dataSource || data?.provider || "AIS"}`,
         positionReceived: raw?.positionReceived || raw?.updateTime || "",
         updateTime: raw?.updateTime || raw?.positionReceived || "",
-        receivedAt: Number(raw?.receivedAt) || Date.now(),
-      })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon))
-    );
+        receivedAt: Number(raw?.receivedAt) || areaQueryReceivedAt,
+      })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon));
+    };
 
     try {
       let response = await aisFetch(
@@ -1194,7 +1195,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         rows.length
           ? (isFree
               ? `${rows.length} barco(s) AIS Free · ${String(data?.provider || data?.source || "Marinesia/fallback")} · 0 créditos`
-              : `${rows.length} barco(s) Premium em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s)`)
+              : `${rows.length} barco(s) Premium em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s) · data/hora registrada`)
           : ""
       );
       if (!isFree) await refreshCredits();
@@ -2106,9 +2107,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
-  const trackedAge = tracked ? positionAgeLabel(tracked.positionReceived || tracked.updateTime) : null;
-  const trackedProviderDate = tracked ? parseProviderTime(tracked.positionReceived || tracked.updateTime) : null;
-  const trackedDateTime = tracked ? trackedDateParts(tracked.positionReceived || tracked.updateTime) : null;
+  const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
+  const trackedProviderDate = tracked ? parseProviderTime(trackedProviderTimeText) : null;
+  const trackedHasProviderTime = Boolean(trackedProviderDate);
+  const trackedFallbackTime = tracked?.receivedAt ? new Date(tracked.receivedAt).toISOString() : "";
+  const trackedAge = tracked ? positionAgeLabel(trackedProviderTimeText || trackedFallbackTime) : null;
+  const trackedDateTime = tracked ? trackedDateParts(trackedProviderTimeText || trackedFallbackTime) : null;
   const trackedFishing = tracked ? isFishingVessel(tracked) : false;
   const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
   const premiumSavedVessels = useMemo(() => savedVessels.filter((item) => (item.folder || "premium") !== "area50"), [savedVessels]);
@@ -2667,8 +2671,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <strong>{formatCoordOperational(tracked.lon, false)}</strong>
             </div>
             <div className="ais-v95-map-time">
-              <span><small>DATA RASTREADA</small><b>{trackedDateTime.date}</b></span>
-              <span><small>HORA</small><b>{trackedDateTime.time}</b></span>
+              <span><small>{trackedHasProviderTime ? "DATA RASTREADA" : "DATA DA CONSULTA"}</small><b>{trackedDateTime.date}</b></span>
+              <span><small>{trackedHasProviderTime ? "HORA" : "HORA DA CONSULTA"}</small><b>{trackedDateTime.time}</b></span>
             </div>
             <div className="ais-v95-map-mini">
               <span><small>VELOCIDADE</small><b>{tracked.sog != null ? `${Number(tracked.sog).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MN/h` : "—"}</b></span>

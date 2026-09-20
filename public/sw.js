@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v144-waypoint-folder-free-ruler";
+const CACHE = "painel-bordo-v145-area-time";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
