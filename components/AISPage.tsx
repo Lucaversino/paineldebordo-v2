@@ -52,7 +52,7 @@ type Props = {
 type BaseMode = "dhn" | "map";
 type AisStatus = "idle" | "loading" | "ready" | "error" | "config";
 type SearchMode = "vessel" | "area";
-type MobilePanel = "areaSearch" | "saved" | "areaSaved" | "history" | null;
+type MobilePanel = "areaSearch" | "saved" | "areaSaved" | "waypoints" | "history" | null;
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
 type WaypointIcon = "circle" | "diamond" | "triangle" | "cross" | "star";
 
@@ -469,7 +469,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
   const measureModeRef = useRef(false);
-  const measureStartRef = useRef<Vessel | null>(null);
+  const measureStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const gpsCenteredRef = useRef(false);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
@@ -514,8 +514,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [waypointSaving, setWaypointSaving] = useState(false);
   const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
   const [measureMode, setMeasureMode] = useState(false);
-  const [measureStart, setMeasureStart] = useState<Vessel | null>(null);
-  const [measureResult, setMeasureResult] = useState<{ km: number; nm: number; from: string; to: string } | null>(null);
+  const [measureStart, setMeasureStart] = useState<{ lat: number; lon: number } | null>(null);
+  const [measureResult, setMeasureResult] = useState<{ km: number; nm: number } | null>(null);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -957,44 +957,90 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setMeasureMode((current) => {
       const next = !current;
       if (!next) clearMeasurement();
+      else {
+        clearMeasurement();
+        setStatusMessage("Régua ativa: toque no ponto inicial e depois no ponto final.");
+      }
       return next;
     });
   }
 
-  function pickMeasureVessel(vessel: Vessel) {
+  function addMeasurePoint(lat: number, lon: number, color: string) {
+    const source = measureSourceRef.current;
+    if (!source) return;
+    const feature = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
+    feature.setStyle(new Style({
+      image: new CircleStyle({
+        radius: 5,
+        fill: new Fill({ color }),
+        stroke: new Stroke({ color: "#ffffff", width: 2 }),
+      }),
+    }));
+    source.addFeature(feature);
+  }
+
+  function pickMeasurePoint(lat: number, lon: number) {
+    const point = { lat, lon };
     const first = measureStartRef.current;
+
     if (!first) {
-      measureStartRef.current = vessel;
-      setMeasureStart(vessel);
-      setMeasureResult(null);
       measureSourceRef.current?.clear();
-      setStatusMessage(`Régua: primeiro barco ${vessel.name || vessel.mmsi}. Agora toque no segundo barco.`);
+      measureStartRef.current = point;
+      setMeasureStart(point);
+      setMeasureResult(null);
+      addMeasurePoint(lat, lon, "#2bd4aa");
+      setStatusMessage(`Régua: início ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}. Toque no ponto final.`);
       return;
     }
 
-    const km = haversineKm({ lat: first.lat, lon: first.lon }, { lat: vessel.lat, lon: vessel.lon });
+    const km = haversineKm(first, point);
     const nm = km / 1.852;
     const source = measureSourceRef.current;
     source?.clear();
-    const line = new Feature({
-      geometry: new LineString([
-        fromLonLat([first.lon, first.lat]),
-        fromLonLat([vessel.lon, vessel.lat]),
-      ]),
-    });
+
+    const start3857 = fromLonLat([first.lon, first.lat]);
+    const end3857 = fromLonLat([lon, lat]);
+    const line = new Feature({ geometry: new LineString([start3857, end3857]) });
     line.setStyle(new Style({
       stroke: new Stroke({ color: "#ffdc72", width: 2.5, lineDash: [8, 6] }),
     }));
     source?.addFeature(line);
-    setMeasureResult({
-      km,
-      nm,
-      from: first.name || first.mmsi || "Barco 1",
-      to: vessel.name || vessel.mmsi || "Barco 2",
-    });
+    addMeasurePoint(first.lat, first.lon, "#2bd4aa");
+    addMeasurePoint(lat, lon, "#ffdc72");
+
+    const midLat = (first.lat + lat) / 2;
+    const midLon = (first.lon + lon) / 2;
+    const label = new Feature({ geometry: new Point(fromLonLat([midLon, midLat])) });
+    label.setStyle(new Style({
+      text: new Text({
+        text: `${nm.toFixed(2)} MN`,
+        font: "900 11px system-ui",
+        fill: new Fill({ color: "#fff0a6" }),
+        stroke: new Stroke({ color: "#092027", width: 4 }),
+        offsetY: -10,
+      }),
+    }));
+    source?.addFeature(label);
+
+    setMeasureResult({ km, nm });
     measureStartRef.current = null;
     setMeasureStart(null);
-    setStatusMessage(`Distância: ${nm.toFixed(1)} MN · ${km.toFixed(1)} km`);
+    setStatusMessage(`Distância medida: ${nm.toFixed(2)} milhas náuticas`);
+  }
+
+  function openSavedWaypoint(item: MapWaypoint) {
+    const lat = Number(item.latitude);
+    const lon = Number(item.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    setMapProbe({ lat, lon });
+    setSelectedWaypointId(item.id);
+    setWaypointName(item.name);
+    setWaypointIcon(item.icon);
+    setWaypointColor(item.color);
+    centerOn(lat, lon, 12);
+    setMobilePanel(null);
+    setWaypointPanelOpen(true);
+    setStatusMessage(`${item.name} · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
   }
 
   function openWaypointPanel() {
@@ -1851,16 +1897,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
     map.on("moveend", updateCenter);
     const selectMapFeature = (event: any) => {
+      if (measureModeRef.current) {
+        const [lon, lat] = toLonLat(event.coordinate);
+        pickMeasurePoint(lat, lon);
+        return;
+      }
+
       const vessel = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("freeVessel") || feature.get("vessel") || null) as Vessel | null,
         { hitTolerance: 10 },
       );
       if (vessel) {
-        if (measureModeRef.current) {
-          pickMeasureVessel(vessel);
-          return;
-        }
         trackedRef.current = vessel;
         setTracked(vessel);
         setShowEmptyHint(false);
@@ -2241,7 +2289,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v143-map-tool ${waypointPanelOpen ? "active" : ""}`} onClick={openWaypointPanel} title="Criar waypoint">
             <Flag /><span>WP</span>
           </button>
-          <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância entre dois barcos">
+          <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância livre no mapa">
             <Ruler /><span>MEDIR</span>
           </button>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
@@ -2408,10 +2456,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <Ruler />
             <span>
               {measureResult
-                ? <><b>{measureResult.nm.toFixed(1)} MN</b><small>{measureResult.km.toFixed(1)} km</small></>
+                ? <><b>{measureResult.nm.toFixed(2)} MN</b><small>milhas náuticas</small></>
                 : measureStart
-                  ? <><b>1º barco OK</b><small>toque no segundo</small></>
-                  : <><b>RÉGUA</b><small>toque em 2 barcos</small></>}
+                  ? <><b>INÍCIO MARCADO</b><small>toque no ponto final</small></>
+                  : <><b>RÉGUA LIVRE</b><small>toque no início</small></>}
             </span>
             {(measureStart || measureResult) && <button type="button" onClick={clearMeasurement}>×</button>}
           </div>
@@ -2495,14 +2543,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         <div className="ais-v70-mobile-dock ais-v119-dock ais-v138-dock">
           <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>50 km</span></button>
-          <button type="button" className={mobilePanel === "saved" ? "active saved" : "saved"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Salvos</span><em>{premiumSavedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "saved" ? "active saved" : "saved"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Barcos</span><em>{premiumSavedVessels.length}</em></button>
+          <button type="button" className={mobilePanel === "waypoints" ? "active waypoints" : "waypoints"} onClick={() => setMobilePanel(mobilePanel === "waypoints" ? null : "waypoints")}><Flag /><span>Waypoints</span><em>{waypoints.length}</em></button>
           <button type="button" className={mobilePanel === "history" ? "active history" : "history"} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
         </div>
 
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : "Histórico AIS"}</b>
+              <b>{mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : mobilePanel === "waypoints" ? "Waypoints salvos" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
@@ -2555,6 +2604,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordOperational(Number(item.lastLatitude), true)} · ${formatCoordOperational(Number(item.lastLongitude), false)}` : "Sem posição"}</small></span></button>
               <button type="button" className="ais-mobile-saved-update" onClick={() => void refreshSavedVessel(item)}><RefreshCw /><span>ATUALIZAR</span></button>
             </article>) : <p>Nenhuma busca premium de 50 km salva ainda.</p>}</div>}
+
+            {mobilePanel === "waypoints" && (
+              <div className="ais-v70-mobile-list waypoints">
+                {waypoints.length ? waypoints.slice(0, 60).map((item) => (
+                  <article className="ais-v144-waypoint-row" key={item.id}>
+                    <button type="button" className="ais-v144-waypoint-main" onClick={() => openSavedWaypoint(item)}>
+                      <span className="ais-v144-waypoint-symbol" style={{ color: item.color }}>{waypointSymbol(item.icon)}</span>
+                      <span>
+                        <b>{item.name}</b>
+                        <small>{formatCoordOperational(Number(item.latitude), true)} · {formatCoordOperational(Number(item.longitude), false)}</small>
+                      </span>
+                    </button>
+                    <button type="button" className="ais-v144-waypoint-delete" onClick={() => void deleteWaypoint(item.id)} title="Excluir waypoint"><Trash2 /></button>
+                  </article>
+                )) : <p>Nenhum waypoint salvo.</p>}
+              </div>
+            )}
 
             {mobilePanel === "history" && <div className="ais-v70-mobile-list history">{historyItems.length ? <><button type="button" className="danger" onClick={clearAisHistory}><Trash2 /> Limpar histórico</button>{historyItems.slice(0, 10).map((item) => {
               const historyVessel = historyItemToVessel(item);

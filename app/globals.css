@@ -3908,3 +3908,98 @@ main.loginpage{
   .ais-v143-measure-badge small{font-size:5.5px}
   .ais-v141-point-card{bottom:72px!important}
 }
+
+
+/* V144 — pasta Waypoints + régua livre no mapa */
+.ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+}
+.ais-v119-page .ais-v119-dock button.waypoints.active{
+  background:#16302f!important;
+  color:#8cf0d7!important;
+  border-color:#3b8070!important;
+}
+.ais-v144-waypoint-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 30px;
+  gap:5px;
+  align-items:center;
+  border:1px solid #284c53;
+  border-radius:8px;
+  background:#071d23;
+  overflow:hidden;
+}
+.ais-v144-waypoint-main{
+  min-width:0;
+  min-height:42px;
+  padding:5px 7px;
+  border:0;
+  background:transparent;
+  color:#effffb;
+  display:grid;
+  grid-template-columns:24px minmax(0,1fr);
+  align-items:center;
+  gap:6px;
+  text-align:left;
+  cursor:pointer;
+}
+.ais-v144-waypoint-symbol{
+  width:24px;
+  height:24px;
+  display:grid;
+  place-items:center;
+  font-size:16px;
+  font-weight:950;
+  text-shadow:0 1px 3px #001118;
+}
+.ais-v144-waypoint-main>span:last-child{
+  display:grid;
+  min-width:0;
+  gap:1px;
+}
+.ais-v144-waypoint-main b{
+  font-size:8px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.ais-v144-waypoint-main small{
+  font:800 6px ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#83a6ac;
+  white-space:nowrap;
+}
+.ais-v144-waypoint-delete{
+  width:28px;
+  height:28px;
+  border:1px solid #634047;
+  border-radius:7px;
+  background:#321c22;
+  color:#e8929a;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.ais-v144-waypoint-delete svg{width:12px;height:12px}
+.ais-v143-measure-badge{
+  min-width:138px!important;
+  max-width:170px!important;
+}
+@media(max-width:760px){
+  .ais-v119-page .ais-v70-mobile-dock.ais-v119-dock{
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  }
+  .ais-v119-page .ais-v119-dock button{
+    font-size:6.2px!important;
+  }
+  .ais-v119-page .ais-v119-dock button svg{
+    width:14px!important;
+    height:14px!important;
+  }
+  .ais-v143-measure-badge{
+    left:50%!important;
+    bottom:120px!important;
+    min-width:122px!important;
+    max-width:148px!important;
+    height:32px!important;
+  }
+}
