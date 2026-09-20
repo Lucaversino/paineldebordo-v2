@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v158-ais-performance";
+const CACHE = "painel-bordo-v160-mobile-ais-cleanup";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
