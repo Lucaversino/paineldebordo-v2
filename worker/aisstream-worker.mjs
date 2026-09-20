@@ -79,6 +79,7 @@ const state = {
 };
 
 const staticByMmsi = new Map();
+const seenMmsi = new Set();
 const pendingPositions = new Map();
 const pendingStatic = new Map();
 let socket = null;
@@ -276,8 +277,6 @@ async function flush() {
     });
 
     state.lastPersistAt = new Date();
-    const [{ count }] = await sql`select count(*)::int as count from public.ais_live_vessels`;
-    state.vesselCount = Number(count || 0);
   } catch (error) {
     for (const row of positions) pendingPositions.set(row.mmsi, row);
     for (const item of staticUpdates) pendingStatic.set(item.mmsi, item);
@@ -383,6 +382,8 @@ function connect() {
 
     const position = parsePosition(event);
     if (position) {
+      seenMmsi.add(position.mmsi);
+      state.vesselCount = seenMmsi.size;
       pendingPositions.set(position.mmsi, position);
     }
   });
