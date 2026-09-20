@@ -4879,3 +4879,16 @@ main.loginpage{
   .ais-v154-waypoint-telemetry .ais-v150-nav-grid small{font-size:4.3px!important}
   .ais-v154-waypoint-telemetry .ais-v150-nav-grid em{font-size:4.3px!important}
 }
+
+
+/* V155 — subir levemente o card de waypoint no mobile para não ficar atrás do botão NAVEGAR */
+@media(max-width:780px){
+  .ais-v143-waypoint-panel{
+    bottom:178px!important;
+  }
+}
+@media(max-width:430px){
+  .ais-v143-waypoint-panel{
+    bottom:174px!important;
+  }
+}
