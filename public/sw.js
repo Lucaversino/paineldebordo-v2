@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v163-smaller-vessel-card";
+const CACHE = "painel-bordo-v164-card-final";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
