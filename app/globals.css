@@ -5033,3 +5033,61 @@ main.loginpage{
     bottom: calc(226px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+
+/* V164 — correção definitiva do card AIS no celular */
+@media (max-width: 760px) {
+  .ais-v119-page .ais-v95-map-card.ais-v119-map-card {
+    left: auto !important;
+    right: 14px !important;
+    top: auto !important;
+    bottom: calc(270px + env(safe-area-inset-bottom, 0px)) !important;
+    width: 148px !important;
+    max-width: calc(100vw - 110px) !important;
+    padding: 5px !important;
+    gap: 3px !important;
+    border-radius: 8px !important;
+    z-index: 145 !important;
+  }
+  .ais-v119-page .ais-v95-map-card-head { gap: 4px !important; }
+  .ais-v119-page .ais-v95-map-card-head b {
+    font-size: 7.5px !important;
+    line-height: 1 !important;
+  }
+  .ais-v119-page .ais-v95-map-card-head small {
+    font-size: 4.5px !important;
+    line-height: 1 !important;
+  }
+  .ais-v119-page .ais-v95-map-card-head button {
+    width: 17px !important;
+    height: 17px !important;
+    min-width: 17px !important;
+    font-size: 11px !important;
+  }
+  .ais-v119-page .ais-v95-map-position {
+    padding: 3px 4px !important;
+  }
+  .ais-v119-page .ais-v95-map-position > span { font-size: 4.5px !important; }
+  .ais-v119-page .ais-v95-map-position > strong {
+    font-size: 9.5px !important;
+    line-height: 1 !important;
+  }
+  .ais-v119-page .ais-v95-map-time,
+  .ais-v119-page .ais-v95-map-mini { gap: 2px !important; }
+  .ais-v119-page .ais-v95-map-time > span,
+  .ais-v119-page .ais-v95-map-mini > span {
+    padding: 3px !important;
+  }
+  .ais-v119-page .ais-v95-map-time small,
+  .ais-v119-page .ais-v95-map-mini small { font-size: 4.2px !important; }
+  .ais-v119-page .ais-v95-map-time b,
+  .ais-v119-page .ais-v95-map-mini b { font-size: 6.5px !important; }
+}
+@media (max-width: 430px) {
+  .ais-v119-page .ais-v95-map-card.ais-v119-map-card {
+    left: auto !important;
+    right: 12px !important;
+    width: 142px !important;
+    bottom: calc(266px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
