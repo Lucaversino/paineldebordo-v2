@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v166-aisstream-primary";
+const CACHE = "painel-bordo-v168-route-panel-compact";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
