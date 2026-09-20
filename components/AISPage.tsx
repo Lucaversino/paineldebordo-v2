@@ -1844,16 +1844,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
 
     try {
-      let response = await aisFetch(
-        `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
-      );
+      // V166: AIS FREE usa primeiro o cache AISStream alimentado pelo worker Railway.
+      // O próprio /api/ais-map cuida dos fallbacks gratuitos sem alterar o fluxo Premium.
+      let response = isFree
+        ? await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}&refresh=${forceFreeRefresh ? "1" : "0"}`)
+        : await aisFetch(
+            `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
+          );
       let data: any = await response.json().catch(() => ({}));
-
-      if (!response.ok && isFree) {
-        setStatusMessage("AIS Free por área indisponível. Usando a camada gratuita do mapa...");
-        response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}&refresh=${forceFreeRefresh ? "1" : "0"}`);
-        data = await response.json().catch(() => ({}));
-      }
 
       if (!response.ok) {
         setStatus(response.status === 503 ? "config" : "error");
@@ -2796,8 +2794,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   useEffect(() => {
     const refreshFreeSources = () => {
+      // V166: uma única rota FREE. AISStream é principal e os demais provedores
+      // são fallbacks no servidor; evita chamadas paralelas que causavam HTTP 429.
       void loadFreeMapLayer(true);
-      void loadMarinesiaFreeLayerSilently();
     };
     const warmup = window.setTimeout(refreshFreeSources, 1200);
     const timer = window.setInterval(refreshFreeSources, 60_000);

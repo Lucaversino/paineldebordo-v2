@@ -511,6 +511,20 @@ async function loadSnapshot(lat: number, lon: number, zoom = 10): Promise<CacheV
     }
   }
 
+  // Último fallback FREE: Marinesia. Só é chamada quando AISStream,
+  // VesselAPI Free e Kpler não entregarem barcos, evitando o 429 visto no painel.
+  if (vessels.length === 0) {
+    try {
+      const marinesia = await fetchMarinesiaMap(lat, lon);
+      if (marinesia.length) {
+        vessels = marinesia;
+        source = "Marinesia AIS";
+      }
+    } catch {
+      // Mantém retorno vazio; o mapa continua operacional e tenta novamente no próximo ciclo.
+    }
+  }
+
   const now = Date.now();
   return {
     vessels,
