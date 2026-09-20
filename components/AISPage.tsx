@@ -1048,7 +1048,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const assigned = feature.getStyle();
         if (assigned instanceof Style) {
           const image = assigned.getImage();
-          if (image instanceof IconStyle) {
+          if (image instanceof IconStyle || image instanceof RegularShape) {
             image.setRotation((nextHeading * Math.PI) / 180);
             feature.set("_aisHeading", nextHeading, true);
             feature.changed();
