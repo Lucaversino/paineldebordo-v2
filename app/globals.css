@@ -3767,45 +3767,51 @@ main.loginpage{
 }
 
 
-/* V141 — ponto do mapa + profundidade */
+/* V142 — ponto compacto no mapa */
 .ais-v141-point-card{
   position:absolute;
   z-index:74;
   left:68px;
-  top:112px;
-  width:205px;
-  padding:9px;
+  top:auto;
+  bottom:76px;
+  width:158px;
+  padding:6px;
   border:1px solid #2d645c;
-  border-radius:11px;
-  background:#061b21ee;
-  box-shadow:0 10px 28px #00111870;
-  backdrop-filter:blur(12px);
+  border-radius:9px;
+  background:#061b21e8;
+  box-shadow:0 8px 22px #00111866;
+  backdrop-filter:blur(10px);
   display:grid;
-  gap:7px;
+  gap:5px;
   pointer-events:auto;
 }
-.ais-v141-point-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.ais-v141-point-head>span{display:flex;align-items:center;gap:6px;color:#76e8cf}
-.ais-v141-point-head svg{width:14px;height:14px}
-.ais-v141-point-head b{font-size:8px;letter-spacing:.08em}
-.ais-v141-point-head button{width:24px;height:24px;border:1px solid #31545d;border-radius:7px;background:#0a252c;color:#9fc0c4;font-size:16px;line-height:1;cursor:pointer}
-.ais-v141-point-coords{display:grid;gap:5px}
-.ais-v141-point-coords>span{display:grid;gap:1px;padding:6px 7px;border:1px solid #21464e;border-radius:7px;background:#06171d}
-.ais-v141-point-coords small,.ais-v141-depth small{font-size:6px;font-weight:900;letter-spacing:.08em;color:#6f969d}
-.ais-v141-point-coords strong{font:900 13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#effffb}
-.ais-v141-depth{display:grid;gap:2px;padding:7px;border:1px solid #2d5f58;border-radius:8px;background:#0b2b29}
-.ais-v141-depth b{font-size:18px;line-height:1.05;color:#71e1c5}
-.ais-v141-depth em{font-style:normal;font-size:6px;color:#648b93}
-.ais-v141-depth.loading b{font-size:10px;color:#9abcc0}
-.ais-v141-depth.unavailable{border-color:#5b4b2d;background:#2b2414}
-.ais-v141-depth.unavailable b{font-size:10px;color:#d8bd78}
-.ais-v141-depth.land b{font-size:11px;color:#b6d7cf}
+.ais-v141-point-head{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.ais-v141-point-head>span{display:flex;align-items:center;gap:4px;color:#76e8cf}
+.ais-v141-point-head svg{width:11px;height:11px}
+.ais-v141-point-head b{font-size:6.5px;letter-spacing:.06em}
+.ais-v141-point-head button{
+  width:19px;height:19px;border:1px solid #31545d;border-radius:6px;
+  background:#0a252c;color:#9fc0c4;font-size:13px;line-height:1;cursor:pointer
+}
+.ais-v141-point-coords{display:grid;gap:4px}
+.ais-v141-point-coords>span{
+  display:grid;gap:0;padding:4px 5px;border:1px solid #21464e;
+  border-radius:6px;background:#06171d
+}
+.ais-v141-point-coords small{
+  font-size:5px;font-weight:900;letter-spacing:.07em;color:#6f969d
+}
+.ais-v141-point-coords strong{
+  font:900 10.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:#effffb
+}
 @media(max-width:760px){
   .ais-v141-point-card{
-    left:64px;
-    top:104px;
-    width:min(205px,calc(100vw - 82px));
-    padding:8px;
+    left:8px;
+    top:auto;
+    bottom:72px;
+    width:148px;
+    padding:6px;
   }
-  .ais-v141-point-coords strong{font-size:12px}
+  .ais-v141-point-coords strong{font-size:10px}
 }
+

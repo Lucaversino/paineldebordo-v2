@@ -465,13 +465,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
-  const [mapProbe, setMapProbe] = useState<{
-    lat: number;
-    lon: number;
-    depthMeters: number | null;
-    depthStatus: "loading" | "ready" | "land" | "unavailable";
-  } | null>(null);
-  const probeRequestRef = useRef(0);
+  const [mapProbe, setMapProbe] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
     document.body.classList.add("ais-mobile-active");
@@ -801,60 +795,28 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     upsertMapVessels(dedupeVessels(vessels));
   }
 
-  async function inspectMapPoint(lat: number, lon: number) {
-    const seq = ++probeRequestRef.current;
+  function inspectMapPoint(lat: number, lon: number) {
     const source = probeSourceRef.current;
     source?.clear();
 
     const marker = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
     marker.setStyle(new Style({
       image: new CircleStyle({
-        radius: 6,
+        radius: 5,
         fill: new Fill({ color: "#2bd4aa" }),
         stroke: new Stroke({ color: "#ffffff", width: 2 }),
       }),
     }));
     source?.addFeature(marker);
 
-    // V141: ao escolher um novo ponto, o círculo antigo some.
-    // O círculo de 50 km só é desenhado quando a busca de área é realmente executada.
+    // V142: ponto simples. Sem metragem/profundidade.
+    // O círculo de 50 km continua aparecendo somente durante uma busca de área.
     areaSourceRef.current?.clear();
     setAreaCenter({ lat, lon });
-    setMapProbe({ lat, lon, depthMeters: null, depthStatus: "loading" });
-
-    try {
-      const response = await fetch(
-        `/api/bathymetry?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
-        { cache: "no-store", signal: AbortSignal.timeout(8000) },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (seq !== probeRequestRef.current) return;
-
-      if (!response.ok || !Number.isFinite(Number(data?.elevationMeters))) {
-        setMapProbe({ lat, lon, depthMeters: null, depthStatus: "unavailable" });
-        return;
-      }
-
-      const elevation = Number(data.elevationMeters);
-      if (elevation >= 0) {
-        setMapProbe({ lat, lon, depthMeters: 0, depthStatus: "land" });
-      } else {
-        setMapProbe({
-          lat,
-          lon,
-          depthMeters: Math.round(Math.abs(elevation)),
-          depthStatus: "ready",
-        });
-      }
-    } catch {
-      if (seq === probeRequestRef.current) {
-        setMapProbe({ lat, lon, depthMeters: null, depthStatus: "unavailable" });
-      }
-    }
+    setMapProbe({ lat, lon });
   }
 
   function clearMapProbe() {
-    probeRequestRef.current += 1;
     probeSourceRef.current?.clear();
     setMapProbe(null);
   }
@@ -863,7 +825,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = mapRef.current;
     if (!map) return;
     const [lon, lat] = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
-    void inspectMapPoint(lat, lon);
+    inspectMapPoint(lat, lon);
     setStatusMessage(`Centro da área definido · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
   }
 
@@ -879,7 +841,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setAreaCenter(coords);
     areaSourceRef.current?.clear();
     centerOn(lat, lon, 8);
-    void inspectMapPoint(lat, lon);
+    inspectMapPoint(lat, lon);
     setStatusMessage(`Centro manual definido · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
     if (closeMobilePanel) setMobilePanel(null);
   }
@@ -1548,7 +1510,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         if (useAsArea) {
           setAreaCenter(coords);
           areaSourceRef.current?.clear();
-          void inspectMapPoint(coords.lat, coords.lon);
+          inspectMapPoint(coords.lat, coords.lon);
           setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordOperational(coords.lat, true)} · ${formatCoordOperational(coords.lon, false)}`);
         } else {
           setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
@@ -1690,7 +1652,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       trackedRef.current = null;
       setTracked(null);
       setCardAnchor(null);
-      void inspectMapPoint(lat, lon);
+      inspectMapPoint(lat, lon);
       setStatusMessage(`Ponto marcado · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
     };
     map.on("singleclick", selectMapFeature);
@@ -2150,19 +2112,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <div className="ais-v141-point-coords">
               <span><small>LATITUDE</small><strong>{formatCoordOperational(mapProbe.lat, true)}</strong></span>
               <span><small>LONGITUDE</small><strong>{formatCoordOperational(mapProbe.lon, false)}</strong></span>
-            </div>
-            <div className={`ais-v141-depth ${mapProbe.depthStatus}`}>
-              <small>METRAGEM / PROFUNDIDADE</small>
-              <b>
-                {mapProbe.depthStatus === "loading"
-                  ? "calculando..."
-                  : mapProbe.depthStatus === "ready"
-                    ? `~ ${mapProbe.depthMeters} m`
-                    : mapProbe.depthStatus === "land"
-                      ? "terra / 0 m"
-                      : "indisponível"}
-              </b>
-              <em>estimativa batimétrica</em>
             </div>
           </div>
         )}
