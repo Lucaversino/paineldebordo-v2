@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import WebSocket from "ws";
+import { sql } from "drizzle-orm";
+import { getDb } from "../../../db";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
@@ -563,13 +565,74 @@ async function fetchMarinesiaMap(lat: number, lon: number): Promise<MapVessel[]>
   }
 }
 
+async function fetchAisStreamCache(lat: number, lon: number, zoom = 10): Promise<MapVessel[]> {
+  const box = queryBox(lat, lon, zoom);
+  const maxAgeMinutes = Math.max(5, Number(process.env.AIS_LIVE_MAX_AGE_MINUTES || 45) || 45);
+
+  try {
+    const db = getDb();
+    const result = await db.execute(sql`
+      select
+        mmsi, imo, name, lat, lon, sog, cog, heading,
+        vessel_type, nav_status_text, position_received, last_seen_at
+      from public.ais_live_vessels
+      where lat between ${box.south} and ${box.north}
+        and lon between ${box.west} and ${box.east}
+        and last_seen_at >= now() - make_interval(mins => ${maxAgeMinutes})
+      order by last_seen_at desc
+      limit ${MAX_VESSELS}
+    `);
+
+    const rows = Array.isArray(result) ? result as any[] : [];
+    return rows.map((row) => {
+      const rawStamp = row.position_received || row.last_seen_at || new Date();
+      const stampDate = rawStamp instanceof Date ? rawStamp : new Date(rawStamp);
+      const stamp = Number.isNaN(stampDate.getTime()) ? new Date().toISOString() : stampDate.toISOString();
+      return {
+        mmsi: cleanText(row.mmsi).replace(/\D/g, ""),
+        imo: cleanText(row.imo).replace(/\D/g, ""),
+        name: cleanText(row.name) || `MMSI ${cleanText(row.mmsi)}`,
+        lat: Number(row.lat),
+        lon: Number(row.lon),
+        sog: numberOrNull(row.sog),
+        cog: numberOrNull(row.cog),
+        heading: numberOrNull(row.heading),
+        vesselType: cleanText(row.vessel_type),
+        navStatusText: cleanText(row.nav_status_text),
+        positionReceived: stamp,
+        updateTime: stamp,
+        dataSource: "AISStream" as const,
+        receivedAt: stampDate.getTime(),
+      };
+    }).filter(validVessel);
+  } catch (error) {
+    console.warn("[AISStream cache] indisponível:", error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
 async function loadSnapshot(lat: number, lon: number, zoom = 10): Promise<CacheValue> {
   let vessels: MapVessel[] = [];
   let source: CacheValue["source"] = "Nenhuma";
   let fallbackUsed = true;
 
-  // AISStream foi retirado da camada automática. APRS.fi é usado apenas
-  // na busca manual por alvo específico; ele não oferece busca por bounding box.
+  // Fonte principal: cache persistente abastecido por um único worker AISStream.
+  // A Vercel não abre WebSocket com o provedor; apenas lê a última posição por MMSI.
+  vessels = await fetchAisStreamCache(lat, lon, zoom);
+  if (vessels.length) {
+    const now = Date.now();
+    return {
+      vessels,
+      source: "AISStream",
+      fallbackUsed: false,
+      updatedAt: now,
+      expiresAt: now + FRESH_TTL_MS,
+      staleUntil: now + STALE_TTL_MS,
+    };
+  }
+
+  // Fallbacks gratuitos antigos permanecem intactos para não deixar o mapa vazio
+  // durante deploy/reconexão do worker.
   let vesselApiAvailable = false;
   try {
     vessels = await fetchVesselApi(lat, lon, zoom);
