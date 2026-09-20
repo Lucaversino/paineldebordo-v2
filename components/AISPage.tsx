@@ -360,11 +360,25 @@ function orientationLabel(mode: MapOrientationMode) {
   return "NORTE UP";
 }
 
-const NAV_BOAT_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 31 28 20 24 9 28Z" fill="#44d7ff" stroke="#ffffff" stroke-width="2"/><path d="M12 29h16l-4 6h-8Z" fill="#0a5368" stroke="#ffffff" stroke-width="1.5"/></svg>'
-)}`;
+const NAV_BOAT_SRC = "/icons/boat-top.png";
 
-function gpsPositionStyle(navigating: boolean, headingDegrees = 0) {
+function navBoatFallbackStyle(headingDegrees = 0) {
+  const rotation = (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180;
+  return new Style({
+    image: new RegularShape({
+      points: 3,
+      radius: 14,
+      angle: 0,
+      rotation,
+      rotateWithView: true,
+      fill: new Fill({ color: "#44d7ff" }),
+      stroke: new Stroke({ color: "#ffffff", width: 2.2 }),
+    }),
+    zIndex: 80,
+  });
+}
+
+function gpsPositionStyle(navigating: boolean, headingDegrees = 0, imageReady = true) {
   if (!navigating) {
     return new Style({
       image: new CircleStyle({
@@ -372,16 +386,23 @@ function gpsPositionStyle(navigating: boolean, headingDegrees = 0) {
         fill: new Fill({ color: "#2a92ff" }),
         stroke: new Stroke({ color: "#ffffff", width: 3 }),
       }),
+      zIndex: 80,
     });
   }
+
+  if (!imageReady) return navBoatFallbackStyle(headingDegrees);
+
   return new Style({
     image: new IconStyle({
-      src: NAV_BOAT_SVG,
+      src: NAV_BOAT_SRC,
       anchor: [0.5, 0.5],
-      scale: 0.9,
+      anchorXUnits: "fraction",
+      anchorYUnits: "fraction",
+      scale: 0.028,
       rotation: (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180,
-      rotateWithView: false,
+      rotateWithView: true,
     }),
+    zIndex: 80,
   });
 }
 
@@ -557,6 +578,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const navigationTargetRef = useRef<MapWaypoint | null>(null);
   const smoothedSpeedRef = useRef<number | null>(null);
   const gpsPreviousRef = useRef<{ lat: number; lon: number; at: number } | null>(null);
+  const stableGpsHeadingRef = useRef<number | null>(null);
+  const gpsFeatureRef = useRef<Feature | null>(null);
+  const gpsAnimationFrameRef = useRef<number | null>(null);
+  const navBoatImageReadyRef = useRef(true);
   const gpsCenteredRef = useRef(false);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
@@ -643,6 +668,35 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     navigationTargetRef.current = navigationTarget;
   }, [navigationTarget]);
+
+  useEffect(() => {
+    const image = new Image();
+    let active = true;
+
+    const refreshOwnVesselStyle = (ready: boolean) => {
+      if (!active) return;
+      navBoatImageReadyRef.current = ready;
+      const feature = gpsFeatureRef.current;
+      if (!feature) return;
+      feature.setStyle(
+        gpsPositionStyle(
+          Boolean(navigationTargetRef.current),
+          stableGpsHeadingRef.current ?? 0,
+          navBoatImageReadyRef.current,
+        ),
+      );
+    };
+
+    image.onload = () => refreshOwnVesselStyle(true);
+    image.onerror = () => refreshOwnVesselStyle(false);
+    image.src = NAV_BOAT_SRC;
+
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, []);
 
   useEffect(() => {
     // V138: remove apenas caches/configurações antigas do AIS. Dados de usuário ficam no servidor.
@@ -1179,14 +1233,67 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function drawGpsPositionMarker(coords: { lat: number; lon: number }, headingDegrees?: number | null) {
     const source = positionSourceRef.current;
-    source?.clear();
-    const feature = new Feature({ geometry: new Point(fromLonLat([coords.lon, coords.lat])) });
-    feature.setStyle(gpsPositionStyle(Boolean(navigationTargetRef.current), Number(headingDegrees || 0)));
-    source?.addFeature(feature);
+    if (!source) return;
+
+    const target = fromLonLat([coords.lon, coords.lat]);
+    const resolvedHeading = Number.isFinite(Number(headingDegrees))
+      ? Number(headingDegrees)
+      : (stableGpsHeadingRef.current ?? 0);
+
+    let feature = gpsFeatureRef.current;
+    if (!feature || !source.getFeatures().includes(feature)) {
+      source.clear();
+      feature = new Feature({ geometry: new Point(target) });
+      gpsFeatureRef.current = feature;
+      source.addFeature(feature);
+    }
+
+    feature.setStyle(
+      gpsPositionStyle(
+        Boolean(navigationTargetRef.current),
+        resolvedHeading,
+        navBoatImageReadyRef.current,
+      ),
+    );
+
+    const geometry = feature.getGeometry();
+    if (!(geometry instanceof Point)) return;
+
+    const current = geometry.getCoordinates();
+    if (gpsAnimationFrameRef.current != null) {
+      window.cancelAnimationFrame(gpsAnimationFrameRef.current);
+      gpsAnimationFrameRef.current = null;
+    }
+
+    const jumpMeters = Math.hypot(target[0] - current[0], target[1] - current[1]);
+    if (!Number.isFinite(jumpMeters) || jumpMeters > 1500 || jumpMeters < 0.2) {
+      geometry.setCoordinates(target);
+      return;
+    }
+
+    const startedAt = performance.now();
+    const durationMs = 650;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      geometry.setCoordinates([
+        current[0] + (target[0] - current[0]) * eased,
+        current[1] + (target[1] - current[1]) * eased,
+      ]);
+
+      if (progress < 1) {
+        gpsAnimationFrameRef.current = window.requestAnimationFrame(animate);
+      } else {
+        gpsAnimationFrameRef.current = null;
+      }
+    };
+
+    gpsAnimationFrameRef.current = window.requestAnimationFrame(animate);
   }
 
   function stopWaypointNavigation() {
     navigationSourceRef.current?.clear();
+    navigationTargetRef.current = null;
     navigationStartRef.current = null;
     navigationTrailRef.current = [];
     smoothedSpeedRef.current = null;
@@ -1979,14 +2086,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       (position) => {
         const coords = { lat: position.coords.latitude, lon: position.coords.longitude };
         const useAsArea = forArea || searchModeRef.current === "area";
+        const nativeHeading = Number(position.coords.heading);
+        const resolvedHeading = Number.isFinite(nativeHeading) && nativeHeading >= 0 && nativeHeading < 360
+          ? nativeHeading
+          : stableGpsHeadingRef.current;
+
+        if (resolvedHeading != null && Number.isFinite(resolvedHeading)) {
+          stableGpsHeadingRef.current = resolvedHeading;
+          setGpsHeadingDegrees(resolvedHeading);
+        }
+
         setDevicePosition(coords);
-        centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, !useAsArea);
+        centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, false);
         if (useAsArea) {
           setAreaCenter(coords);
           areaSourceRef.current?.clear();
           inspectMapPoint(coords.lat, coords.lon);
           setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordOperational(coords.lat, true)} · ${formatCoordOperational(coords.lon, false)}`);
         } else {
+          drawGpsPositionMarker(coords, resolvedHeading);
           setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
         }
       },
@@ -2060,7 +2178,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     areaLayer.setZIndex(10);
     freeVesselLayer.setZIndex(20);
     vesselLayer.setZIndex(30);
-    positionLayer.setZIndex(40);
+    positionLayer.setZIndex(70);
     probeLayer.setZIndex(45);
     measureLayer.setZIndex(48);
     navigationLayer.setZIndex(49);
@@ -2178,6 +2296,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       areaTranslate.un("translateend", handleAreaTranslateEnd);
       map.removeInteraction(areaTranslate);
       if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
+      if (gpsAnimationFrameRef.current != null) window.cancelAnimationFrame(gpsAnimationFrameRef.current);
+      gpsAnimationFrameRef.current = null;
+      gpsFeatureRef.current = null;
       map.setTarget(undefined);
       mapRef.current = null;
     };
@@ -2313,9 +2434,25 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         const sampleAt = Number(position.timestamp) || Date.now();
         const nativeSpeed = Number(position.coords.speed);
         const nativeHeading = Number(position.coords.heading);
-        if (Number.isFinite(nativeHeading) && nativeHeading >= 0) setGpsHeadingDegrees(nativeHeading);
-        let rawKnots = Number.isFinite(nativeSpeed) && nativeSpeed >= 0 ? nativeSpeed * 1.943844492 : null;
         const previous = gpsPreviousRef.current;
+        const movedKm = previous ? haversineKm(previous, coords) : 0;
+        const movingBySpeed = Number.isFinite(nativeSpeed) && nativeSpeed >= 0.35;
+        const movingByPosition = Boolean(previous) && movedKm >= 0.004;
+        const validNativeHeading = Number.isFinite(nativeHeading) && nativeHeading >= 0 && nativeHeading < 360;
+        let resolvedHeading = stableGpsHeadingRef.current;
+
+        if ((movingBySpeed || movingByPosition) && validNativeHeading) {
+          resolvedHeading = nativeHeading;
+        } else if (movingByPosition && previous) {
+          resolvedHeading = bearingDegrees(previous, coords);
+        }
+
+        if (resolvedHeading != null && Number.isFinite(resolvedHeading)) {
+          stableGpsHeadingRef.current = resolvedHeading;
+          setGpsHeadingDegrees(resolvedHeading);
+        }
+
+        let rawKnots = Number.isFinite(nativeSpeed) && nativeSpeed >= 0 ? nativeSpeed * 1.943844492 : null;
         if (rawKnots == null && previous && sampleAt > previous.at) {
           const hours = (sampleAt - previous.at) / 3_600_000;
           if (hours > 0) rawKnots = (haversineKm(previous, coords) / 1.852) / hours;
@@ -2323,7 +2460,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         gpsPreviousRef.current = { ...coords, at: sampleAt };
         if (rawKnots != null && Number.isFinite(rawKnots) && rawKnots < 120) setGpsRawSpeedKnots(rawKnots);
         setDevicePosition(coords);
-        drawGpsPositionMarker(coords, Number.isFinite(nativeHeading) ? nativeHeading : gpsHeadingDegrees);
+        drawGpsPositionMarker(coords, resolvedHeading);
         if (!gpsCenteredRef.current) {
           gpsCenteredRef.current = true;
           setAreaCenter(coords);
