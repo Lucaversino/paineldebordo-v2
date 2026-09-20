@@ -353,6 +353,45 @@ function bearingDegrees(a: { lat: number; lon: number }, b: { lat: number; lon: 
   return (rad * 180 / Math.PI + 360) % 360;
 }
 
+function destinationPointNm(origin: { lat: number; lon: number }, bearingDeg: number, distanceNm: number) {
+  const radiusNm = 3440.065;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const toDeg = (value: number) => value * 180 / Math.PI;
+  const angularDistance = Math.max(0, distanceNm) / radiusNm;
+  const bearing = toRad((bearingDeg + 360) % 360);
+  const lat1 = toRad(origin.lat);
+  const lon1 = toRad(origin.lon);
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance)
+      + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing),
+  );
+  const lon2 = lon1 + Math.atan2(
+    Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+    Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
+  );
+  const normalizedLon = ((toDeg(lon2) + 540) % 360) - 180;
+  return { lat: toDeg(lat2), lon: normalizedLon };
+}
+
+function routeCorridorEdges(
+  start: { lat: number; lon: number },
+  end: { lat: number; lon: number },
+  offsetNm: number,
+) {
+  const startCourse = bearingDegrees(start, end);
+  const endCourse = (bearingDegrees(end, start) + 180) % 360;
+  return {
+    port: [
+      destinationPointNm(start, startCourse - 90, offsetNm),
+      destinationPointNm(end, endCourse - 90, offsetNm),
+    ],
+    starboard: [
+      destinationPointNm(start, startCourse + 90, offsetNm),
+      destinationPointNm(end, endCourse + 90, offsetNm),
+    ],
+  };
+}
+
 function orientationLabel(mode: MapOrientationMode) {
   if (mode === "heading") return "PROA UP";
   if (mode === "course") return "RUMO UP";
@@ -398,7 +437,9 @@ function gpsPositionStyle(navigating: boolean, headingDegrees = 0, imageReady = 
       anchor: [0.5, 0.5],
       anchorXUnits: "fraction",
       anchorYUnits: "fraction",
-      scale: 0.028,
+      offset: [443, 130],
+      size: [368, 976],
+      scale: [0.058, 0.034],
       rotation: (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180,
       rotateWithView: true,
     }),
@@ -2521,9 +2562,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         ]),
       });
       planned.setStyle(new Style({
-        stroke: new Stroke({ color: "rgba(86,170,255,.55)", width: 1.5, lineDash: [7, 7] }),
+        stroke: new Stroke({ color: "rgba(86,170,255,.52)", width: 1.4, lineDash: [8, 8] }),
+        zIndex: 47,
       }));
       source.addFeature(planned);
+
+      const corridor = routeCorridorEdges(start, destination, xteLimitNm);
+      const corridorLines = [
+        { points: corridor.port, color: "rgba(255,91,107,.88)" },
+        { points: corridor.starboard, color: "rgba(55,230,171,.88)" },
+      ];
+      corridorLines.forEach(({ points, color }) => {
+        const edge = new Feature({
+          geometry: new LineString(points.map((point) => fromLonLat([point.lon, point.lat]))),
+        });
+        edge.setStyle(new Style({
+          stroke: new Stroke({ color, width: 2, lineDash: [10, 8] }),
+          zIndex: 48,
+        }));
+        source.addFeature(edge);
+      });
     }
 
     if (trail.length >= 2) {
@@ -2546,7 +2604,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       stroke: new Stroke({ color: "#ffd05b", width: 3 }),
     }));
     source.addFeature(activeLeg);
-  }, [navigationTarget, devicePosition, gpsRawSpeedKnots, speedDampingPct]);
+  }, [navigationTarget, devicePosition, gpsRawSpeedKnots, speedDampingPct, xteLimitNm]);
 
   useEffect(() => {
     const view = mapRef.current?.getView();
@@ -2978,24 +3036,38 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span>DAMPING VELOCIDADE <b>{speedDampingPct}%</b></span>
               <input type="range" min="0" max="90" step="5" value={speedDampingPct} onChange={(e) => setSpeedDampingPct(Number(e.target.value))} />
             </label>
-            <small>XTE padrão: 0,25 MN. Maior damping = velocidade mais estável.</small>
+            <small>XTE padrão: 0,25 MN ≈ 470 m para cada bordo. As linhas pontilhadas mostram bombordo e boreste.</small>
           </div>
         )}
 
         {navigationTarget && (
-          <div className={`ais-v146-nav-card ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
-            <div className="ais-v146-nav-head">
-              <span><Ship /><b>IR PARA · {navigationTarget.name}</b></span>
-              <button type="button" onClick={stopWaypointNavigation}>×</button>
+          <div className={`ais-v146-nav-card ais-v150-telemetry ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
+            <div className="ais-v150-nav-head">
+              <span className="ais-v150-destination">
+                <Ship />
+                <span><small>NAVEGAÇÃO ATIVA</small><b>{navigationTarget.name}</b></span>
+              </span>
+              <em>{orientationLabel(mapOrientationMode)}</em>
+              <button type="button" onClick={stopWaypointNavigation} aria-label="Fechar navegação">×</button>
             </div>
-            <div className="ais-v146-nav-grid">
-              <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? `${navigationSpeedKnots.toFixed(1)} MN/h` : "—"}</b></span>
-              <span><small>DISTÂNCIA</small><b>{navigationDistanceNm != null ? `${navigationDistanceNm.toFixed(2)} MN` : "—"}</b></span>
-              <span><small>ETA</small><b>{formatEtaMinutes(navigationEtaMinutes)}</b></span>
-              <span><small>XTE</small><b>{navigationXteNm != null ? `${Math.abs(navigationXteNm).toFixed(2)} MN` : "—"}</b></span>
+            <div className="ais-v150-nav-grid">
+              <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? navigationSpeedKnots.toFixed(1) : "—"}</b><em>MN/h</em></span>
+              <span><small>DISTÂNCIA</small><b>{navigationDistanceNm != null ? navigationDistanceNm.toFixed(2) : "—"}</b><em>MN</em></span>
+              <span><small>ETA</small><b>{formatEtaMinutes(navigationEtaMinutes)}</b><em>TEMPO</em></span>
+              <span className={navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "alert" : ""}>
+                <small>XTE</small><b>{navigationXteNm != null ? Math.abs(navigationXteNm).toFixed(2) : "—"}</b><em>MN</em>
+              </span>
             </div>
-            <div className="ais-v146-nav-footer">
-              <span>{navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "FORA DO XTE" : `XTE OK · limite ${xteLimitNm.toFixed(2)} MN`}</span>
+            <div className="ais-v150-nav-footer">
+              <span className="ais-v150-corridor">
+                <i className="port" />
+                <b>± {xteLimitNm.toFixed(2)} MN</b>
+                <small>≈ {Math.ceil((xteLimitNm * 1852) / 10) * 10} m · BOMBORDO / BORESTE</small>
+                <i className="starboard" />
+              </span>
+              <span className={navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "ais-v150-status alert" : "ais-v150-status"}>
+                {navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "FORA DO CORREDOR" : "DENTRO DO CORREDOR"}
+              </span>
               <button type="button" onClick={stopWaypointNavigation}>PARAR</button>
             </div>
           </div>
