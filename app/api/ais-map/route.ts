@@ -22,6 +22,7 @@ type MapVessel = {
   updateTime: string;
   dataSource: "AISStream" | "VesselAPI Free" | "Kpler Maritime" | "Marinesia AIS";
   receivedAt: number;
+  stale?: boolean;
 };
 
 type CacheValue = {
@@ -407,22 +408,38 @@ async function fetchMarinesiaMap(lat: number, lon: number): Promise<MapVessel[]>
 async function fetchAisStreamCache(lat: number, lon: number, zoom = 10): Promise<MapVessel[]> {
   const box = queryBox(lat, lon, zoom);
   const maxAgeMinutes = Math.max(5, Number(process.env.AIS_LIVE_MAX_AGE_MINUTES || 45) || 45);
+  const staleMaxHours = Math.max(1, Number(process.env.AIS_LIVE_STALE_MAX_HOURS || 6) || 6);
 
   try {
     const db = getDb();
-    const result = await db.execute(sql`
-      select
-        mmsi, imo, name, lat, lon, sog, cog, heading,
-        vessel_type, nav_status_text, position_received, last_seen_at
-      from public.ais_live_vessels
-      where lat between ${box.south} and ${box.north}
-        and lon between ${box.west} and ${box.east}
-        and last_seen_at >= now() - make_interval(mins => ${maxAgeMinutes})
-      order by last_seen_at desc
-      limit ${MAX_VESSELS}
-    `);
 
-    const rows = Array.isArray(result) ? result as any[] : [];
+    const queryRows = async (stale: boolean) => {
+      const result = await db.execute(sql`
+        select
+          mmsi, imo, name, lat, lon, sog, cog, heading,
+          vessel_type, nav_status_text, position_received, last_seen_at
+        from public.ais_live_vessels
+        where lat between ${box.south} and ${box.north}
+          and lon between ${box.west} and ${box.east}
+          and last_seen_at >= now() - ${stale
+            ? sql`make_interval(hours => ${staleMaxHours})`
+            : sql`make_interval(mins => ${maxAgeMinutes})`}
+        order by last_seen_at desc
+        limit ${MAX_VESSELS}
+      `);
+      return Array.isArray(result) ? result as any[] : [];
+    };
+
+    let rows = await queryRows(false);
+    let stale = false;
+
+    // Se o provedor/worker ficar temporariamente fora do ar, mantém as últimas
+    // posições conhecidas por algumas horas, em vez de apagar todos os barcos.
+    if (!rows.length) {
+      rows = await queryRows(true);
+      stale = rows.length > 0;
+    }
+
     return rows.map((row) => {
       const rawStamp = row.position_received || row.last_seen_at || new Date();
       const stampDate = rawStamp instanceof Date ? rawStamp : new Date(rawStamp);
@@ -442,6 +459,7 @@ async function fetchAisStreamCache(lat: number, lon: number, zoom = 10): Promise
         updateTime: stamp,
         dataSource: "AISStream" as const,
         receivedAt: stampDate.getTime(),
+        stale,
       };
     }).filter(validVessel);
   } catch (error) {
