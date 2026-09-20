@@ -4744,3 +4744,138 @@ main.loginpage{
     overflow:auto!important;
   }
 }
+
+
+/* V154 — Navegar sem waypoint + chegada por horário + rumo do waypoint */
+.ais-v154-free-nav-trigger{
+  position:absolute;
+  left:50%;
+  bottom:70px;
+  z-index:1710;
+  min-width:218px;
+  min-height:40px;
+  transform:translateX(-50%);
+  padding:0 14px;
+  border:1px solid rgba(255,76,86,.82);
+  border-radius:12px;
+  background:linear-gradient(180deg,rgba(126,20,28,.98),rgba(83,10,16,.98));
+  color:#fff4f5;
+  box-shadow:0 10px 30px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.08);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  cursor:pointer;
+  pointer-events:auto;
+  font:950 11px system-ui;
+}
+.ais-v154-free-nav-trigger:hover,
+.ais-v154-free-nav-trigger.active{
+  border-color:#ff7b84;
+  background:linear-gradient(180deg,rgba(157,26,36,.99),rgba(101,12,19,.99));
+}
+.ais-v154-free-nav-trigger svg{width:16px;height:16px}
+.ais-v154-free-nav-trigger em{
+  padding:3px 6px;
+  border-radius:999px;
+  background:#ff5964;
+  color:#3a0609;
+  font:950 8px system-ui;
+  font-style:normal;
+}
+.ais-v154-free-nav-card{
+  position:absolute;
+  left:50%;
+  bottom:120px;
+  z-index:1705;
+  width:min(360px,calc(100% - 24px));
+  transform:translateX(-50%);
+  padding:7px;
+  border:1px solid rgba(255,76,86,.55);
+  border-radius:12px;
+  background:rgba(26,12,16,.96);
+  box-shadow:0 12px 32px rgba(0,0,0,.38);
+  backdrop-filter:blur(14px);
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:7px;
+  pointer-events:auto;
+}
+.ais-v154-free-nav-card>div{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+}
+.ais-v154-free-nav-card span{
+  min-height:46px;
+  padding:5px 7px;
+  border:1px solid rgba(124,64,70,.6);
+  border-radius:8px;
+  background:#160b0f;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto 1fr;
+  align-items:end;
+}
+.ais-v154-free-nav-card small{
+  grid-column:1/-1;
+  align-self:start;
+  font:900 5px system-ui;
+  letter-spacing:.1em;
+  color:#986c72;
+}
+.ais-v154-free-nav-card b{
+  font:950 15px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#fff6f7;
+}
+.ais-v154-free-nav-card em{
+  align-self:end;
+  font:900 5px system-ui;
+  font-style:normal;
+  color:#9f7479;
+}
+.ais-v154-free-nav-card>button{
+  height:46px;
+  padding:0 10px;
+  border:1px solid #98434b;
+  border-radius:8px;
+  background:#41171c;
+  color:#ffb1b7;
+  font:950 7px system-ui;
+  cursor:pointer;
+}
+
+.ais-v154-waypoint-telemetry .ais-v150-nav-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+}
+
+@media(max-width:780px){
+  .ais-v154-free-nav-trigger{
+    bottom:120px!important;
+    min-width:210px;
+    min-height:40px;
+  }
+  .ais-v154-free-nav-card{
+    bottom:168px!important;
+    width:calc(100% - 18px);
+    max-width:420px;
+  }
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid{
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+    gap:4px!important;
+  }
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid>span{
+    min-height:46px!important;
+    padding:5px 5px 4px!important;
+  }
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid b{
+    font-size:12px!important;
+  }
+}
+@media(max-width:430px){
+  .ais-v154-free-nav-card{bottom:166px!important}
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid b{font-size:11px!important}
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid small{font-size:4.3px!important}
+  .ais-v154-waypoint-telemetry .ais-v150-nav-grid em{font-size:4.3px!important}
+}

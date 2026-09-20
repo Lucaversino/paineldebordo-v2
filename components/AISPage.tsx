@@ -318,13 +318,16 @@ function coordDigitsFromDecimal(value: number, latitude: boolean) {
   return `${String(degrees).padStart(degreeWidth, "0")}${minutes.toFixed(2).replace(".", "").padStart(4, "0")}`;
 }
 
-function formatEtaMinutes(value: number | null) {
-  if (value == null || !Number.isFinite(value) || value < 0) return "—";
-  if (value < 1) return "< 1 min";
-  const rounded = Math.round(value);
-  const hours = Math.floor(rounded / 60);
-  const minutes = rounded % 60;
-  return hours ? `${hours}h ${String(minutes).padStart(2, "0")}min` : `${minutes} min`;
+function formatArrivalClock(now: Date, etaMinutes: number | null) {
+  if (etaMinutes == null || !Number.isFinite(etaMinutes) || etaMinutes < 0) return "—";
+  const arrival = new Date(now.getTime() + etaMinutes * 60_000);
+  return `${String(arrival.getHours()).padStart(2, "0")}:${String(arrival.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatCourseDegrees(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const normalized = ((Math.round(value) % 360) + 360) % 360;
+  return `${String(normalized).padStart(3, "0")}º`;
 }
 
 function initialBearingRad(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
@@ -616,6 +619,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const navigationStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const navigationTrailRef = useRef<Array<{ lat: number; lon: number }>>([]);
   const navigationTargetRef = useRef<MapWaypoint | null>(null);
+  const freeNavigationActiveRef = useRef(false);
   const navigationPersistAtRef = useRef(0);
   const smoothedSpeedRef = useRef<number | null>(null);
   const gpsPreviousRef = useRef<{ lat: number; lon: number; at: number } | null>(null);
@@ -677,6 +681,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [speedDampingPct, setSpeedDampingPct] = useState(65);
   const [gpsRawSpeedKnots, setGpsRawSpeedKnots] = useState<number | null>(null);
   const [navigationTarget, setNavigationTarget] = useState<MapWaypoint | null>(null);
+  const [freeNavigationActive, setFreeNavigationActive] = useState(false);
   const [navigationSpeedKnots, setNavigationSpeedKnots] = useState<number | null>(null);
   const [navigationDistanceNm, setNavigationDistanceNm] = useState<number | null>(null);
   const [navigationEtaMinutes, setNavigationEtaMinutes] = useState<number | null>(null);
@@ -698,43 +703,50 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const savedNavigationRaw = window.localStorage.getItem(NAVIGATION_STORAGE_KEY);
       if (savedNavigationRaw) {
         const savedNavigation = JSON.parse(savedNavigationRaw);
-        const rawTarget = savedNavigation?.target;
-        const latitude = Number(rawTarget?.latitude);
-        const longitude = Number(rawTarget?.longitude);
-        if (rawTarget && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          const target: MapWaypoint = {
-            id: Number(rawTarget.id) || Date.now(),
-            name: String(rawTarget.name || "Waypoint"),
-            latitude,
-            longitude,
-            icon: (["circle","diamond","triangle","cross","star"].includes(String(rawTarget.icon)) ? rawTarget.icon : "diamond") as WaypointIcon,
-            color: String(rawTarget.color || "#ffb52e"),
-            createdAt: String(rawTarget.createdAt || new Date().toISOString()),
-            updatedAt: String(rawTarget.updatedAt || new Date().toISOString()),
-          };
-          const rawStart = savedNavigation?.start;
-          const start = rawStart && Number.isFinite(Number(rawStart.lat)) && Number.isFinite(Number(rawStart.lon))
-            ? { lat: Number(rawStart.lat), lon: Number(rawStart.lon) }
-            : null;
-          const trail = Array.isArray(savedNavigation?.trail)
-            ? savedNavigation.trail
-                .map((point: any) => ({ lat: Number(point?.lat), lon: Number(point?.lon) }))
-                .filter((point: { lat: number; lon: number }) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
-                .slice(-500)
-            : [];
+        const rawStart = savedNavigation?.start;
+        const start = rawStart && Number.isFinite(Number(rawStart.lat)) && Number.isFinite(Number(rawStart.lon))
+          ? { lat: Number(rawStart.lat), lon: Number(rawStart.lon) }
+          : null;
+        const trail = Array.isArray(savedNavigation?.trail)
+          ? savedNavigation.trail
+              .map((point: any) => ({ lat: Number(point?.lat), lon: Number(point?.lon) }))
+              .filter((point: { lat: number; lon: number }) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+              .slice(-500)
+          : [];
 
-          navigationTargetRef.current = target;
-          navigationStartRef.current = start;
-          navigationTrailRef.current = trail;
-          setNavigationTarget(target);
-          setStatusMessage(`Navegação retomada para ${target.name}. Aguardando/atualizando GPS...`);
+        navigationStartRef.current = start;
+        navigationTrailRef.current = trail;
 
-          const savedNavOrientation = String(savedNavigation?.orientation || "");
-          const savedNavXte = Number(savedNavigation?.xteLimitNm);
-          const savedNavDamping = Number(savedNavigation?.speedDampingPct);
-          if (["heading","course","north","south"].includes(savedNavOrientation)) setMapOrientationMode(savedNavOrientation as MapOrientationMode);
-          if (Number.isFinite(savedNavXte) && savedNavXte >= 0.05 && savedNavXte <= 5) setXteLimitNm(savedNavXte);
-          if (Number.isFinite(savedNavDamping) && savedNavDamping >= 0 && savedNavDamping <= 95) setSpeedDampingPct(savedNavDamping);
+        const savedNavOrientation = String(savedNavigation?.orientation || "");
+        const savedNavXte = Number(savedNavigation?.xteLimitNm);
+        const savedNavDamping = Number(savedNavigation?.speedDampingPct);
+        if (["heading","course","north","south"].includes(savedNavOrientation)) setMapOrientationMode(savedNavOrientation as MapOrientationMode);
+        if (Number.isFinite(savedNavXte) && savedNavXte >= 0.05 && savedNavXte <= 5) setXteLimitNm(savedNavXte);
+        if (Number.isFinite(savedNavDamping) && savedNavDamping >= 0 && savedNavDamping <= 95) setSpeedDampingPct(savedNavDamping);
+
+        if (savedNavigation?.mode === "free" && savedNavigation?.active) {
+          freeNavigationActiveRef.current = true;
+          setFreeNavigationActive(true);
+          setStatusMessage("Navegação livre retomada. Gravando rastro e atualizando GPS...");
+        } else {
+          const rawTarget = savedNavigation?.target;
+          const latitude = Number(rawTarget?.latitude);
+          const longitude = Number(rawTarget?.longitude);
+          if (rawTarget && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+            const target: MapWaypoint = {
+              id: Number(rawTarget.id) || Date.now(),
+              name: String(rawTarget.name || "Waypoint"),
+              latitude,
+              longitude,
+              icon: (["circle","diamond","triangle","cross","star"].includes(String(rawTarget.icon)) ? rawTarget.icon : "diamond") as WaypointIcon,
+              color: String(rawTarget.color || "#ffb52e"),
+              createdAt: String(rawTarget.createdAt || new Date().toISOString()),
+              updatedAt: String(rawTarget.updatedAt || new Date().toISOString()),
+            };
+            navigationTargetRef.current = target;
+            setNavigationTarget(target);
+            setStatusMessage(`Navegação retomada para ${target.name}. Aguardando/atualizando GPS...`);
+          }
         }
       }
     } catch {}
@@ -754,8 +766,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [navigationTarget]);
 
   useEffect(() => {
+    freeNavigationActiveRef.current = freeNavigationActive;
+  }, [freeNavigationActive]);
+
+  useEffect(() => {
     const persistBeforeBackground = () => {
-      if (navigationTargetRef.current) persistActiveNavigation(true);
+      if (navigationTargetRef.current || freeNavigationActiveRef.current) persistActiveNavigation(true);
     };
     const persistOnVisibility = () => {
       if (document.visibilityState === "hidden") persistBeforeBackground();
@@ -779,7 +795,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       if (!feature) return;
       feature.setStyle(
         gpsPositionStyle(
-          Boolean(navigationTargetRef.current),
+          Boolean(navigationTargetRef.current || freeNavigationActiveRef.current),
           stableGpsHeadingRef.current ?? 0,
           navBoatImageReadyRef.current,
         ),
@@ -1392,7 +1408,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     feature.setStyle(
       gpsPositionStyle(
-        Boolean(navigationTargetRef.current),
+        Boolean(navigationTargetRef.current || freeNavigationActiveRef.current),
         resolvedHeading,
         navBoatImageReadyRef.current,
       ),
@@ -1435,15 +1451,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function persistActiveNavigation(force = false) {
     const target = navigationTargetRef.current;
-    if (!target) return;
+    const freeActive = freeNavigationActiveRef.current;
+    if (!target && !freeActive) return;
     const now = Date.now();
     if (!force && now - navigationPersistAtRef.current < 4000) return;
     navigationPersistAtRef.current = now;
 
     try {
       window.localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify({
-        version: 152,
+        version: 154,
         active: true,
+        mode: target ? "waypoint" : "free",
         target,
         start: navigationStartRef.current,
         trail: navigationTrailRef.current.slice(-500),
@@ -1472,6 +1490,54 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatusMessage("Navegação para waypoint encerrada.");
   }
 
+  function stopFreeNavigation() {
+    navigationSourceRef.current?.clear();
+    freeNavigationActiveRef.current = false;
+    navigationStartRef.current = null;
+    navigationTrailRef.current = [];
+    smoothedSpeedRef.current = null;
+    setFreeNavigationActive(false);
+    setNavigationSpeedKnots(null);
+    setNavigationDistanceNm(null);
+    setNavigationEtaMinutes(null);
+    setNavigationXteNm(null);
+    navigationPersistAtRef.current = 0;
+    try { window.localStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
+    if (devicePosition) drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
+    setStatusMessage("Navegação livre encerrada.");
+  }
+
+  function startFreeNavigation() {
+    if (freeNavigationActiveRef.current) {
+      stopFreeNavigation();
+      return;
+    }
+
+    if (navigationTargetRef.current) stopWaypointNavigation();
+
+    navigationSourceRef.current?.clear();
+    navigationTargetRef.current = null;
+    freeNavigationActiveRef.current = true;
+    navigationStartRef.current = devicePosition ? { ...devicePosition } : null;
+    navigationTrailRef.current = devicePosition ? [{ ...devicePosition }] : [];
+    smoothedSpeedRef.current = null;
+    setNavigationTarget(null);
+    setFreeNavigationActive(true);
+    setNavigationDistanceNm(null);
+    setNavigationEtaMinutes(null);
+    setNavigationXteNm(null);
+    navigationPersistAtRef.current = 0;
+    persistActiveNavigation(true);
+
+    if (devicePosition) {
+      drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
+      setStatusMessage("Navegação livre ativa — gravando rastro.");
+    } else {
+      locateDevice();
+      setStatusMessage("Navegação livre iniciada. Aguardando GPS do celular...");
+    }
+  }
+
   function startWaypointNavigation(item?: MapWaypoint | null) {
     const coords = waypointEditorCoords();
     const saved = item || (selectedWaypointId != null ? waypoints.find((wp) => wp.id === selectedWaypointId) || null : null);
@@ -1493,6 +1559,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setMeasureMode(false);
     setMapSettingsOpen(false);
     setWaypointPanelOpen(false);
+    freeNavigationActiveRef.current = false;
+    setFreeNavigationActive(false);
     setNavigationTarget(target);
     navigationTargetRef.current = target;
     navigationStartRef.current = devicePosition ? { ...devicePosition } : null;
@@ -2651,6 +2719,42 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
+    if (!freeNavigationActive || !devicePosition) return;
+
+    if (!navigationStartRef.current) navigationStartRef.current = { ...devicePosition };
+    const trail = navigationTrailRef.current;
+    const lastTrail = trail[trail.length - 1];
+    if (!lastTrail || haversineKm(lastTrail, devicePosition) >= 0.01) {
+      trail.push({ ...devicePosition });
+      if (trail.length > 1000) trail.splice(0, trail.length - 1000);
+    }
+
+    const damping = Math.max(0, Math.min(0.95, speedDampingPct / 100));
+    if (gpsRawSpeedKnots != null && Number.isFinite(gpsRawSpeedKnots)) {
+      smoothedSpeedRef.current = smoothedSpeedRef.current == null
+        ? gpsRawSpeedKnots
+        : smoothedSpeedRef.current * damping + gpsRawSpeedKnots * (1 - damping);
+    }
+    setNavigationSpeedKnots(smoothedSpeedRef.current);
+    persistActiveNavigation();
+
+    const source = navigationSourceRef.current;
+    if (!source) return;
+    source.clear();
+
+    if (trail.length >= 2) {
+      const track = new Feature({
+        geometry: new LineString(trail.map((point) => fromLonLat([point.lon, point.lat]))),
+      });
+      track.setStyle(new Style({
+        stroke: new Stroke({ color: "#ff4d57", width: 2.6 }),
+        zIndex: 54,
+      }));
+      source.addFeature(track);
+    }
+  }, [freeNavigationActive, devicePosition, gpsRawSpeedKnots, speedDampingPct]);
+
+  useEffect(() => {
     if (!navigationTarget || !devicePosition) return;
 
     const destination = {
@@ -2764,6 +2868,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     view.setRotation(-(degrees * Math.PI / 180));
   }, [mapOrientationMode, gpsHeadingDegrees, devicePosition, navigationTarget]);
+
+  const navigationWaypointBearing = navigationTarget && devicePosition
+    ? bearingDegrees(devicePosition, {
+        lat: Number(navigationTarget.latitude),
+        lon: Number(navigationTarget.longitude),
+      })
+    : null;
+  const navigationArrivalClock = formatArrivalClock(clockNow, navigationEtaMinutes);
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
@@ -3079,7 +3191,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             onClick={() => setOrientationMenuOpen((open) => !open)}
             title="Modo de orientação do mapa"
           >
-            {navigationTarget ? <Ship /> : <Navigation />}
+            {navigationTarget || freeNavigationActive ? <Ship /> : <Navigation />}
             <span>{orientationLabel(mapOrientationMode)}</span>
           </button>
           {orientationMenuOpen && (
@@ -3123,7 +3235,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           )}
         </div>
 
-        {devicePosition && !navigationTarget && (
+        {devicePosition && !navigationTarget && !freeNavigationActive && (
           <div className="ais-v143-gps-card">
             <div><LocateFixed /><b>GPS ATUAL</b></div>
             <strong>{formatCoordOperational(devicePosition.lat, true)}</strong>
@@ -3185,7 +3297,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         {navigationTarget && (
-          <div className={`ais-v146-nav-card ais-v150-telemetry ais-v151-telemetry ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
+          <div className={`ais-v146-nav-card ais-v150-telemetry ais-v151-telemetry ais-v154-waypoint-telemetry ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
             <div className="ais-v150-nav-head">
               <span className="ais-v150-destination">
                 <Ship />
@@ -3197,7 +3309,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <div className="ais-v150-nav-grid">
               <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? navigationSpeedKnots.toFixed(1) : "—"}</b><em>MN/h</em></span>
               <span><small>DISTÂNCIA</small><b>{navigationDistanceNm != null ? navigationDistanceNm.toFixed(2) : "—"}</b><em>MN</em></span>
-              <span><small>ETA</small><b>{formatEtaMinutes(navigationEtaMinutes)}</b><em>TEMPO</em></span>
+              <span><small>CHEGADA</small><b>{navigationArrivalClock}</b><em>HORA</em></span>
+              <span><small>RUMO WP</small><b>{formatCourseDegrees(navigationWaypointBearing)}</b><em>GRAUS</em></span>
             </div>
             <div className="ais-v150-nav-footer">
               <span className="ais-v150-corridor">
@@ -3239,6 +3352,28 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span><small>LONGITUDE</small><strong>{formatCoordOperational(mapProbe.lon, false)}</strong></span>
             </div>
           </div>
+        )}
+
+        {freeNavigationActive && !navigationTarget && (
+          <div className="ais-v154-free-nav-card">
+            <div>
+              <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? navigationSpeedKnots.toFixed(1) : "—"}</b><em>MN/h</em></span>
+              <span><small>RUMO</small><b>{formatCourseDegrees(gpsHeadingDegrees)}</b><em>NAVEGAÇÃO</em></span>
+            </div>
+            <button type="button" onClick={stopFreeNavigation}>PARAR</button>
+          </div>
+        )}
+
+        {!navigationTarget && (
+          <button
+            type="button"
+            className={`ais-v154-free-nav-trigger ${freeNavigationActive ? "active" : ""}`}
+            onClick={startFreeNavigation}
+          >
+            <Navigation />
+            <span>{freeNavigationActive ? "NAVEGANDO" : "NAVEGAR"}</span>
+            <em>{freeNavigationActive ? "ATIVO" : "GPS"}</em>
+          </button>
         )}
 
         <button
