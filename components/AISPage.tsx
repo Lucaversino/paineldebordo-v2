@@ -16,6 +16,8 @@ import {
   Radio,
   RefreshCw,
   Ruler,
+  Route,
+  Undo2,
   Save,
   Search,
   Settings,
@@ -57,6 +59,9 @@ type MobilePanel = "areaSearch" | "saved" | "areaSaved" | "waypoints" | "history
 type SearchProvider = "premium" | "marinesia" | "shipfinder";
 type MapOrientationMode = "heading" | "course" | "north" | "south";
 type WaypointIcon = "circle" | "diamond" | "triangle" | "cross" | "star";
+
+type RoutePoint = { order: number; latitude: number; longitude: number };
+type SavedRoute = { id: number; name: string; description: string; waypoints: RoutePoint[]; createdAt: string; updatedAt: string };
 
 type MapWaypoint = {
   id: number;
@@ -605,6 +610,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const positionSourceRef = useRef<VectorSource | null>(null);
   const probeSourceRef = useRef<VectorSource | null>(null);
   const waypointSourceRef = useRef<VectorSource | null>(null);
+  const routeSourceRef = useRef<VectorSource | null>(null);
+  const routeTranslateRef = useRef<Translate | null>(null);
   const measureSourceRef = useRef<VectorSource | null>(null);
   const navigationSourceRef = useRef<VectorSource | null>(null);
   const areaSourceRef = useRef<VectorSource | null>(null);
@@ -676,6 +683,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [waypointLatDigits, setWaypointLatDigits] = useState("");
   const [waypointLonDigits, setWaypointLonDigits] = useState("");
   const [waypointCoordError, setWaypointCoordError] = useState("");
+  const [routeMode, setRouteMode] = useState(false);
+  const routeModeRef = useRef(false);
+  const [routePoints, setRoutePoints] = useState<RoutePoint[]>([]);
+  const routePointsRef = useRef<RoutePoint[]>([]);
+  const [routes, setRoutes] = useState<SavedRoute[]>([]);
+  const [routesPanelOpen, setRoutesPanelOpen] = useState(false);
+  const [routeName, setRouteName] = useState("");
+  const [routeDescription, setRouteDescription] = useState("");
+  const [editingRouteId, setEditingRouteId] = useState<number | null>(null);
+  const [activeRoute, setActiveRoute] = useState<SavedRoute | null>(null);
+  const [activeRouteIndex, setActiveRouteIndex] = useState<number | null>(null);
   const [measureMode, setMeasureMode] = useState(false);
   const [measureStart, setMeasureStart] = useState<{ lat: number; lon: number } | null>(null);
   const [measureResult, setMeasureResult] = useState<{ km: number; nm: number } | null>(null);
@@ -1315,6 +1333,30 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
+  function drawRouteDraft(points: RoutePoint[]) {
+    const source = routeSourceRef.current; if (!source) return; source.clear();
+    if (points.length >= 2) {
+      const line = new Feature({ geometry: new LineString(points.map(p => fromLonLat([p.longitude, p.latitude]))) });
+      line.setStyle(new Style({ stroke: new Stroke({ color: "#ffb52e", width: 3 }) })); source.addFeature(line);
+    }
+    points.forEach((p, i) => {
+      const f = new Feature({ geometry: new Point(fromLonLat([p.longitude,p.latitude])) });
+      f.set("routePointIndex", i);
+      f.setStyle(new Style({ image:new CircleStyle({radius:12,fill:new Fill({color:"#071f27"}),stroke:new Stroke({color:"#ffb52e",width:3})}), text:new Text({text:String(i+1),fill:new Fill({color:"#fff"}),font:"bold 12px sans-serif"}) }));
+      source.addFeature(f);
+    });
+  }
+  function setDraftRoute(points: RoutePoint[]) { const normalized=points.map((p,i)=>({...p,order:i+1})); routePointsRef.current=normalized; setRoutePoints(normalized); drawRouteDraft(normalized); }
+  function toggleRouteMode(){ const next=!routeModeRef.current; routeModeRef.current=next; setRouteMode(next); setRoutesPanelOpen(next); setWaypointPanelOpen(false); setMapSettingsOpen(false); if(next) setStatusMessage("ROTA ativa — toque/clique no mapa para adicionar pontos."); }
+  function undoRoutePoint(){ setDraftRoute(routePointsRef.current.slice(0,-1)); }
+  function cancelRoute(){ routeModeRef.current=false;setRouteMode(false);setDraftRoute([]);setEditingRouteId(null);setRouteName("");setRouteDescription("");setActiveRoute(null);setActiveRouteIndex(null);setStatusMessage("Criação de rota cancelada."); }
+  async function loadRoutes(){ try{const r=await aisFetch("/api/routes");const d=await r.json();if(r.ok)setRoutes(Array.isArray(d?.routes)?d.routes:[]);}catch{} }
+  async function saveRoute(){ if(!routePointsRef.current.length){setStatusMessage("Adicione pontos à rota antes de salvar.");return;} const name=routeName.trim()||window.prompt("Nome da rota:", editingRouteId?routeName:"Nova rota")?.trim(); if(!name)return; let description=routeDescription; if(!editingRouteId&&!description) description=window.prompt("Descrição (opcional):","")||""; const r=await aisFetch("/api/routes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:editingRouteId,name,description,waypoints:routePointsRef.current})});const d=await r.json().catch(()=>({}));if(!r.ok){setStatusMessage(d?.error||"Não foi possível salvar a rota.");return;} setRouteName(name);setRouteDescription(description);setEditingRouteId(d.id||editingRouteId);await loadRoutes();setStatusMessage(`Rota ${name} salva ✓`); }
+  function openRoute(r:SavedRoute){ setEditingRouteId(r.id);setRouteName(r.name);setRouteDescription(r.description||"");setDraftRoute(r.waypoints||[]);setRoutesPanelOpen(true);routeModeRef.current=false;setRouteMode(false);setActiveRoute(null);setActiveRouteIndex(null); if(r.waypoints?.length){const ext=new LineString(r.waypoints.map(p=>fromLonLat([p.longitude,p.latitude]))).getExtent();mapRef.current?.getView().fit(ext,{padding:[90,80,170,80],maxZoom:13,duration:300});} }
+  async function deleteRoute(id:number){ if(!window.confirm("Excluir esta rota?"))return;await aisFetch(`/api/routes?id=${id}`,{method:"DELETE"});if(editingRouteId===id)cancelRoute();await loadRoutes(); }
+  async function duplicateRoute(r:SavedRoute){ const resp=await aisFetch("/api/routes",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:`${r.name} - cópia`,description:r.description,waypoints:r.waypoints})});if(resp.ok)await loadRoutes(); }
+  function navigateRoutePoint(index:number, route:SavedRoute|null=activeRoute){ const pts=route?.waypoints||routePointsRef.current;if(!pts[index])return; const p=pts[index]; const wp:MapWaypoint={id:-(index+1),name:`${route?.name||routeName||"Rota"} · Ponto ${index+1}`,latitude:p.latitude,longitude:p.longitude,icon:"diamond",color:"#ffb52e",createdAt:"",updatedAt:""}; if(route){setActiveRoute(route);setActiveRouteIndex(index);} startWaypointNavigation(wp); }
+  function startFullRoute(r?:SavedRoute){ const route=r||routes.find(x=>x.id===editingRouteId)||null;if(!route||!route.waypoints.length){setStatusMessage("Abra uma rota salva para navegar.");return;} setActiveRoute(route);setActiveRouteIndex(0);navigateRoutePoint(0,route); }
   async function loadWaypoints() {
     try {
       const response = await aisFetch("/api/waypoints");
@@ -1673,7 +1715,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function startWaypointNavigation(item?: MapWaypoint | null) {
-    const coords = waypointEditorCoords();
+    const coords = item ? { lat: Number(item.latitude), lon: Number(item.longitude) } : waypointEditorCoords();
     const saved = item || (selectedWaypointId != null ? waypoints.find((wp) => wp.id === selectedWaypointId) || null : null);
     if (!coords || !saved) {
       setWaypointCoordError("Salve ou selecione um waypoint válido antes de navegar.");
@@ -2551,6 +2593,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const probeLayer = new VectorLayer({ source: probeSource });
     const waypointSource = new VectorSource();
     const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
+    const routeSource = new VectorSource();
+    const routeLayer = new VectorLayer({ source: routeSource, declutter: true });
     const measureSource = new VectorSource();
     const measureLayer = new VectorLayer({ source: measureSource });
     const navigationSource = new VectorSource();
@@ -2566,11 +2610,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     measureLayer.setZIndex(48);
     navigationLayer.setZIndex(49);
     waypointLayer.setZIndex(50);
+    routeLayer.setZIndex(52);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer],
+      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
       view,
     });
 
@@ -2602,6 +2647,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     positionSourceRef.current = positionSource;
     probeSourceRef.current = probeSource;
     waypointSourceRef.current = waypointSource;
+    routeSourceRef.current = routeSource;
+    const routeTranslate = new Translate({ layers:[routeLayer], hitTolerance:18 });
+    routeTranslateRef.current=routeTranslate; map.addInteraction(routeTranslate);
+    routeTranslate.on("translateend",(event:any)=>{const f=event?.features?.item?.(0);const idx=Number(f?.get?.("routePointIndex"));const g=f?.getGeometry?.();if(!Number.isInteger(idx)||!(g instanceof Point))return;const [lon,lat]=toLonLat(g.getCoordinates());const next=routePointsRef.current.map((p,i)=>i===idx?{...p,latitude:lat,longitude:lon}:p);setDraftRoute(next);});
     measureSourceRef.current = measureSource;
     navigationSourceRef.current = navigationSource;
     areaSourceRef.current = areaSource;
@@ -2631,6 +2680,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
     map.on("moveend", updateCenter);
     const selectMapFeature = (event: any) => {
+      if (routeModeRef.current) {
+        const hit = map.forEachFeatureAtPixel(event.pixel,(feature:any)=>feature.get("routePointIndex") != null ? feature : null,{hitTolerance:14});
+        if (hit) return;
+        const [lon,lat]=toLonLat(event.coordinate); setDraftRoute([...routePointsRef.current,{order:routePointsRef.current.length+1,latitude:lat,longitude:lon}]); setStatusMessage(`Ponto ${routePointsRef.current.length} adicionado à rota.`); return;
+      }
       if (measureModeRef.current) {
         const [lon, lat] = toLonLat(event.coordinate);
         pickMeasurePoint(lat, lon);
@@ -2689,6 +2743,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       map.un("singleclick", selectMapFeature);
       areaTranslate.un("translateend", handleAreaTranslateEnd);
       map.removeInteraction(areaTranslate);
+      if(routeTranslateRef.current) map.removeInteraction(routeTranslateRef.current);
       if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
       if (gpsAnimationFrameRef.current != null) window.cancelAnimationFrame(gpsAnimationFrameRef.current);
       gpsAnimationFrameRef.current = null;
@@ -2810,11 +2865,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     refreshCredits();
     loadAisLibrary();
     loadWaypoints();
+    loadRoutes();
   }, []);
 
   useEffect(() => {
     renderWaypoints(waypoints);
   }, [waypoints]);
+
+  useEffect(()=>{ drawRouteDraft(routePoints); },[routePoints]);
 
   // V140: mantém no mapa todos os barcos persistidos na biblioteca do usuário.
   useEffect(() => {
@@ -3003,6 +3061,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }));
     source.addFeature(activeLeg);
   }, [navigationTarget, devicePosition, gpsRawSpeedKnots, speedDampingPct, xteLimitNm]);
+
+  useEffect(()=>{
+    if(!activeRoute || activeRouteIndex == null || navigationDistanceNm == null || navigationDistanceNm > 0.05) return;
+    const next=activeRouteIndex+1;
+    if(next < activeRoute.waypoints.length){ setActiveRouteIndex(next); navigateRoutePoint(next,activeRoute); setStatusMessage(`Waypoint ${activeRouteIndex+1} concluído — seguindo para ${next+1}.`); }
+    else { setStatusMessage(`Rota ${activeRoute.name} concluída ✓`); setActiveRoute(null);setActiveRouteIndex(null);stopWaypointNavigation(); }
+  },[navigationDistanceNm,activeRoute,activeRouteIndex]);
 
   useEffect(() => {
     const view = mapRef.current?.getView();
@@ -3242,6 +3307,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v143-map-tool ${waypointPanelOpen ? "active" : ""}`} onClick={openWaypointPanel} title="Criar waypoint">
             <Flag /><span>WP</span>
           </button>
+          <button type="button" className={`ais-v143-map-tool ais-v167-route-tool ${routeMode || routesPanelOpen ? "active" : ""}`} onClick={toggleRouteMode} title="Criar rota">
+            <Route /><span>ROTA</span>
+          </button>
           <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância livre no mapa">
             <Ruler /><span>MEDIR</span>
           </button>
@@ -3456,6 +3524,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 <Ship /> IR PARA
               </button>
             )}
+          </div>
+        )}
+
+        {routesPanelOpen && (
+          <div className="ais-v167-route-panel">
+            <div className="ais-v167-route-head"><span><Route/><b>{editingRouteId ? "ROTA" : "CRIAR ROTA"}</b><em>{routePoints.length} pts</em></span><button onClick={()=>setRoutesPanelOpen(false)}>×</button></div>
+            <div className="ais-v167-route-actions">
+              <button onClick={toggleRouteMode}>{routeMode ? "PARAR PONTOS" : "ADICIONAR PONTO"}</button>
+              <button onClick={undoRoutePoint} disabled={!routePoints.length}><Undo2/> DESFAZER</button>
+              <button onClick={saveRoute} disabled={!routePoints.length}><Save/> SALVAR ROTA</button>
+              {editingRouteId && <button className="go" onClick={()=>startFullRoute()}><Navigation/> INICIAR ROTA</button>}
+              <button className="cancel" onClick={cancelRoute}>CANCELAR</button>
+            </div>
+            {editingRouteId && <div className="ais-v167-route-fields"><input value={routeName} onChange={e=>setRouteName(e.target.value)} placeholder="Nome da rota"/><input value={routeDescription} onChange={e=>setRouteDescription(e.target.value)} placeholder="Descrição opcional"/></div>}
+            <div className="ais-v167-route-points">{routePoints.map((p,i)=><div key={i}><button className="point" onClick={()=>navigateRoutePoint(i)} title="IR PARA">{i+1}</button><small>{formatCoordOperational(p.latitude,true)} · {formatCoordOperational(p.longitude,false)} · IR PARA</small><button className="del" onClick={()=>setDraftRoute(routePointsRef.current.filter((_,j)=>j!==i))}>×</button></div>)}</div>
+            <div className="ais-v167-my-routes"><b>MINHAS ROTAS</b>{routes.map(r=><div key={r.id}><button className="open" onClick={()=>openRoute(r)}><span>{r.name}</span><small>{r.waypoints.length} pontos</small></button><button onClick={()=>startFullRoute(r)} title="Navegar"><Navigation/></button><button onClick={()=>duplicateRoute(r)} title="Duplicar">⧉</button><button onClick={()=>deleteRoute(r.id)} title="Excluir"><Trash2/></button></div>)}</div>
           </div>
         )}
 
