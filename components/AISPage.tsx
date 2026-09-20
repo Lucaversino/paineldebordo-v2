@@ -399,7 +399,7 @@ function orientationLabel(mode: MapOrientationMode) {
   return "NORTE UP";
 }
 
-const NAV_BOAT_SRC = "/icons/boat-top.png";
+const NAV_BOAT_SRC = "/icons/ais-fishing-boat-v151.svg";
 
 function navBoatFallbackStyle(headingDegrees = 0) {
   const rotation = (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180;
@@ -437,13 +437,11 @@ function gpsPositionStyle(navigating: boolean, headingDegrees = 0, imageReady = 
       anchor: [0.5, 0.5],
       anchorXUnits: "fraction",
       anchorYUnits: "fraction",
-      offset: [443, 130],
-      size: [368, 976],
-      scale: [0.058, 0.034],
+      scale: 0.5,
       rotation: (Number.isFinite(headingDegrees) ? headingDegrees : 0) * Math.PI / 180,
       rotateWithView: true,
     }),
-    zIndex: 80,
+    zIndex: 120,
   });
 }
 
@@ -3041,7 +3039,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         {navigationTarget && (
-          <div className={`ais-v146-nav-card ais-v150-telemetry ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
+          <div className={`ais-v146-nav-card ais-v150-telemetry ais-v151-telemetry ${navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "xte-alert" : ""}`}>
             <div className="ais-v150-nav-head">
               <span className="ais-v150-destination">
                 <Ship />
@@ -3054,9 +3052,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span><small>VELOCIDADE</small><b>{navigationSpeedKnots != null ? navigationSpeedKnots.toFixed(1) : "—"}</b><em>MN/h</em></span>
               <span><small>DISTÂNCIA</small><b>{navigationDistanceNm != null ? navigationDistanceNm.toFixed(2) : "—"}</b><em>MN</em></span>
               <span><small>ETA</small><b>{formatEtaMinutes(navigationEtaMinutes)}</b><em>TEMPO</em></span>
-              <span className={navigationXteNm != null && Math.abs(navigationXteNm) > xteLimitNm ? "alert" : ""}>
-                <small>XTE</small><b>{navigationXteNm != null ? Math.abs(navigationXteNm).toFixed(2) : "—"}</b><em>MN</em>
-              </span>
             </div>
             <div className="ais-v150-nav-footer">
               <span className="ais-v150-corridor">

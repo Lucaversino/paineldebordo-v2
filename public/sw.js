@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v150-xte-telemetry";
+const CACHE = "painel-bordo-v151-layout-svg";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -8,7 +8,7 @@ const ASSETS = [
   "/icon-maskable-512.png",
   "/apple-touch-icon.png",
   "/favicon.ico",
-  "/icons/boat-top.png"
+  "/icons/ais-fishing-boat-v151.svg"
 ];
 
 self.addEventListener("install", (event) => {
