@@ -84,18 +84,30 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
     doc.text(String(value), x, y + 5);
   });
 
-  const cards = [["CORVINA", kg(corvinaTotal)], ["MISTURA", kg(mixtureTotal)], ["DESCARTE", kg(discardTotal)], ["LARGADAS", String(tripSets.length)]];
+  // V192 FIX: o resumo principal do PDF deve mostrar descarte VIVO e MORTO separadamente.
+  // O total geral de descarte continua disponível nos detalhes, mas nunca substitui os dois totais.
+  const cards = [
+    ["CORVINA", kg(corvinaTotal)],
+    ["MISTURA", kg(mixtureTotal)],
+    ["DESCARTE VIVO", kg(report.discardAlive)],
+    ["DESCARTE MORTO", kg(report.discardDead)],
+    ["LARGADAS", String(tripSets.length)],
+  ];
   cards.forEach(([label, value], index) => {
-    const x = 16 + index * 67;
-    doc.setFillColor(index === 0 ? 225 : 239, index === 0 ? 250 : 244, index === 0 ? 243 : 245);
-    doc.roundedRect(x, 83, 62, 22, 2, 2, "F");
+    const cardWidth = 50;
+    const gap = 4;
+    const x = 16 + index * (cardWidth + gap);
+    const isAlive = index === 2;
+    const isDead = index === 3;
+    doc.setFillColor(isDead ? 255 : isAlive ? 232 : index === 0 ? 225 : 239, isDead ? 239 : isAlive ? 249 : index === 0 ? 250 : 244, isDead ? 239 : isAlive ? 244 : index === 0 ? 243 : 245);
+    doc.roundedRect(x, 83, cardWidth, 22, 2, 2, "F");
     doc.setTextColor(74, 107, 113);
-    doc.setFontSize(7);
+    doc.setFontSize(6.6);
     doc.setFont("helvetica", "bold");
-    doc.text(label, x + 5, 90);
-    doc.setTextColor(index === 0 ? 5 : 16, index === 0 ? 139 : 42, index === 0 ? 108 : 48);
-    doc.setFontSize(12);
-    doc.text(value, x + 5, 100);
+    doc.text(label, x + 4, 90);
+    doc.setTextColor(isDead ? 168 : isAlive ? 5 : index === 0 ? 5 : 16, isDead ? 50 : isAlive ? 139 : index === 0 ? 139 : 42, isDead ? 58 : isAlive ? 108 : index === 0 ? 108 : 48);
+    doc.setFontSize(11);
+    doc.text(value, x + 4, 100);
   });
 
   autoTable(doc, {
@@ -176,18 +188,27 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
     drawFooter();
   }
 
-  const finalCards = [["TOTAL CORVINA", corvinaTotal], ["CORVINA + MISTURA", total], ["TOTAL DESCARTE", discardTotal]] as const;
+  const finalCards = [
+    ["TOTAL CORVINA", corvinaTotal],
+    ["CORVINA + MISTURA", total],
+    ["DESCARTE VIVO", report.discardAlive],
+    ["DESCARTE MORTO", report.discardDead],
+  ] as const;
   finalCards.forEach(([label, value], index) => {
-    const x = 16 + index * 90;
-    doc.setFillColor(index === 2 ? 255 : 235, index === 2 ? 240 : 249, index === 2 ? 240 : 246);
-    doc.roundedRect(x, summaryY, 85, 24, 2, 2, "F");
+    const cardWidth = 63;
+    const gap = 4;
+    const x = 16 + index * (cardWidth + gap);
+    const isAlive = index === 2;
+    const isDead = index === 3;
+    doc.setFillColor(isDead ? 255 : isAlive ? 232 : 235, isDead ? 240 : isAlive ? 249 : 249, isDead ? 240 : isAlive ? 244 : 246);
+    doc.roundedRect(x, summaryY, cardWidth, 24, 2, 2, "F");
     doc.setTextColor(66, 96, 103);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.text(label, x + 5, summaryY + 8);
-    doc.setTextColor(index === 2 ? 160 : 5, index === 2 ? 53 : 139, index === 2 ? 61 : 108);
-    doc.setFontSize(16);
-    doc.text(kg(value), x + 5, summaryY + 19);
+    doc.setFontSize(7.2);
+    doc.text(label, x + 4, summaryY + 8);
+    doc.setTextColor(isDead ? 160 : 5, isDead ? 53 : 139, isDead ? 61 : 108);
+    doc.setFontSize(13.5);
+    doc.text(kg(value), x + 4, summaryY + 19);
   });
   summaryY += 30;
 
@@ -207,7 +228,8 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.setFontSize(8);
   doc.text(`${tripSets.length} ${tripSets.length === 1 ? "largada registrada" : "largadas registradas"}`, 272, summaryY + 22, { align: "right" });
   doc.setFontSize(7.5);
-  doc.text("Total capturado = Corvina + Mistura. O descarte é apresentado separadamente.", 272, summaryY + 29, { align: "right" });
+  doc.text(`Descartes: Vivo ${kg(report.discardAlive)} • Morto ${kg(report.discardDead)} • Total ${kg(discardTotal)}`, 272, summaryY + 25, { align: "right" });
+  doc.text("Total capturado = Corvina + Mistura. O descarte não entra no peso desembarcado.", 272, summaryY + 30, { align: "right" });
 
   doc.addPage();
   doc.setFillColor(4, 32, 39);

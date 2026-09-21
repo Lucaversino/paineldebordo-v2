@@ -32,18 +32,22 @@ export function generateAnnualReportPdf(year: number, trips: any[], sets: any[],
   ];
   cards.forEach(([label, value], index) => {
     const x = 16 + (index % 3) * 90; const y = 49 + Math.floor(index / 3) * 27;
-    doc.setFillColor(239, 247, 246); doc.roundedRect(x, y, 84, 21, 2, 2, "F");
+    const isAlive = label === "DESC. VIVO";
+    const isDead = label === "DESC. MORTO";
+    doc.setFillColor(isDead ? 255 : isAlive ? 232 : 239, isDead ? 239 : isAlive ? 249 : 247, isDead ? 239 : isAlive ? 244 : 246); doc.roundedRect(x, y, 84, 21, 2, 2, "F");
     doc.setTextColor(74, 107, 113); doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.text(label, x + 5, y + 7);
-    doc.setTextColor(5, 120, 99); doc.setFontSize(13); doc.text(value, x + 5, y + 16);
+    doc.setTextColor(isDead ? 168 : 5, isDead ? 50 : 120, isDead ? 58 : 99); doc.setFontSize(13); doc.text(value, x + 5, y + 16);
   });
+  doc.setTextColor(86, 104, 109); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+  doc.text(`Descarte anual separado: Vivo ${pdfKg(report.discardAlive)} • Morto ${pdfKg(report.discardDead)} • Total ${pdfKg(report.discard)}`, 16, 106);
 
-  doc.setTextColor(18, 41, 47); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 111);
+  doc.setTextColor(18, 41, 47); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 114);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(70, 96, 102);
   const geoText = `${report.geography.label}. ${report.geography.detail}`;
-  doc.text(doc.splitTextToSize(geoText, 265), 16, 119);
+  doc.text(doc.splitTextToSize(geoText, 265), 16, 122);
 
   autoTable(doc, {
-    startY: 135,
+    startY: 138,
     margin: { left: 16, right: 16, bottom: 16 },
     head: [["Viagem", "Embarcação", "Período", "Dias", "Largadas", "Captura", "Principal", "Mistura", "Desc. vivo", "Desc. morto"]],
     body: report.rows.map(({ trip, report: item }) => [
