@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Anchor,
+  CircleHelp,
   BarChart3,
   Fish,
   Gauge,
@@ -40,6 +41,7 @@ import {
 } from "../lib/offlinePanel";
 
 const ModuleLoading = () => <section className="content"><div className="emptydash"><h2>Carregando módulo…</h2></div></section>;
+const HelpCenter = dynamic(() => import("../components/HelpCenter"), { ssr: false, loading: ModuleLoading });
 const Operations = dynamic(() => import("../components/Operations"), { ssr: false, loading: ModuleLoading });
 const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"), { ssr: false });
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
@@ -424,6 +426,7 @@ export default function Home() {
   }
   const nav = [
       [Gauge, "Dashboard"],
+      [CircleHelp, "Ajuda"],
       [Wind, "Ventos e Mar"],
       [Ship, "AIS"],
       [WalletCards, "Meus créditos"],
@@ -540,6 +543,7 @@ export default function Home() {
         {view === "Dashboard" ? (
           <section className="content">
             {gpsPermissionMessage && <div className="gps-dashboard-message">{gpsPermissionMessage}</div>}
+            <div className="dashboard-help-row"><button type="button" className="dashboard-help-link" onClick={() => setView("Ajuda")}><CircleHelp size={18} /> Ajuda · aprenda a usar</button></div>
             <DailyDataUsage />
             {loading ? (
               <div className="emptydash">
@@ -730,6 +734,8 @@ export default function Home() {
               </>
             )}
           </section>
+        ) : view === "Ajuda" ? (
+          <HelpCenter onNavigate={(destination) => { setView(destination); setMenu(false); }} />
         ) : view === "Ventos e Mar" ? (
           <PositionForecast />
         ) : view === "AIS" ? (
