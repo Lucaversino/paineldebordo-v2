@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v181-remove-mapa-posicao";
+const CACHE = "painel-bordo-v182-iphone-menu-internet";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

@@ -5181,3 +5181,103 @@ main.loginpage{
 .environment-map-badge.wind-current-badge small{font-size:8px;line-height:1;color:#86b9c1;font-weight:900;letter-spacing:.12em}
 .environment-map-badge.wind-current-badge strong{font-size:12px;line-height:1.2;color:#c9fff0;font-weight:950;letter-spacing:.08em}
 @media(max-width:760px){.environment-map-badge.wind-current-badge{min-width:96px;padding:7px 9px}.environment-map-badge.wind-current-badge strong{font-size:11px}}
+
+/* V182 — iPhone: menu lateral clicável, safe-area do cabeçalho e Internet sempre visível */
+.mobile-menu-backdrop{display:none}
+
+@media (max-width:900px){
+  /* iPhone/PWA com status bar translúcida: o cabeçalho começa abaixo do notch/Dynamic Island. */
+  header{
+    height:auto!important;
+    min-height:calc(72px + env(safe-area-inset-top, 0px));
+    padding-top:env(safe-area-inset-top, 0px)!important;
+    padding-left:max(14px, env(safe-area-inset-left, 0px))!important;
+    padding-right:max(14px, env(safe-area-inset-right, 0px))!important;
+    top:0;
+    z-index:4000!important;
+  }
+
+  /* Área de toque maior para o botão hambúrguer no Safari/iOS. */
+  .menub{
+    display:grid!important;
+    place-items:center;
+    width:48px;
+    height:48px;
+    min-width:48px;
+    min-height:48px;
+    padding:0!important;
+    position:relative;
+    z-index:4002;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+    cursor:pointer;
+    flex:none;
+  }
+  .menub svg{width:23px!important;height:23px!important;pointer-events:none}
+
+  /* Drawer próprio do painel: fica sempre acima do header/mapas/FISH IA. */
+  .sidebar{
+    width:min(86vw, 300px)!important;
+    height:100dvh!important;
+    min-height:100svh;
+    inset:0 auto 0 0!important;
+    padding:calc(14px + env(safe-area-inset-top, 0px)) 12px calc(14px + env(safe-area-inset-bottom, 0px))!important;
+    transform:translate3d(-105%,0,0)!important;
+    visibility:hidden;
+    pointer-events:none;
+    overflow:hidden;
+    z-index:6001!important;
+    transition:transform .2s ease, visibility .2s ease!important;
+    will-change:transform;
+  }
+  .sidebar.open{
+    transform:translate3d(0,0,0)!important;
+    visibility:visible;
+    pointer-events:auto;
+  }
+  .sidebar .brand{padding:0 6px 14px!important;flex:none}
+  .sidebar nav{
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:10px;
+  }
+  .sidebar nav button{min-height:44px;touch-action:manipulation}
+  .sidebar .legal{flex:none;margin-top:10px!important;padding:12px 8px!important}
+  .close{
+    width:44px;
+    height:44px;
+    min-width:44px;
+    padding:0!important;
+    display:grid!important;
+    place-items:center;
+    touch-action:manipulation;
+  }
+
+  .mobile-menu-backdrop{
+    display:block;
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100dvh;
+    border:0;
+    padding:0;
+    margin:0;
+    background:rgba(0,10,14,.56);
+    backdrop-filter:blur(2px);
+    -webkit-backdrop-filter:blur(2px);
+    z-index:6000;
+    touch-action:manipulation;
+  }
+}
+
+@media (max-width:560px){
+  header{
+    min-height:calc(68px + env(safe-area-inset-top, 0px));
+    gap:8px;
+  }
+  header>div:not(.headright){min-width:0}
+  header h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
+  .headright{gap:7px}
+}

@@ -438,6 +438,7 @@ export default function Home() {
   }
   return (
     <div className={dark ? "dark app" : "app"}>
+      {menu && <button type="button" className="mobile-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenu(false)} />}
       <aside className={menu ? "sidebar open" : "sidebar"}>
         <div className="brand">
           <span>
@@ -474,7 +475,13 @@ export default function Home() {
       </aside>
       <main>
         <header>
-          <button className="menub" onClick={() => setMenu(true)}>
+          <button
+            type="button"
+            className="menub"
+            onClick={() => setMenu((open) => !open)}
+            aria-label={menu ? "Fechar menu" : "Abrir menu"}
+            aria-expanded={menu}
+          >
             <Menu />
           </button>
           <div>
@@ -506,7 +513,7 @@ export default function Home() {
         {view === "Dashboard" ? (
           <section className="content">
             {gpsPermissionMessage && <div className="gps-dashboard-message">{gpsPermissionMessage}</div>}
-            {!loading && !loadError && <DailyDataUsage />}
+            <DailyDataUsage />
             {loading ? (
               <div className="emptydash">
                 <h2>Carregando painel...</h2>
