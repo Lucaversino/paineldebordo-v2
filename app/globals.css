@@ -5409,3 +5409,165 @@ main.loginpage{
     padding-left:max(68px, calc(env(safe-area-inset-left, 0px) + 66px))!important;
   }
 }
+
+/* V184 — MENU MOBILE UNIVERSAL (Android + iPhone)
+   Corrige drawer invisível/transparente em Android e mantém safe-area no iOS.
+   Sem blur/opacity no drawer para evitar problemas de composição em Chrome/WebView. */
+@media (max-width:900px){
+  .menub{
+    position:fixed!important;
+    top:calc(env(safe-area-inset-top, 0px) + 9px)!important;
+    left:max(9px, calc(env(safe-area-inset-left, 0px) + 8px))!important;
+    width:48px!important;
+    height:48px!important;
+    min-width:48px!important;
+    min-height:48px!important;
+    z-index:10002!important;
+    display:grid!important;
+    place-items:center!important;
+    opacity:1!important;
+    visibility:visible!important;
+    pointer-events:auto!important;
+    background:#071b22!important;
+    border:1px solid #2b535c!important;
+    color:#effffc!important;
+    box-shadow:0 7px 20px rgba(0,0,0,.42)!important;
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+    -webkit-transform:none!important;
+    transform:none!important;
+    touch-action:manipulation!important;
+  }
+  .menub svg{pointer-events:none!important}
+
+  /* Não esconder o botão no Android: se necessário ele também fecha o menu. */
+  .mobile-menu-open .menub{
+    opacity:1!important;
+    visibility:visible!important;
+    pointer-events:auto!important;
+    z-index:10004!important;
+  }
+
+  header{
+    padding-left:max(72px, calc(env(safe-area-inset-left, 0px) + 70px))!important;
+  }
+
+  .sidebar,
+  .sidebar.open{
+    position:fixed!important;
+    top:0!important;
+    bottom:0!important;
+    left:0!important;
+    right:auto!important;
+    width:min(88vw, 310px)!important;
+    height:100vh!important;
+    height:100dvh!important;
+    min-height:100vh!important;
+    max-height:none!important;
+    display:flex!important;
+    flex-direction:column!important;
+    padding-top:max(14px, calc(env(safe-area-inset-top, 0px) + 10px))!important;
+    padding-left:max(12px, calc(env(safe-area-inset-left, 0px) + 10px))!important;
+    padding-right:12px!important;
+    padding-bottom:max(14px, calc(env(safe-area-inset-bottom, 0px) + 10px))!important;
+    background:#071b22!important;
+    background-color:#071b22!important;
+    color:#c5d7da!important;
+    border-right:1px solid #1f414a!important;
+    box-shadow:18px 0 42px rgba(0,0,0,.58)!important;
+    opacity:1!important;
+    visibility:visible!important;
+    overflow:hidden!important;
+    z-index:10003!important;
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+    transition:-webkit-transform .18s ease!important;
+    transition:transform .18s ease!important;
+    transition:transform .18s ease,-webkit-transform .18s ease!important;
+    will-change:transform;
+  }
+  .sidebar{
+    -webkit-transform:translateX(-110%)!important;
+    transform:translateX(-110%)!important;
+    pointer-events:none!important;
+  }
+  .sidebar.open{
+    -webkit-transform:translateX(0)!important;
+    transform:translateX(0)!important;
+    pointer-events:auto!important;
+  }
+  .sidebar.open *{
+    visibility:visible!important;
+  }
+  .sidebar .brand{
+    background:#071b22!important;
+    opacity:1!important;
+  }
+  .sidebar .brand b{color:#fff!important}
+  .sidebar nav{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    -webkit-overflow-scrolling:touch!important;
+    overscroll-behavior:contain!important;
+    background:#071b22!important;
+    opacity:1!important;
+  }
+  .sidebar nav button{
+    position:relative!important;
+    z-index:1!important;
+    min-height:46px!important;
+    color:#9ab5bb!important;
+    background:#071b22!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    touch-action:manipulation!important;
+  }
+  .sidebar nav button:hover,
+  .sidebar nav button:active{
+    background:#0d3037!important;
+    color:#eafff9!important;
+  }
+  .sidebar nav button.active{
+    background:#103a3d!important;
+    color:#39d9ad!important;
+  }
+  .sidebar .legal{
+    background:#071b22!important;
+    opacity:1!important;
+  }
+  .sidebar .close{
+    z-index:2!important;
+    background:#0b252c!important;
+    color:#fff!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+  }
+
+  .mobile-menu-backdrop{
+    display:block!important;
+    position:fixed!important;
+    inset:0!important;
+    width:100vw!important;
+    height:100vh!important;
+    height:100dvh!important;
+    z-index:10001!important;
+    background:rgba(0,8,12,.72)!important;
+    opacity:1!important;
+    border:0!important;
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+    touch-action:manipulation!important;
+  }
+}
+
+@media (max-width:560px){
+  .menub{
+    top:calc(env(safe-area-inset-top, 0px) + 8px)!important;
+    width:46px!important;
+    height:46px!important;
+    min-width:46px!important;
+    min-height:46px!important;
+  }
+}
