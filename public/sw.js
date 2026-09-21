@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v182-iphone-menu-internet";
+const CACHE = "painel-bordo-v183-iphone-menu-definitivo";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

@@ -5281,3 +5281,131 @@ main.loginpage{
   header h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
   .headright{gap:7px}
 }
+
+/* V183 — correção definitiva do menu lateral no iPhone/Safari/PWA */
+@media (max-width:900px){
+  /* O botão deixa de depender da posição/altura do header. Fica preso à tela. */
+  .menub{
+    position:fixed!important;
+    top:calc(env(safe-area-inset-top, 0px) + 10px)!important;
+    left:max(10px, calc(env(safe-area-inset-left, 0px) + 8px))!important;
+    z-index:7005!important;
+    width:48px!important;
+    height:48px!important;
+    min-width:48px!important;
+    min-height:48px!important;
+    display:grid!important;
+    place-items:center!important;
+    background:rgba(7,27,34,.96)!important;
+    border:1px solid #2c555e!important;
+    color:#eafcf8!important;
+    box-shadow:0 8px 24px rgba(0,12,16,.38)!important;
+    -webkit-backdrop-filter:blur(8px);
+    backdrop-filter:blur(8px);
+    transform:translateZ(0);
+    touch-action:manipulation!important;
+    -webkit-user-select:none;
+    user-select:none;
+  }
+  .menub:active{transform:translateZ(0) scale(.94)}
+
+  /* Reserva espaço no cabeçalho para o botão fixo não cobrir o nome do barco. */
+  header{
+    padding-left:max(74px, calc(env(safe-area-inset-left, 0px) + 72px))!important;
+  }
+
+  /* Quando o drawer abre, o X do próprio menu assume o fechamento. */
+  .mobile-menu-open .menub{
+    opacity:0!important;
+    pointer-events:none!important;
+  }
+
+  /* Drawer com fallback para Safari antigo + dvh para iOS atual. */
+  .sidebar{
+    position:fixed!important;
+    top:0!important;
+    bottom:0!important;
+    left:0!important;
+    right:auto!important;
+    width:min(88vw, 310px)!important;
+    height:100vh!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    min-height:0!important;
+    padding-top:max(16px, calc(env(safe-area-inset-top, 0px) + 12px))!important;
+    padding-left:max(12px, calc(env(safe-area-inset-left, 0px) + 10px))!important;
+    padding-right:12px!important;
+    padding-bottom:max(14px, calc(env(safe-area-inset-bottom, 0px) + 12px))!important;
+    transform:translate3d(calc(-100% - 24px),0,0)!important;
+    visibility:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+    z-index:7004!important;
+    overflow:hidden!important;
+    overscroll-behavior:none;
+    -webkit-overflow-scrolling:touch;
+    transition:transform .18s ease, opacity .18s ease, visibility 0s linear .18s!important;
+  }
+  .sidebar.open{
+    transform:translate3d(0,0,0)!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    transition:transform .18s ease, opacity .18s ease!important;
+  }
+
+  /* Cabeçalho do drawer sempre visível, inclusive em iPhones pequenos. */
+  .sidebar .brand{
+    position:relative;
+    z-index:2;
+    min-height:52px;
+    flex:none!important;
+  }
+  .sidebar .close{
+    position:absolute!important;
+    right:0!important;
+    top:0!important;
+    z-index:3!important;
+    border:1px solid #294b54!important;
+    border-radius:10px!important;
+    background:#0b252c!important;
+  }
+
+  /* Só a lista rola; o topo e o X nunca somem. */
+  .sidebar nav{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    padding:2px 2px 18px 0!important;
+    touch-action:pan-y!important;
+    scrollbar-width:thin;
+  }
+  .sidebar nav button{
+    width:100%!important;
+    min-height:46px!important;
+    pointer-events:auto!important;
+    -webkit-tap-highlight-color:rgba(39,211,163,.18);
+  }
+
+  .mobile-menu-backdrop{
+    z-index:7003!important;
+    height:100vh!important;
+    height:100dvh!important;
+    background:rgba(0,9,13,.62)!important;
+  }
+}
+
+@media (max-width:560px){
+  .menub{
+    top:calc(env(safe-area-inset-top, 0px) + 8px)!important;
+    left:max(8px, calc(env(safe-area-inset-left, 0px) + 7px))!important;
+    width:46px!important;
+    height:46px!important;
+    min-width:46px!important;
+    min-height:46px!important;
+  }
+  header{
+    padding-left:max(68px, calc(env(safe-area-inset-left, 0px) + 66px))!important;
+  }
+}

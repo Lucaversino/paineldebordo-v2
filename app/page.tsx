@@ -240,6 +240,32 @@ export default function Home() {
     clearOfflinePanelData();
     window.location.replace("/login");
   }
+  // V183: mantém o menu móvel acessível no iPhone/PWA e trava somente o fundo enquanto aberto.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+
+    if (menu) {
+      html.style.overflow = "hidden";
+      body.style.overflow = "hidden";
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menu]);
+
   useEffect(() => {
     const onBilling = (event: Event) => {
       const balance = Number((event as CustomEvent)?.detail?.balance);
@@ -437,9 +463,9 @@ export default function Home() {
     });
   }
   return (
-    <div className={dark ? "dark app" : "app"}>
+    <div className={`${dark ? "dark app" : "app"}${menu ? " mobile-menu-open" : ""}`}>
       {menu && <button type="button" className="mobile-menu-backdrop" aria-label="Fechar menu" onClick={() => setMenu(false)} />}
-      <aside className={menu ? "sidebar open" : "sidebar"}>
+      <aside className={menu ? "sidebar open" : "sidebar"} aria-hidden={!menu}>
         <div className="brand">
           <span>
             <ShipWheel />
