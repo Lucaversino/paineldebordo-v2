@@ -362,6 +362,7 @@ export default function Operations({ view, onDashboard }: Props) {
     Capturas: "Capturas",
     Histórico: "Histórico de viagens",
     "Comparar viagens": "Comparar viagens",
+    "Inteligência da Pesca": "Inteligência da Pesca",
     Embarcações: "Embarcações",
     Espécies: "Espécies",
     Relatórios: "Relatórios",
@@ -1200,7 +1201,7 @@ export default function Operations({ view, onDashboard }: Props) {
                 defaultValue={editingCatch.weightKg}
               />
             </label>
-            {editingCatch.catchType === "DISCARD" && <fieldset className="discard-condition discard-condition-buttons"><legend>Condição do descarte — escolha obrigatória</legend><input type="hidden" name="discardCondition" value={editingCatch.discardCondition || ""} /><button type="button" className={`discard-choice alive ${editingCatch.discardCondition === "VIVO" ? "active" : ""}`} aria-pressed={editingCatch.discardCondition === "VIVO"} onClick={() => setEditingCatch({ ...editingCatch, discardCondition: "VIVO" })}><span>●</span><b>VIVO</b><small>Peixe devolvido vivo</small></button><button type="button" className={`discard-choice dead ${editingCatch.discardCondition === "MORTO" ? "active" : ""}`} aria-pressed={editingCatch.discardCondition === "MORTO"} onClick={() => setEditingCatch({ ...editingCatch, discardCondition: "MORTO" })}><span>●</span><b>MORTO</b><small>Peixe descartado morto</small></button></fieldset>}
+            {editingCatch.catchType === "DISCARD" && <fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" required defaultChecked={editingCatch.discardCondition === "VIVO"} /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" required defaultChecked={editingCatch.discardCondition === "MORTO"} /> Morto</label></fieldset>}
             <label>
               Observação
               <input name="notes" defaultValue={editingCatch.notes || ""} />

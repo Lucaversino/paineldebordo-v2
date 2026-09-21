@@ -40,89 +40,23 @@ export function formatCoordinate(value: unknown, latitude: boolean) {
 const COAST_BANDS = [
   { min: -34.5, max: -28.2, label: "Costa do Rio Grande do Sul" },
   { min: -28.2, max: -26.0, label: "Costa de Santa Catarina" },
-  { min: -26.0, max: -24.8, label: "Costa do Paraná / Sul de São Paulo" },
+  { min: -26.0, max: -24.8, label: "Costa do Paraná" },
   { min: -24.8, max: -22.6, label: "Costa de São Paulo" },
   { min: -22.6, max: -20.3, label: "Costa do Rio de Janeiro" },
 ];
 
-// Referências costeiras intencionalmente espaçadas. O objetivo aqui não é
-// "adivinhar a cidade exata", e sim transformar a rota oceânica em uma leitura
-// operacional fácil para o pescador (ex.: Imbituba, SC → Cananéia, SP).
-const COASTAL_REFERENCES = [
-  { name: "Rio Grande, RS", lat: -32.035, lon: -52.099 },
-  { name: "Mostardas, RS", lat: -31.105, lon: -50.916 },
-  { name: "Torres, RS", lat: -29.335, lon: -49.726 },
-  { name: "Imbituba, SC", lat: -28.240, lon: -48.670 },
-  { name: "Porto Belo, SC", lat: -27.157, lon: -48.553 },
-  { name: "São Francisco do Sul, SC", lat: -26.243, lon: -48.638 },
-  { name: "Paranaguá, PR", lat: -25.516, lon: -48.523 },
-  { name: "Cananéia, SP", lat: -25.014, lon: -47.934 },
-  { name: "Santos, SP", lat: -23.960, lon: -46.333 },
-  { name: "Ubatuba, SP", lat: -23.433, lon: -45.083 },
-  { name: "Angra dos Reis, RJ", lat: -23.006, lon: -44.318 },
-  { name: "Rio de Janeiro, RJ", lat: -22.906, lon: -43.172 },
-  { name: "Cabo Frio, RJ", lat: -22.880, lon: -42.018 },
-  { name: "Macaé, RJ", lat: -22.377, lon: -41.786 },
-];
-
-type GeoPoint = { lat: number; lon: number };
-
-const validPoint = (latValue: unknown, lonValue: unknown): GeoPoint | null => {
-  const lat = Number(latValue);
-  const lon = Number(lonValue);
-  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
-};
-
-const haversineKm = (a: GeoPoint, b: GeoPoint) => {
-  const toRad = (value: number) => value * Math.PI / 180;
-  const earth = 6371;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return earth * 2 * Math.asin(Math.sqrt(h));
-};
-
-export function coastalReference(point: GeoPoint | null) {
-  if (!point) return "Região não determinada";
-  return COASTAL_REFERENCES
-    .map((ref) => ({ ...ref, distance: haversineKm(point, ref) }))
-    .sort((a, b) => a.distance - b.distance)[0]?.name || "Área oceânica registrada";
-}
-
-export function formatCoordinatePair(point: GeoPoint | null) {
-  if (!point) return "—";
-  return `${formatCoordinate(point.lat, true)} / ${formatCoordinate(point.lon, false)}`;
-}
-
-function southAndNorthExtremePoints(sets: any[]) {
-  let southPoint: GeoPoint | null = null;
-  let northPoint: GeoPoint | null = null;
-
-  for (const set of sets) {
-    const candidates = [
-      validPoint(set.startLatitude, set.startLongitude),
-      validPoint(set.endLatitude, set.endLongitude),
-    ].filter(Boolean) as GeoPoint[];
-
-    for (const point of candidates) {
-      // Latitude menor = ponto mais ao Sul; latitude maior = ponto mais ao Norte.
-      if (!southPoint || point.lat < southPoint.lat) southPoint = point;
-      if (!northPoint || point.lat > northPoint.lat) northPoint = point;
-    }
-  }
-
-  return { southPoint, northPoint };
-}
-
-export function geographicSummary(sets: any[], mode: "trip" | "area" = "trip") {
-  const points: GeoPoint[] = [];
+export function geographicSummary(sets: any[]) {
+  const points: Array<{ lat: number; lon: number }> = [];
   sets.forEach((set) => {
-    const start = validPoint(set.startLatitude, set.startLongitude);
-    const end = validPoint(set.endLatitude, set.endLongitude);
-    if (start) points.push(start);
-    if (end) points.push(end);
+    const candidates = [
+      [set.startLatitude, set.startLongitude],
+      [set.endLatitude, set.endLongitude],
+    ];
+    candidates.forEach(([latValue, lonValue]) => {
+      const lat = Number(latValue);
+      const lon = Number(lonValue);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) points.push({ lat, lon });
+    });
   });
   if (!points.length) {
     return {
@@ -133,62 +67,18 @@ export function geographicSummary(sets: any[], mode: "trip" | "area" = "trip") {
       minLon: null,
       maxLon: null,
       pointCount: 0,
-      southPoint: null,
-      northPoint: null,
-      southReference: "Região não determinada",
-      northReference: "Região não determinada",
-      startPoint: null,
-      endPoint: null,
-      startReference: "Região não determinada",
-      endReference: "Região não determinada",
-      routeLabel: "Área não determinada",
     };
   }
-
   const lats = points.map((point) => point.lat);
   const lons = points.map((point) => point.lon);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLon = Math.min(...lons);
   const maxLon = Math.max(...lons);
-  const { southPoint, northPoint } = southAndNorthExtremePoints(sets);
-  const southReference = coastalReference(southPoint);
-  const northReference = coastalReference(northPoint);
-  const routeLabel = southPoint && northPoint ? `${southReference} → ${northReference}` : "Área não determinada";
-
-  if (mode === "trip") {
-    return {
-      label: routeLabel,
-      detail: southPoint && northPoint
-        ? `A viagem trabalhou de ${southReference} até ${northReference}. O sistema analisou todas as posições iniciais e finais de todas as largadas e selecionou o ponto mais ao Sul e o ponto mais ao Norte.`
-        : "Não foi possível determinar os extremos Sul e Norte pelas posições registradas.",
-      minLat,
-      maxLat,
-      minLon,
-      maxLon,
-      pointCount: points.length,
-      southPoint,
-      northPoint,
-      southReference,
-      northReference,
-      // Compatibilidade com relatórios já existentes: start/end agora representam Sul/Norte.
-      startPoint: southPoint,
-      endPoint: northPoint,
-      startReference: southReference,
-      endReference: northReference,
-      routeLabel,
-    };
-  }
-
   const regions = [...new Set(points.map((point) => COAST_BANDS.find((band) => point.lat >= band.min && point.lat < band.max)?.label).filter(Boolean))];
   const label = regions.length ? `${regions.join(" / ")} (aprox.)` : "Área oceânica registrada";
-  const detail = `Área anual calculada pelas posições registradas: ${formatCoordinate(minLat, true)} a ${formatCoordinate(maxLat, true)} · ${formatCoordinate(minLon, false)} a ${formatCoordinate(maxLon, false)}.`;
-  return {
-    label, detail, minLat, maxLat, minLon, maxLon, pointCount: points.length,
-    southPoint, northPoint, southReference, northReference,
-    startPoint: southPoint, endPoint: northPoint,
-    startReference: southReference, endReference: northReference, routeLabel,
-  };
+  const detail = `Limites calculados pelas posições das largadas: ${formatCoordinate(minLat, true)} a ${formatCoordinate(maxLat, true)} · ${formatCoordinate(minLon, false)} a ${formatCoordinate(maxLon, false)}.`;
+  return { label, detail, minLat, maxLat, minLon, maxLon, pointCount: points.length };
 }
 
 export function tripReportData(trip: any, sets: any[], catches: any[]) {
@@ -321,7 +211,7 @@ export function annualReportData(year: number, trips: any[], sets: any[], catche
     averageSet: annualSets.length ? landed / annualSets.length : 0,
     averageDay: days ? landed / days : 0,
     species: [...speciesMap.values()].sort((a, b) => b.total - a.total),
-    geography: geographicSummary(annualSets, "area"),
+    geography: geographicSummary(annualSets),
     environment: environmentalSummary(annualSnapshots),
   };
 }

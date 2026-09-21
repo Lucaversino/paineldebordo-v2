@@ -5,6 +5,7 @@ import {
   Anchor,
   CircleHelp,
   BarChart3,
+  BrainCircuit,
   Fish,
   Gauge,
   History,
@@ -47,6 +48,7 @@ const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
 const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
 const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
+const FishingIntelligence = dynamic(() => import("../components/FishingIntelligence"), { ssr: false, loading: ModuleLoading });
 const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
 const AdminBillingPage = dynamic(() => import("../components/AdminBillingPage"), { ssr: false, loading: ModuleLoading });
 const DashboardProductionChart = dynamic(() => import("../components/DashboardProductionChart"), { ssr: false });
@@ -55,7 +57,7 @@ const fmt = (n: number, d = 0) =>
     minimumFractionDigits: d,
     maximumFractionDigits: d,
   }).format(n || 0);
-const blank = { trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, discardAliveTotal: 0, discardDeadTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] };
+const blank = { trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] };
 
 function calendarDayStamp(value: string | Date) {
   const date = value instanceof Date ? value : new Date(value);
@@ -81,7 +83,6 @@ export default function Home() {
     [view, setView] = useState("Dashboard"),
     [modal, setModal] = useState<"capture" | "set" | "editSet" | "mixture" | "discard" | null>(null),
     [weight, setWeight] = useState(""),
-    [discardConditionChoice, setDiscardConditionChoice] = useState<"" | "VIVO" | "MORTO">(""),
     [setId, setSetId] = useState(""),
     [editSet, setEditSet] = useState<any>(null),
     [busy, setBusy] = useState(false),
@@ -299,13 +300,6 @@ export default function Home() {
     setBusy(true);
     setSaveError("");
     const formData = e ? new FormData(e.currentTarget) : null;
-    const selectedDiscardCondition = String(formData?.get("discardCondition") || "").toUpperCase();
-    const discardWeightInSet = Number(String(formData?.get("discardWeightKg") || "").replace(",", "."));
-    if ((modal === "discard" || (modal === "set" && discardWeightInSet > 0)) && !["VIVO", "MORTO"].includes(selectedDiscardCondition)) {
-      setSaveError("Selecione se o descarte está VIVO ou MORTO.");
-      setBusy(false);
-      return;
-    }
     const p =
       modal === "capture"
         ? {
@@ -358,7 +352,6 @@ export default function Home() {
       setOffline(true);
       setModal(null);
       setWeight("");
-      setDiscardConditionChoice("");
       setBusy(false);
       setSaveError("");
     };
@@ -391,7 +384,6 @@ export default function Home() {
     }
     setModal(null);
     setWeight("");
-    setDiscardConditionChoice("");
     setBusy(false);
   }
   async function loadSetForEdit(id: string) {
@@ -447,6 +439,7 @@ export default function Home() {
       [Fish, "Capturas"],
       [History, "Histórico"],
       [BarChart3, "Comparar viagens"],
+      [BrainCircuit, "Inteligência da Pesca"],
       [Anchor, "Embarcações"],
       [Fish, "Espécies"],
       [BarChart3, "Relatórios"],
@@ -680,10 +673,10 @@ export default function Home() {
                 <div className="catch-breakdown">
                   <article className="main-catch"><small>ESPÉCIE PRINCIPAL</small><b>Corvina</b><strong>{fmt(data.corvinaTotal)} kg</strong></article>
                   <article><small>MISTURA DE PEIXE</small><strong>{fmt(data.mixtureTotal)} kg</strong></article>
-                  <article className="discard"><small>DESCARTE</small><strong>{fmt(data.discardTotal)} kg</strong><span className="discard-dashboard-split"><b>Vivo {fmt(data.discardAliveTotal)} kg</b><b>Morto {fmt(data.discardDeadTotal)} kg</b></span></article>
+                  <article className="discard"><small>DESCARTE</small><strong>{fmt(data.discardTotal)} kg</strong></article>
                 </div>
                 <div className="actions">
-                  <button onClick={() => { setSaveError(""); setDiscardConditionChoice(""); setModal("set"); }}>
+                  <button onClick={() => { setSaveError(""); setModal("set"); }}>
                     <Plus />
                     <span>
                       <small>REGISTRO OPERACIONAL</small>NOVA LARGADA
@@ -705,7 +698,7 @@ export default function Home() {
                 </div>
                 <div className="category-actions">
                   <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
-                  <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setDiscardConditionChoice(""); setModal("discard"); }}><X /> Descarte</button>
+                  <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
                 </div>
                 <div className="dashboard-set-tools">
                   <button type="button" disabled={!data.sets.length} onClick={openSetEditor}>
@@ -755,6 +748,8 @@ export default function Home() {
             defaultLat={Number(data.sets?.at(-1)?.endLatitude ?? data.sets?.at(-1)?.startLatitude ?? -27.15)}
             defaultLon={Number(data.sets?.at(-1)?.endLongitude ?? data.sets?.at(-1)?.startLongitude ?? -48.55)}
           />
+        ) : view === "Inteligência da Pesca" ? (
+          <FishingIntelligence />
         ) : view === "Meus créditos" ? (
           <CreditsPage />
         ) : view === "Admin — AIS, IA e Créditos" ? (
@@ -817,7 +812,7 @@ export default function Home() {
                 <div className="or-divider"><span>OU</span></div>
                 <label>Cadastrar nova espécie<input name="speciesName" autoFocus placeholder="Digite somente se for nova" /><small>Se já estiver cadastrada, selecione na lista acima.</small></label>
                 <label>Total em quilos<div className="weight"><input name="categoryWeightKg" inputMode="decimal" required placeholder="0" /><span>kg</span></div></label>
-                {modal === "discard" && <fieldset className="discard-condition discard-condition-buttons"><legend>Condição do descarte — escolha obrigatória</legend><input type="hidden" name="discardCondition" value={discardConditionChoice} /><button type="button" className={`discard-choice alive ${discardConditionChoice === "VIVO" ? "active" : ""}`} aria-pressed={discardConditionChoice === "VIVO"} onClick={() => { setDiscardConditionChoice("VIVO"); setSaveError(""); }}><span>●</span><b>VIVO</b><small>Peixe devolvido vivo</small></button><button type="button" className={`discard-choice dead ${discardConditionChoice === "MORTO" ? "active" : ""}`} aria-pressed={discardConditionChoice === "MORTO"} onClick={() => { setDiscardConditionChoice("MORTO"); setSaveError(""); }}><span>●</span><b>MORTO</b><small>Peixe descartado morto</small></button></fieldset>}
+                {modal === "discard" && <fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" required /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" required /> Morto</label></fieldset>}
               </>
             ) : modal === "editSet" ? (
               <>
@@ -860,7 +855,7 @@ export default function Home() {
                 <fieldset className="catch-fields"><legend>Captura da largada — valores separados</legend>
                   <label>Corvina — espécie principal<div className="weight"><input name="dailyCatchKg" inputMode="decimal" required placeholder="0" /><span>kg</span></div></label>
                   <div className="category-entry"><label>Espécie da mistura<select name="mixtureSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="mixtureSpeciesName" placeholder="Somente se for nova" /></label><label>Total da mistura<div className="weight"><input name="mixtureWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label></div>
-                  <div className="category-entry discard-entry"><label>Espécie do descarte<select name="discardSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="discardSpeciesName" placeholder="Somente se for nova" /></label><label>Total do descarte<div className="weight"><input name="discardWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label><fieldset className="discard-condition discard-condition-buttons"><legend>Condição do descarte — selecione se houver peso</legend><input type="hidden" name="discardCondition" value={discardConditionChoice} /><button type="button" className={`discard-choice alive ${discardConditionChoice === "VIVO" ? "active" : ""}`} aria-pressed={discardConditionChoice === "VIVO"} onClick={() => { setDiscardConditionChoice("VIVO"); setSaveError(""); }}><span>●</span><b>VIVO</b><small>Peixe devolvido vivo</small></button><button type="button" className={`discard-choice dead ${discardConditionChoice === "MORTO" ? "active" : ""}`} aria-pressed={discardConditionChoice === "MORTO"} onClick={() => { setDiscardConditionChoice("MORTO"); setSaveError(""); }}><span>●</span><b>MORTO</b><small>Peixe descartado morto</small></button></fieldset></div>
+                  <div className="category-entry discard-entry"><label>Espécie do descarte<select name="discardSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="discardSpeciesName" placeholder="Somente se for nova" /></label><label>Total do descarte<div className="weight"><input name="discardWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label><fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" defaultChecked /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" /> Morto</label></fieldset></div>
                 </fieldset>
               </>
             )}

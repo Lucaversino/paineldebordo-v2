@@ -117,8 +117,6 @@ export function applyOfflineDashboardMutation(current: any, body: any, forcedLoc
     next.total = Number(next.total || 0) + primary;
     next.mixtureTotal = Number(next.mixtureTotal || 0) + mixture;
     next.discardTotal = Number(next.discardTotal || 0) + discard;
-    if (discard > 0 && String(body.discardCondition || "").toUpperCase() === "VIVO") next.discardAliveTotal = Number(next.discardAliveTotal || 0) + discard;
-    if (discard > 0 && String(body.discardCondition || "").toUpperCase() === "MORTO") next.discardDeadTotal = Number(next.discardDeadTotal || 0) + discard;
     next.setCount = Number(next.setCount || 0) + 1;
     next.daily = patchDaily(next.daily, String(body.fishingDate), primary);
     return next;
@@ -139,8 +137,6 @@ export function applyOfflineDashboardMutation(current: any, body: any, forcedLoc
       next.sets = (next.sets || []).map((item: any) => Number(item.id) === setId ? { ...item, total: Number(item.total || 0) + weight } : item);
     } else if (body.catchType === "DISCARD") {
       next.discardTotal = Number(next.discardTotal || 0) + weight;
-      if (String(body.discardCondition || "").toUpperCase() === "VIVO") next.discardAliveTotal = Number(next.discardAliveTotal || 0) + weight;
-      if (String(body.discardCondition || "").toUpperCase() === "MORTO") next.discardDeadTotal = Number(next.discardDeadTotal || 0) + weight;
     }
   }
   return next;
