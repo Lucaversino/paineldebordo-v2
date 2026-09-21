@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   X,
   LogOut,
+  LocateFixed,
 } from "lucide-react";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
@@ -697,6 +698,16 @@ export default function Home() {
                   <button type="button" className="set-list-link" onClick={() => setView("Largadas")}>
                     <List /> Lista de Largadas
                   </button>
+                </div>
+                <div className="dashboard-current-location">
+                  <button type="button" onClick={() => {
+                    try { sessionStorage.setItem("painel-auto-current-forecast", "1"); } catch {}
+                    setView("Ventos e Mar");
+                  }}>
+                    <LocateFixed />
+                    <span><small>PREVISÃO RÁPIDA</small><b>MINHA LOCALIZAÇÃO ATUAL</b></span>
+                  </button>
+                  <p>Usa o GPS do celular, abre Ventos e Mar e sincroniza a mesma posição com o mapa ambiental.</p>
                 </div>
                 <OceanIntelligence />
                 <div className="lower single">

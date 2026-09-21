@@ -24,6 +24,7 @@ import {
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
 import EnvironmentalOverlayMap from "./EnvironmentalOverlayMap";
+import { coordinateDigits, decimalToCoordinateInput, formatCoordinateInput } from "../lib/marineCoordinate";
 
 const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
 
@@ -39,11 +40,7 @@ function digitsToDecimal(raw: string, direction: "S" | "W") {
 }
 
 function decimalToDigits(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(Number(value))) return "";
-  const absolute = Math.abs(Number(value));
-  const degrees = Math.floor(absolute);
-  const minutes = ((absolute - degrees) * 60).toFixed(2).replace(".", "");
-  return `${String(degrees).padStart(2, "0")}${minutes}`;
+  return decimalToCoordinateInput(value);
 }
 
 function nauticalPosition(lat: number, lon: number) {
@@ -62,8 +59,9 @@ function CoordinateField({ label, direction, value, onChange }: {
   value: string;
   onChange: (value: string) => void;
 }) {
-  const preview = value.length === 6
-    ? `${value.slice(0, 2)}º ${value.slice(2, 4)},${value.slice(4)}' ${direction}`
+  const digits = coordinateDigits(value);
+  const preview = digits.length === 6
+    ? `${digits.slice(0, 2)}º ${digits.slice(2, 4)},${digits.slice(4)}' ${direction}`
     : "";
   return (
     <label className="position-coordinate">
@@ -72,14 +70,11 @@ function CoordinateField({ label, direction, value, onChange }: {
         <input
           type="text"
           inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={6}
           autoComplete="off"
           value={value}
-          placeholder={direction === "S" ? "252178" : "474769"}
-          onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          placeholder={direction === "S" ? "25°2178" : "47°4769"}
+          onChange={(event) => onChange(formatCoordinateInput(event.target.value))}
         />
-        <span className="coord-degree" aria-hidden="true">°</span>
       </span>
       <em>{preview ? `Formato: ${preview}` : "Digite somente números — pode apagar e digitar novamente"}</em>
     </label>
@@ -179,6 +174,17 @@ export default function PositionForecast() {
   const lon = digitsToDecimal(lonDigits, "W");
 
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem("painel-auto-current-forecast") === "1") {
+        sessionStorage.removeItem("painel-auto-current-forecast");
+        window.setTimeout(() => useCurrentLocation(true), 120);
+      }
+    } catch {}
+    // Executa somente ao abrir o módulo por meio do atalho do Dashboard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     let restoredLocally = false;
     try {
       const raw = localStorage.getItem(LAST_FORECAST_KEY);
@@ -186,8 +192,8 @@ export default function PositionForecast() {
         const last = JSON.parse(raw);
         if (last?.payload?.position) {
           setData(last.payload);
-          setLatDigits(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat)));
-          setLonDigits(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon)));
+          setLatDigits(formatCoordinateInput(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat))));
+          setLonDigits(formatCoordinateInput(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon))));
           restoredLocally = true;
         }
       }
@@ -198,8 +204,8 @@ export default function PositionForecast() {
       if (!restoredLocally && json?.history?.[0]?.payload?.position) {
         const last = json.history[0];
         setData(last.payload);
-        setLatDigits(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat)));
-        setLonDigits(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon)));
+        setLatDigits(formatCoordinateInput(last.latitudeRaw || decimalToDigits(Number(last.payload.position.lat))));
+        setLonDigits(formatCoordinateInput(last.longitudeRaw || decimalToDigits(Number(last.payload.position.lon))));
       }
     })();
   }, []);
@@ -245,7 +251,7 @@ export default function PositionForecast() {
     } catch {}
   }
 
-  function useCurrentLocation() {
+  function useCurrentLocation(autoConsult = false) {
     setError("");
     setNotice("");
     setGpsStatus("");
@@ -266,11 +272,18 @@ export default function PositionForecast() {
           return;
         }
 
-        setLatDigits(decimalToDigits(latitude));
-        setLonDigits(decimalToDigits(longitude));
+        const nextLat = decimalToDigits(latitude);
+        const nextLon = decimalToDigits(longitude);
+        setLatDigits(nextLat);
+        setLonDigits(nextLon);
         setGpsStatus(`GPS capturado · precisão aproximada ±${Math.round(accuracy || 0)} m`);
-        setNotice("Latitude e longitude preenchidas com a localização atual do celular.");
+        setNotice(autoConsult ? "Localização atual capturada. Carregando previsão e mapa ambiental…" : "Latitude e longitude preenchidas com a localização atual do celular.");
         setLocating(false);
+        try {
+          sessionStorage.setItem("ocean-analysis-position-v90", JSON.stringify({ lat: latitude, lon: longitude }));
+          window.dispatchEvent(new CustomEvent("painel-position-changed", { detail: { lat: latitude, lon: longitude } }));
+        } catch {}
+        if (autoConsult) void consultCoordinates(latitude, longitude, nextLat, nextLon, "Previsão da localização atual carregada e sincronizada com o mapa ambiental.");
       },
       (geoError) => {
         setLocating(false);
@@ -286,9 +299,27 @@ export default function PositionForecast() {
     );
   }
 
+  async function consultCoordinates(latitude: number, longitude: number, latitudeRaw: string, longitudeRaw: string, successMessage: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/position-forecast?lat=${latitude}&lon=${longitude}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.error || "Falha na consulta.");
+      setData(json);
+      await rememberForecast(json, latitudeRaw, longitudeRaw);
+      setNotice(successMessage);
+    } catch (e) {
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      setError(timedOut ? "A previsão demorou demais para responder. Tente novamente; o painel não ficará travado." : (e instanceof Error ? e.message : "Não foi possível consultar agora."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function consult() {
     if (lat == null || lon == null) {
-      setError("Confira latitude e longitude. Exemplo: 252178 / 474769.");
+      setError("Confira latitude e longitude. Exemplo: 25°2178 / 47°4769.");
       return;
     }
     setBusy(true);
@@ -346,8 +377,8 @@ export default function PositionForecast() {
   function openForecast(item: any) {
     if (!item?.payload?.position) return;
     setData(item.payload);
-    setLatDigits(item.latitudeRaw || decimalToDigits(Number(item.payload.position.lat)));
-    setLonDigits(item.longitudeRaw || decimalToDigits(Number(item.payload.position.lon)));
+    setLatDigits(formatCoordinateInput(item.latitudeRaw || decimalToDigits(Number(item.payload.position.lat))));
+    setLonDigits(formatCoordinateInput(item.longitudeRaw || decimalToDigits(Number(item.payload.position.lon))));
     setError("");
     setNotice(item.title ? `Previsão “${item.title}” aberta sem nova consulta.` : "Previsão do histórico aberta sem nova consulta.");
     try {
@@ -485,7 +516,7 @@ export default function PositionForecast() {
           <CoordinateField label="Longitude" direction="W" value={lonDigits} onChange={(value) => { setLonDigits(value); setGpsStatus(""); setError(""); setNotice(""); }} />
         </div>
 
-        <button type="button" className="position-use-gps" onClick={useCurrentLocation} disabled={busy || locating}>
+        <button type="button" className="position-use-gps" onClick={() => useCurrentLocation(false)} disabled={busy || locating}>
           <LocateFixed className={locating ? "spin" : ""}/>
           <span>
             <b>{locating ? "BUSCANDO GPS..." : "USAR LOCALIZAÇÃO ATUAL"}</b>

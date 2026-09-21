@@ -1,4 +1,5 @@
 "use client";
+import { formatCoordinateInput } from "../lib/marineCoordinate";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -3765,8 +3766,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
                 {mobileAreaAdvanced && (
                   <div className="ais-v74-mobile-coordinates ais-v127-manual">
-                    <label><span>Latitude Sul</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLatDigits} onChange={(e) => { setManualLatDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="254530" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
-                    <label><span>Longitude Oeste</span><span className="coord-free-input"><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={manualLonDigits} onChange={(e) => { setManualLonDigits(e.target.value.replace(/\D/g, "").slice(0, 6)); setManualCoordError(""); }} placeholder="462550" /><span className="coord-degree" aria-hidden="true">°</span></span></label>
+                    <label><span>Latitude Sul</span><span className="coord-free-input"><input type="text" inputMode="numeric" value={manualLatDigits} onChange={(e) => { setManualLatDigits(formatCoordinateInput(e.target.value)); setManualCoordError(""); }} placeholder="25°4530" /></span></label>
+                    <label><span>Longitude Oeste</span><span className="coord-free-input"><input type="text" inputMode="numeric" value={manualLonDigits} onChange={(e) => { setManualLonDigits(formatCoordinateInput(e.target.value)); setManualCoordError(""); }} placeholder="46°2550" /></span></label>
                     <button type="button" onClick={() => applyManualAreaCoordinates(false)}><MapPinned /> Usar posição</button>
                   </div>
                 )}

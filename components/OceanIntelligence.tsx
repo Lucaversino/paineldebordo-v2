@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Activity, BrainCircuit, Crosshair, Droplets, MapPin, MoonStar, Pencil, RefreshCw, RotateCcw, Thermometer, Waves, Wind, X } from "lucide-react";
+import { coordinateDigits, decimalToCoordinateInput, formatCoordinateInput } from "../lib/marineCoordinate";
 
 const n = (v: any, d = 1) => v == null || Number.isNaN(Number(v)) ? "—" : new Intl.NumberFormat("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(Number(v));
 const tm = (v?: string | null) => v ? new Date(v).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
@@ -45,8 +46,7 @@ function formatDmm(value: any, axis: "lat" | "lon") {
 }
 
 function quickCoordinateDigits(value: any) {
-  const raw = String(value ?? "").replace(/\D/g, "").slice(0, 6);
-  return raw;
+  return coordinateDigits(value);
 }
 
 function quickCoordinateDisplay(value: any, direction: "S" | "W" | "N" | "E") {
@@ -58,13 +58,7 @@ function quickCoordinateDisplay(value: any, direction: "S" | "W" | "N" | "E") {
 }
 
 function decimalToQuickCoordinate(value: any, axis: "lat" | "lon") {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return "";
-  const abs = Math.abs(raw);
-  const degrees = Math.floor(abs);
-  const minutes = (abs - degrees) * 60;
-  const digits = `${String(degrees).padStart(2, "0")}${String(Math.round(minutes * 100)).padStart(4, "0").slice(0, 4)}`;
-  return digits;
+  return decimalToCoordinateInput(Number(value));
 }
 
 function parseMarineCoordinate(input: string, axis: "lat" | "lon") {
@@ -163,9 +157,9 @@ export default function OceanIntelligence() {
   };
 
   const updateQuickCoordinate = (raw: string, axis: "lat" | "lon") => {
-    const digits = quickCoordinateDigits(raw);
-    if (axis === "lat") setLatInput(digits);
-    else setLonInput(digits);
+    const formatted = formatCoordinateInput(raw);
+    if (axis === "lat") setLatInput(formatted);
+    else setLonInput(formatted);
     setPositionError("");
     setGpsStatus("");
   };
@@ -292,15 +286,12 @@ export default function OceanIntelligence() {
               type="text"
               value={latInput}
               onChange={e => updateQuickCoordinate(e.target.value, "lat")}
-              placeholder="254565"
+              placeholder="25°4565"
               inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
               autoComplete="off"
             />
-            <span className="coord-degree" aria-hidden="true">°</span>
           </span>
-          <small className="ocean-position-input-hint">{latInput.length === 6 ? `Formato: ${quickCoordinateDisplay(latInput, "S")}` : "Digite somente números — campo livre para apagar"}</small>
+          <small className="ocean-position-input-hint">{coordinateDigits(latInput).length === 6 ? `Formato: ${quickCoordinateDisplay(latInput, "S")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         <label>LONGITUDE
           <span className="coord-free-input">
@@ -308,15 +299,12 @@ export default function OceanIntelligence() {
               type="text"
               value={lonInput}
               onChange={e => updateQuickCoordinate(e.target.value, "lon")}
-              placeholder="463545"
+              placeholder="46°3545"
               inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
               autoComplete="off"
             />
-            <span className="coord-degree" aria-hidden="true">°</span>
           </span>
-          <small className="ocean-position-input-hint">{lonInput.length === 6 ? `Formato: ${quickCoordinateDisplay(lonInput, "W")}` : "Digite somente números — campo livre para apagar"}</small>
+          <small className="ocean-position-input-hint">{coordinateDigits(lonInput).length === 6 ? `Formato: ${quickCoordinateDisplay(lonInput, "W")}` : "Digite somente números — campo livre para apagar"}</small>
         </label>
         {positionError && <div className="ocean-position-error">{positionError}</div>}
         <div className="ocean-position-modal-actions">

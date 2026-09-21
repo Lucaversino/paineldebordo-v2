@@ -5635,3 +5635,11 @@ main.loginpage{
     height: 12px !important;
   }
 }
+
+/* V186 — coordenada única DD°MMMM + atalho GPS do Dashboard */
+.coord-free-input>input{padding-right:16px!important;letter-spacing:.02em}
+.coord-degree{display:none!important}
+.dashboard-current-location{margin:18px 0;display:flex;align-items:center;gap:14px;padding:14px;border:1px solid rgba(55,215,181,.28);border-radius:18px;background:rgba(13,53,57,.5)}
+.dashboard-current-location button{min-height:58px;border:1px solid rgba(55,215,181,.48);border-radius:14px;background:linear-gradient(135deg,#20d6b0,#32cdb6);color:#062a2e;padding:10px 16px;display:flex;align-items:center;gap:12px;font-weight:900;cursor:pointer}
+.dashboard-current-location button svg{width:24px;height:24px;flex:0 0 auto}.dashboard-current-location button span{display:flex;flex-direction:column;align-items:flex-start;gap:2px}.dashboard-current-location button small{font-size:10px;letter-spacing:.12em}.dashboard-current-location button b{font-size:14px}.dashboard-current-location p{margin:0;color:#8ba9ad;font-size:13px;line-height:1.4}
+@media(max-width:760px){.dashboard-current-location{display:block}.dashboard-current-location button{width:100%;justify-content:center}.dashboard-current-location p{margin-top:9px;text-align:center;font-size:12px}}
