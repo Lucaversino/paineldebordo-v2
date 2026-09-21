@@ -88,13 +88,15 @@ export async function GET() {
     .innerJoin(boats, eq(trips.boatId, boats.id))
     .where(and(eq(trips.status, "IN_PROGRESS"), eq(trips.ownerId, user.id)))
     .limit(1);
-  if (!trip) return Response.json({ trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] });
+  if (!trip) return Response.json({ trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, discardAliveTotal: 0, discardDeadTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] });
   const [totalsRows, sets, daily, speciesOptions] = await Promise.all([
     db
       .select({
         corvinaTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'PRIMARY' then ${catches.weightKg} else 0 end),0)`,
         mixtureTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'MIXTURE' then ${catches.weightKg} else 0 end),0)`,
         discardTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'DISCARD' then ${catches.weightKg} else 0 end),0)`,
+        discardAliveTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'DISCARD' and ${catches.notes} like '[DESCARTE:VIVO]%' then ${catches.weightKg} else 0 end),0)`,
+        discardDeadTotal: sql<number>`coalesce(sum(case when ${catches.catchType} = 'DISCARD' and ${catches.notes} like '[DESCARTE:MORTO]%' then ${catches.weightKg} else 0 end),0)`,
         count: sql<number>`count(distinct ${fishingSets.id})`,
       })
       .from(fishingSets)
@@ -138,6 +140,8 @@ export async function GET() {
     corvinaTotal: Number(totals?.corvinaTotal || 0),
     mixtureTotal: Number(totals?.mixtureTotal || 0),
     discardTotal: Number(totals?.discardTotal || 0),
+    discardAliveTotal: Number(totals?.discardAliveTotal || 0),
+    discardDeadTotal: Number(totals?.discardDeadTotal || 0),
     setCount: Number(totals?.count || 0),
     sets,
     daily,

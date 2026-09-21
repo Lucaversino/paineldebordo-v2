@@ -5655,3 +5655,22 @@ main.loginpage{
 @media(max-width:430px){.full-report-kpis{grid-template-columns:1fr}.weather-summary-grid,.geography-grid{grid-template-columns:1fr 1fr}.full-report-actions{grid-template-columns:1fr}.compare-year-icon{width:42px;height:42px}.compare-year-copy b{font-size:19px}.compare-years-intro{align-items:flex-start;padding:15px}.annual-summary-strip{grid-template-columns:1fr 1fr}}
 .trip-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.trip-detail-grid span{display:grid;gap:4px;padding:11px;border-radius:9px;background:#061e24}.trip-detail-grid small{font-size:7px;color:#71979b;font-weight:900;letter-spacing:.07em}.trip-detail-grid b{font-size:11px}.trip-report-notes{margin:12px 0 0!important;padding:11px;border-radius:9px;background:#061e24;color:#88a8ac!important}.trip-summary-strip{margin-top:-2px}@media(max-width:900px){.trip-detail-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:430px){.trip-detail-grid{grid-template-columns:1fr}}
 .compare-trip-numbers{grid-template-columns:repeat(4,1fr)}@media(max-width:520px){.compare-trip-numbers{grid-template-columns:1fr 1fr}}
+
+
+/* ===== V192 FIX 2 — seleção visível de descarte Vivo/Morto + conferência no Dashboard ===== */
+.discard-condition-buttons{display:grid!important;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+.discard-condition-buttons>legend{grid-column:1/-1}
+.discard-condition-buttons .discard-choice{min-height:76px;border:1px solid #38535a;border-radius:11px;background:#0a2228;color:#d8e5e6;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:9px;align-items:center;text-align:left;padding:11px 13px;cursor:pointer;transition:.16s ease;box-shadow:none}
+.discard-condition-buttons .discard-choice>span{grid-row:1/3;font-size:21px;line-height:1}
+.discard-condition-buttons .discard-choice>b{font-size:13px;letter-spacing:.06em}
+.discard-condition-buttons .discard-choice>small{font-size:9px;color:#78989c;font-weight:700}
+.discard-condition-buttons .discard-choice.alive>span{color:#42d59f}
+.discard-condition-buttons .discard-choice.dead>span{color:#ef6f79}
+.discard-condition-buttons .discard-choice.alive.active{border-color:#42d59f;background:#0c372f;box-shadow:0 0 0 2px rgba(66,213,159,.14) inset}
+.discard-condition-buttons .discard-choice.dead.active{border-color:#ef6f79;background:#3a1d22;box-shadow:0 0 0 2px rgba(239,111,121,.13) inset}
+.discard-condition-buttons .discard-choice.active>b{color:#fff}
+.discard-dashboard-split{display:flex!important;gap:7px;flex-wrap:wrap;margin-top:7px!important}
+.discard-dashboard-split b{font-size:9px!important;font-weight:900!important;padding:4px 7px;border-radius:999px;background:#101e22;color:#b9c9ca}
+.discard-dashboard-split b:first-child{color:#5de1b2;border:1px solid rgba(93,225,178,.25)}
+.discard-dashboard-split b:last-child{color:#ff959d;border:1px solid rgba(255,149,157,.25)}
+@media(max-width:520px){.discard-condition-buttons{grid-template-columns:1fr}.discard-condition-buttons>legend{grid-column:1}.discard-condition-buttons .discard-choice{min-height:68px}}
