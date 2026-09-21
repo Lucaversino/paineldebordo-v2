@@ -733,7 +733,7 @@ export default function PositionForecast() {
                 <Compass />
                 <div>
                   <b>COMO ENTENDER</b>
-                  <p>O satélite mostra a clorofila observada na superfície hoje. O Copernicus mostra a tendência prevista para os próximos dias. Diferenças entre os dois são normais porque usam métodos e resoluções diferentes.</p>
+                  <p>O satélite estima a clorofila na superfície na data da observação disponível: confira “Observado”. O Copernicus calcula a tendência para os próximos dias. A previsão pode ser menor ou maior, pois as datas, métodos e áreas representadas diferem. Veja o passo a passo em Ajuda → Clorofila.</p>
                 </div>
               </div>
 
