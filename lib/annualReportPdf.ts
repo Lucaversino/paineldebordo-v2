@@ -51,7 +51,7 @@ export function generateAnnualReportPdf(year: number, trips: any[], sets: any[],
     margin: { left: 16, right: 16, bottom: 16 },
     head: [["Viagem", "Embarcação", "Período", "Dias", "Largadas", "Captura", "Principal", "Mistura", "Desc. vivo", "Desc. morto"]],
     body: report.rows.map(({ trip, report: item }) => [
-      trip.name, trip.boatName || "—", `${formatReportDate(trip.departureDate)} → ${formatReportDate(trip.returnDate || trip.expectedReturnDate)}`,
+      `${trip.name}\n${item.geography.routeLabel}`, trip.boatName || "—", `${formatReportDate(trip.departureDate)} → ${formatReportDate(trip.returnDate || trip.expectedReturnDate)}`,
       item.duration, item.tripSets.length, pdfKg(item.landed), pdfKg(item.primary), pdfKg(item.mixture), pdfKg(item.discardAlive), pdfKg(item.discardDead),
     ]),
     styles: { font: "helvetica", fontSize: 7.4, cellPadding: 2.5, textColor: [28, 53, 59], lineColor: [221, 232, 234], lineWidth: 0.15 },
@@ -94,7 +94,7 @@ export function generateAnnualReportPdf(year: number, trips: any[], sets: any[],
     `Longitude leste: ${formatCoordinate(report.geography.maxLon, false)}`,
   ];
   doc.text(coords, 158, 61);
-  doc.setFontSize(8); doc.text(doc.splitTextToSize("A região é uma aproximação baseada apenas nas coordenadas salvas das largadas. Os dados ambientais são históricos/modelados já armazenados no painel; o relatório não força novas consultas de previsão.", 120), 158, 90);
+  doc.setFontSize(8); doc.text(doc.splitTextToSize("A região anual é uma aproximação baseada nas coordenadas salvas. Para cada viagem, a tabela da primeira página resume a área trabalhada do extremo mais ao Sul ao extremo mais ao Norte, calculada analisando todas as largadas. Os dados ambientais já estão armazenados; o relatório não força novas consultas de previsão.", 120), 158, 90);
   footer();
 
   const filename = `Relatorio-Anual-${year}-Painel-de-Bordo.pdf`;

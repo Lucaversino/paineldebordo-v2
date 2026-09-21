@@ -99,7 +99,8 @@ export const helpLessons: HelpLesson[] = [
     "steps": [
       "Finalize as viagens que deseja analisar. O painel organiza automaticamente as viagens finalizadas em pastas por ano, como 2026, 2027 e 2028.",
       "Abra Comparar viagens e toque na pasta do ano. Dentro dela aparecem somente as viagens finalizadas daquele ano.",
-      "Em uma viagem, toque em Abrir relatório completo para ver produção, espécies, descarte Vivo/Morto, posições, região trabalhada e meteorologia histórica das largadas.",
+      "Em uma viagem, toque em Abrir relatório completo para ver produção, espécies, descarte Vivo/Morto, posições, trajeto geográfico e meteorologia histórica das largadas.",
+      "Na Área geográfica trabalhada, o painel analisa todas as posições iniciais e finais de todas as largadas. Ele identifica o ponto mais ao Sul e o ponto mais ao Norte e mostra esse intervalo com referências costeiras aproximadas, por exemplo Imbituba, SC → Cananéia, SP.",
       "Na mesma pasta, use Relatório anual para consolidar todas as viagens daquele ano ou Compartilhar PDF anual para gerar o arquivo completo."
     ],
     "tip": "O relatório anual soma apenas viagens finalizadas. Os registros continuam separados dentro de cada viagem.",

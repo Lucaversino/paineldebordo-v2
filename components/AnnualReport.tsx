@@ -82,7 +82,7 @@ export default function AnnualReport({ year, trips, sets, catches, snapshots, on
         <div className="full-report-heading"><CalendarDays /><div><small>VIAGENS REALIZADAS</small><h4>{report.tripCount} viagens finalizadas em {year}</h4></div></div>
         <div className="annual-trip-list">
           {report.rows.map(({ trip, report: item }) => <article key={trip.id}>
-            <div><small>{trip.boatName}</small><b>{trip.name}</b><span>{formatReportDate(trip.departureDate)} → {formatReportDate(trip.returnDate || trip.expectedReturnDate)}</span></div>
+            <div><small>{trip.boatName}</small><b>{trip.name}</b><span>{formatReportDate(trip.departureDate)} → {formatReportDate(trip.returnDate || trip.expectedReturnDate)}</span><span>Área Sul → Norte: {item.geography.routeLabel}</span></div>
             <strong>{formatKg(item.landed)}</strong>
             <button type="button" onClick={() => onOpenTrip(Number(trip.id))}>Abrir relatório</button>
           </article>)}

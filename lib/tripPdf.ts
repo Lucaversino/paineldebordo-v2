@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { tripReportData, formatCoordinate } from "./tripReports";
+import { tripReportData, formatCoordinatePair } from "./tripReports";
 
 const kg = (value: number) => `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value) || 0)} kg`;
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString("pt-BR") : "Não informada";
@@ -248,38 +248,48 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.setTextColor(18, 41, 47);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 45);
+  doc.text("ÁREA GEOGRÁFICA TRABALHADA", 16, 45);
   doc.setFontSize(14);
-  doc.text(report.geography.label, 16, 55);
+  doc.text(report.geography.routeLabel, 16, 55);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(70, 96, 102);
   doc.text(doc.splitTextToSize(report.geography.detail, 255), 16, 64);
-  doc.setFontSize(8);
-  doc.text(`Latitude sul: ${formatCoordinate(report.geography.minLat, true)}`, 16, 82);
-  doc.text(`Latitude norte: ${formatCoordinate(report.geography.maxLat, true)}`, 82, 82);
-  doc.text(`Longitude oeste: ${formatCoordinate(report.geography.minLon, false)}`, 148, 82);
-  doc.text(`Longitude leste: ${formatCoordinate(report.geography.maxLon, false)}`, 218, 82);
-  doc.setTextColor(102, 122, 126);
-  doc.setFontSize(7);
-  doc.text("Região aproximada pelas coordenadas salvas; não utiliza geocodificação externa.", 16, 91);
+
+  doc.setFillColor(239, 247, 246);
+  doc.roundedRect(16, 73, 127, 24, 2, 2, "F");
+  doc.roundedRect(148, 73, 133, 24, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(77, 108, 113);
+  doc.text("EXTREMO SUL · POSIÇÃO MAIS AO SUL", 21, 81);
+  doc.text("EXTREMO NORTE · POSIÇÃO MAIS AO NORTE", 153, 81);
+  doc.setFontSize(10); doc.setTextColor(18, 41, 47);
+  doc.text(formatCoordinatePair(report.geography.southPoint), 21, 89);
+  doc.text(formatCoordinatePair(report.geography.northPoint), 153, 89);
+  doc.setFontSize(7.5); doc.setTextColor(5, 139, 108);
+  doc.text(report.geography.southReference, 21, 94);
+  doc.text(report.geography.northReference, 153, 94);
+
   doc.setTextColor(45, 78, 84);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
-  doc.text(`Meta: ${kg(report.target)}  •  Tripulação: ${trip.crewCount || 0}  •  Tipo de pesca: ${trip.fishingType || "—"}  •  Duração: ${report.duration} dia(s)`, 16, 98);
+  doc.text(`A VIAGEM FOI DE: ${report.geography.southReference} → ${report.geography.northReference}`, 16, 104);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(102, 122, 126);
+  doc.text("Extremos calculados após analisar todas as posições iniciais e finais de todas as largadas: mais ao Sul → mais ao Norte.", 16, 110);
+  doc.setTextColor(45, 78, 84); doc.setFont("helvetica", "bold"); doc.setFontSize(7.2);
+  doc.text(`Meta: ${kg(report.target)}  •  Tripulação: ${trip.crewCount || 0}  •  Tipo de pesca: ${trip.fishingType || "—"}  •  Duração: ${report.duration} dia(s)`, 16, 117);
 
   const discardCards = [["DESCARTE VIVO", report.discardAlive], ["DESCARTE MORTO", report.discardDead], ["NÃO INFORMADO", report.discardUnknown]] as const;
   discardCards.forEach(([label, value], index) => {
     const x = 16 + index * 90;
     doc.setFillColor(index === 1 ? 255 : 240, index === 1 ? 239 : 247, index === 1 ? 239 : 246);
-    doc.roundedRect(x, 103, 84, 25, 2, 2, "F");
-    doc.setTextColor(83, 112, 119); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text(label, x + 5, 112);
-    doc.setTextColor(index === 1 ? 168 : 5, index === 1 ? 50 : 139, index === 1 ? 58 : 108); doc.setFontSize(15); doc.text(kg(value), x + 5, 123);
+    doc.roundedRect(x, 122, 84, 25, 2, 2, "F");
+    doc.setTextColor(83, 112, 119); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text(label, x + 5, 131);
+    doc.setTextColor(index === 1 ? 168 : 5, index === 1 ? 50 : 139, index === 1 ? 58 : 108); doc.setFontSize(15); doc.text(kg(value), x + 5, 142);
   });
 
   const discardRows = report.tripCatches.filter((item: any) => (item.catchType || "PRIMARY") === "DISCARD");
   autoTable(doc, {
-    startY: 139,
+    startY: 156,
     margin: { left: 16, right: 16, bottom: 18 },
     head: [["Espécie descartada", "Condição", "Peso", "Largada"]],
     body: discardRows.map((item: any) => [item.species || "Não informada", discardCondition(item), kg(item.weightKg), `#${String(report.tripSets.find((set: any) => Number(set.id) === Number(item.fishingSetId))?.setNumber || "-").padStart(2, "0")}`]),
@@ -289,7 +299,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
     didDrawPage: () => drawFooter(),
   });
   if (!discardRows.length) {
-    doc.setTextColor(100, 120, 125); doc.setFontSize(9); doc.text("Nenhum descarte registrado nesta viagem.", 16, 148);
+    doc.setTextColor(100, 120, 125); doc.setFontSize(9); doc.text("Nenhum descarte registrado nesta viagem.", 16, 165);
   }
   drawFooter();
 

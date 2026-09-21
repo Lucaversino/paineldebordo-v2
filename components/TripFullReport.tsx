@@ -14,6 +14,7 @@ import {
 import {
   environmentalSummary,
   formatCoordinate,
+  formatCoordinatePair,
   formatKg,
   formatReportDate,
   formatReportTime,
@@ -107,16 +108,23 @@ export default function TripFullReport({ trip, sets, catches, onBack, onPdf }: P
         {trip.notes && <p className="trip-report-notes"><b>Observações:</b> {trip.notes}</p>}
       </section>
 
-      <section className="full-report-panel">
-        <div className="full-report-heading"><MapPinned /><div><small>REGIÃO GEOGRÁFICA TRABALHADA</small><h4>{report.geography.label}</h4></div></div>
+      <section className="full-report-panel route-report-panel">
+        <div className="full-report-heading"><MapPinned /><div><small>ÁREA GEOGRÁFICA TRABALHADA</small><h4>{report.geography.routeLabel}</h4></div></div>
         <p>{report.geography.detail}</p>
-        {report.geography.pointCount > 0 && <div className="geography-grid">
-          <span><small>LATITUDE SUL</small><b>{formatCoordinate(report.geography.minLat, true)}</b></span>
-          <span><small>LATITUDE NORTE</small><b>{formatCoordinate(report.geography.maxLat, true)}</b></span>
-          <span><small>LONGITUDE OESTE</small><b>{formatCoordinate(report.geography.minLon, false)}</b></span>
-          <span><small>LONGITUDE LESTE</small><b>{formatCoordinate(report.geography.maxLon, false)}</b></span>
+        {report.geography.pointCount > 0 && <div className="trip-route-grid">
+          <span>
+            <small>EXTREMO SUL · POSIÇÃO MAIS AO SUL</small>
+            <b>{formatCoordinatePair(report.geography.southPoint)}</b>
+            <em>{report.geography.southReference}</em>
+          </span>
+          <span>
+            <small>EXTREMO NORTE · POSIÇÃO MAIS AO NORTE</small>
+            <b>{formatCoordinatePair(report.geography.northPoint)}</b>
+            <em>{report.geography.northReference}</em>
+          </span>
         </div>}
-        <em>Região aproximada pelas coordenadas registradas nas largadas; não usa geocodificação externa.</em>
+        <strong className="trip-route-readable">A VIAGEM FOI DE: {report.geography.southReference} → {report.geography.northReference}</strong>
+        <em>O sistema analisa todas as posições iniciais e finais de todas as largadas e usa os extremos de latitude: mais ao Sul → mais ao Norte.</em>
       </section>
 
       <section className="full-report-panel">
