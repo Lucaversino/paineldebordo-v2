@@ -205,7 +205,9 @@ export async function POST(r: Request) {
         { error: "O retorno previsto deve ser posterior à data de saída." },
         { status: 400 },
       );
-    const speciesId = Number(b.speciesId) || await ensureDefaultSpecies(db, user.id);
+    const speciesId = Number(b.speciesId);
+    if (!Number.isSafeInteger(speciesId) || speciesId <= 0)
+      return Response.json({ error: "Selecione a espécie principal da viagem." }, { status: 400 });
     const [ownedBoat] = await db.select({ id: boats.id }).from(boats)
       .where(and(eq(boats.id, Number(b.boatId)), eq(boats.ownerId, user.id), eq(boats.active, true))).limit(1);
     const [ownedSpecies] = b.speciesId

@@ -1367,9 +1367,9 @@ export default function Operations({ view, onDashboard }: Props) {
                   <select
                     name="speciesId"
                     required
-                    defaultValue={String(s.species.find((x) => x.commonName?.toLowerCase() === "corvina")?.id || "")}
+                    defaultValue=""
                   >
-                    <option value="">Selecione</option>
+                    <option value="">Selecione a espécie principal</option>
                     {s.species.map((x) => (
                       <option key={x.id} value={x.id}>
                         {x.commonName}
