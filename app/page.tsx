@@ -316,6 +316,7 @@ export default function Home() {
               categorySpeciesId: Number(formData?.get("categorySpeciesId") || 0),
               speciesName: formData?.get("speciesName"),
               weightKg: Number(String(formData?.get("categoryWeightKg") || "").replace(",", ".")),
+              discardCondition: modal === "discard" ? formData?.get("discardCondition") : null,
             }
           : {
             action: "set",
@@ -338,6 +339,7 @@ export default function Home() {
             discardSpeciesName: formData?.get("discardSpeciesName"),
             discardSpeciesId: Number(formData?.get("discardSpeciesId") || 0),
             discardWeightKg: Number(String(formData?.get("discardWeightKg") || "").replace(",", ".")),
+            discardCondition: formData?.get("discardCondition"),
           };
 
     const saveOffline = () => {
@@ -805,6 +807,7 @@ export default function Home() {
                 <div className="or-divider"><span>OU</span></div>
                 <label>Cadastrar nova espécie<input name="speciesName" autoFocus placeholder="Digite somente se for nova" /><small>Se já estiver cadastrada, selecione na lista acima.</small></label>
                 <label>Total em quilos<div className="weight"><input name="categoryWeightKg" inputMode="decimal" required placeholder="0" /><span>kg</span></div></label>
+                {modal === "discard" && <fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" required /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" required /> Morto</label></fieldset>}
               </>
             ) : modal === "editSet" ? (
               <>
@@ -847,7 +850,7 @@ export default function Home() {
                 <fieldset className="catch-fields"><legend>Captura da largada — valores separados</legend>
                   <label>Corvina — espécie principal<div className="weight"><input name="dailyCatchKg" inputMode="decimal" required placeholder="0" /><span>kg</span></div></label>
                   <div className="category-entry"><label>Espécie da mistura<select name="mixtureSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="mixtureSpeciesName" placeholder="Somente se for nova" /></label><label>Total da mistura<div className="weight"><input name="mixtureWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label></div>
-                  <div className="category-entry discard-entry"><label>Espécie do descarte<select name="discardSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="discardSpeciesName" placeholder="Somente se for nova" /></label><label>Total do descarte<div className="weight"><input name="discardWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label></div>
+                  <div className="category-entry discard-entry"><label>Espécie do descarte<select name="discardSpeciesId" defaultValue=""><option value="">Selecionar cadastrada</option>{data.speciesOptions.filter((item: any) => item.id !== t.primarySpeciesId).map((item: any) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Ou cadastrar nova<input name="discardSpeciesName" placeholder="Somente se for nova" /></label><label>Total do descarte<div className="weight"><input name="discardWeightKg" inputMode="decimal" placeholder="0" /><span>kg</span></div></label><fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" defaultChecked /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" /> Morto</label></fieldset></div>
                 </fieldset>
               </>
             )}

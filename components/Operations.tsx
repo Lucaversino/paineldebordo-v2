@@ -22,6 +22,9 @@ import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
 import SetWeatherAnalysis from "./SetWeatherAnalysis";
 import BackupImporter from "./BackupImporter";
+import TripFullReport from "./TripFullReport";
+import AnnualReport from "./AnnualReport";
+import { getTripYear } from "../lib/tripReports";
 import { OFFLINE_SYNC_EVENT, cacheOfflineManage, getOfflineManage } from "../lib/offlinePanel";
 const localDateTime = (value?: string | null) => {
   if (!value) return "";
@@ -89,6 +92,11 @@ export default function Operations({ view, onDashboard }: Props) {
     [saving, setSaving] = useState(false),
     [selectedFinishedTripId, setSelectedFinishedTripId] = useState<number | null>(null),
     [openSetTripIds, setOpenSetTripIds] = useState<number[]>([]),
+    [openCompareYears, setOpenCompareYears] = useState<number[]>([]),
+    [compareTripId, setCompareTripId] = useState<number | null>(null),
+    [annualYear, setAnnualYear] = useState<number | null>(null),
+    [annualSnapshots, setAnnualSnapshots] = useState<any[]>([]),
+    [annualLoading, setAnnualLoading] = useState(false),
     [weatherSet, setWeatherSet] = useState<{ set: any; trip: any } | null>(null),
     [envSyncing, setEnvSyncing] = useState(false),
     [envSyncMsg, setEnvSyncMsg] = useState(""),
@@ -114,7 +122,11 @@ export default function Operations({ view, onDashboard }: Props) {
     window.addEventListener(OFFLINE_SYNC_EVENT, synced);
     return () => window.removeEventListener(OFFLINE_SYNC_EVENT, synced);
   }, []);
-  useEffect(() => setSelectedFinishedTripId(null), [view]);
+  useEffect(() => {
+    setSelectedFinishedTripId(null);
+    setCompareTripId(null);
+    setAnnualYear(null);
+  }, [view]);
   useEffect(() => {
     if (view !== "Largadas") return;
     const active = s.trips.find((trip) => trip.status === "IN_PROGRESS");
@@ -376,6 +388,65 @@ export default function Operations({ view, onDashboard }: Props) {
     setOpenSetTripIds((ids) => ids.includes(Number(tripId))
       ? ids.filter((id) => id !== Number(tripId))
       : [...ids, Number(tripId)]);
+  };
+  const finishedTripsByYear = s.trips
+    .filter((trip) => trip.status === "FINISHED")
+    .reduce<Record<number, any[]>>((groups, trip) => {
+      const year = getTripYear(trip);
+      if (!year) return groups;
+      if (!groups[year]) groups[year] = [];
+      groups[year].push(trip);
+      return groups;
+    }, {});
+  const compareYears = Object.keys(finishedTripsByYear).map(Number).sort((a, b) => b - a);
+  const toggleCompareYear = (year: number) => setOpenCompareYears((years) => years.includes(year) ? years.filter((item) => item !== year) : [...years, year]);
+  const openAnnualReport = async (year: number) => {
+    setAnnualYear(year);
+    setCompareTripId(null);
+    setAnnualLoading(true);
+    setAnnualSnapshots([]);
+    try {
+      const response = await fetch("/api/environmental-snapshots", { cache: "no-store" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(result.error || "Não foi possível carregar a meteorologia anual.");
+      setAnnualSnapshots(Array.isArray(result.snapshots) ? result.snapshots : []);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Não foi possível carregar a meteorologia anual.");
+    } finally {
+      setAnnualLoading(false);
+    }
+  };
+  const annualPdf = async (year: number, mode: "download" | "share") => {
+    if (annualLoading) return;
+    setPdfError("");
+    setAnnualLoading(true);
+    try {
+      let snapshots = annualSnapshots;
+      if (!snapshots.length) {
+        const response = await fetch("/api/environmental-snapshots", { cache: "no-store" });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw Error(result.error || "Não foi possível carregar a meteorologia anual.");
+        snapshots = Array.isArray(result.snapshots) ? result.snapshots : [];
+        setAnnualSnapshots(snapshots);
+      }
+      const { generateAnnualReportPdf } = await import("../lib/annualReportPdf");
+      const file = generateAnnualReportPdf(year, s.trips, s.sets, s.catches, snapshots, mode === "download");
+      if (mode === "share") {
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: `Relatório anual ${year}` });
+        } else {
+          const url = URL.createObjectURL(file);
+          const link = document.createElement("a");
+          link.href = url; link.download = file.name; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          setMsg("O navegador não compartilha arquivos diretamente. O PDF anual foi baixado para você anexar.");
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError")) setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o relatório anual.");
+    } finally {
+      setAnnualLoading(false);
+    }
   };
   const selectedFinishedTrip = s.trips.find(
     (x) => x.status === "FINISHED" && Number(x.id) === Number(selectedFinishedTripId),
@@ -646,6 +717,7 @@ export default function Operations({ view, onDashboard }: Props) {
                 <th>Largada</th>
                 <th>Espécie</th>
                 <th>Categoria</th>
+                <th>Condição</th>
                 <th>Peso</th>
                 <th>Observação</th>
                 <th>Ações</th>
@@ -660,6 +732,7 @@ export default function Operations({ view, onDashboard }: Props) {
                   </td>
                   <td>{x.species}</td>
                   <td>{x.catchType === "MIXTURE" ? "Mistura" : x.catchType === "DISCARD" ? "Descarte" : "Corvina"}</td>
+                  <td>{x.catchType === "DISCARD" ? (x.discardCondition === "VIVO" ? "Vivo" : x.discardCondition === "MORTO" ? "Morto" : "Não informado") : "—"}</td>
                   <td>
                     <b>{f(x.weightKg)} kg</b>
                   </td>
@@ -794,34 +867,65 @@ export default function Operations({ view, onDashboard }: Props) {
           </table>
         </div>
       )}
-      {view === "Comparar viagens" && (
-        <div className="compare">
-          {s.trips.slice(0, 3).map((x) => (
-            <article key={x.id}>
-              <small>{x.boatName}</small>
-              <h3>{x.name}</h3>
-              <strong>{((x.total / x.targetKg) * 100).toFixed(1)}%</strong>
-              <div>
-                <i
-                  style={{
-                    width: `${Math.min(100, (x.total / x.targetKg) * 100)}%`,
-                  }}
-                />
-              </div>
-              <p>
-                <span>Captura</span>
-                <b>{f(x.total)} kg</b>
-              </p>
-              <p>
-                <span>Meta</span>
-                <b>{f(x.targetKg)} kg</b>
-              </p>
-              <p>
-                <span>Largadas</span>
-                <b>{x.sets}</b>
-              </p>
-            </article>
-          ))}
+      {view === "Comparar viagens" && compareTripId && (() => {
+        const trip = s.trips.find((item) => Number(item.id) === Number(compareTripId));
+        return trip ? <TripFullReport trip={trip} sets={s.sets} catches={s.catches} onBack={() => setCompareTripId(null)} onPdf={downloadPdf} /> : null;
+      })()}
+      {view === "Comparar viagens" && !compareTripId && annualYear && (
+        <AnnualReport
+          year={annualYear}
+          trips={s.trips}
+          sets={s.sets}
+          catches={s.catches}
+          snapshots={annualSnapshots}
+          onBack={() => setAnnualYear(null)}
+          onOpenTrip={(tripId) => { setAnnualYear(null); setCompareTripId(tripId); }}
+          onPdf={(mode) => annualPdf(annualYear, mode)}
+        />
+      )}
+      {view === "Comparar viagens" && !compareTripId && !annualYear && (
+        <div className="compare-years">
+          <div className="compare-years-intro">
+            <FolderOpen />
+            <div><small>ARQUIVO HISTÓRICO</small><h3>Viagens organizadas por ano</h3><p>Abra um ano para acessar relatórios completos por viagem e o consolidado anual.</p></div>
+          </div>
+          {compareYears.map((year) => {
+            const yearTrips = finishedTripsByYear[year].slice().sort((a, b) => new Date(b.departureDate).getTime() - new Date(a.departureDate).getTime());
+            const open = openCompareYears.includes(year);
+            const annualTotal = yearTrips.reduce((sum, trip) => sum + Number(trip.total || 0), 0);
+            const annualSets = yearTrips.reduce((sum, trip) => sum + Number(trip.sets || 0), 0);
+            return <section className={`compare-year-folder ${open ? "open" : ""}`} key={year}>
+              <button type="button" className="compare-year-head" onClick={() => toggleCompareYear(year)}>
+                <span className="compare-year-icon">{open ? <FolderOpen /> : <Folder />}</span>
+                <span className="compare-year-copy"><small>ANO DE PESCA</small><b>{year}</b><em>{yearTrips.length} {yearTrips.length === 1 ? "viagem finalizada" : "viagens finalizadas"}</em></span>
+                <span className="compare-year-stats"><b>{f(annualTotal)} kg</b><small>{annualSets} largadas</small></span>
+                <span className="compare-year-chevron">{open ? <ChevronDown /> : <ChevronRight />}</span>
+              </button>
+              {open && <div className="compare-year-body">
+                <div className="annual-report-callout">
+                  <div><small>CONSOLIDADO {year}</small><b>Relatório anual completo</b><span>Viagens, espécies, descarte Vivo/Morto, regiões e meteorologia histórica.</span></div>
+                  <div>
+                    <button type="button" onClick={() => openAnnualReport(year)}><BarChart3 /> Abrir relatório anual</button>
+                    <button type="button" onClick={() => annualPdf(year, "share")}><Share2 /> Compartilhar PDF anual</button>
+                  </div>
+                </div>
+                <div className="compare-trip-grid">
+                  {yearTrips.map((trip) => <article key={trip.id}>
+                    <div className="compare-trip-top"><small>{trip.boatName}</small><span className="pill FINISHED">Finalizada</span></div>
+                    <h4>{trip.name}</h4>
+                    <p>{new Date(trip.departureDate).toLocaleDateString("pt-BR")} → {trip.returnDate ? new Date(trip.returnDate).toLocaleDateString("pt-BR") : "Retorno não informado"}</p>
+                    <div className="compare-trip-numbers"><span><small>CAPTURA</small><b>{f(trip.total)} kg</b></span><span><small>META</small><b>{f(trip.targetKg)} kg</b></span><span><small>RESULTADO</small><b>{trip.targetKg ? `${((Number(trip.total || 0) / Number(trip.targetKg)) * 100).toFixed(1).replace(".", ",")}%` : "—"}</b></span><span><small>LARGADAS</small><b>{trip.sets}</b></span></div>
+                    <div className="compare-trip-actions">
+                      <button type="button" onClick={() => setCompareTripId(Number(trip.id))}><BarChart3 /> Abrir relatório completo</button>
+                      <button type="button" onClick={() => downloadPdf(trip, "share", true)}><Share2 /> Compartilhar PDF</button>
+                    </div>
+                  </article>)}
+                </div>
+              </div>}
+            </section>;
+          })}
+          {!compareYears.length && <div className="compare-empty">Finalize uma viagem para criar automaticamente a pasta do ano.</div>}
+          {annualLoading && <div className="compare-loading"><RefreshCw /> Preparando dados anuais...</div>}
         </div>
       )}
       {view === "Relatórios" && (
@@ -1096,6 +1200,7 @@ export default function Operations({ view, onDashboard }: Props) {
                 defaultValue={editingCatch.weightKg}
               />
             </label>
+            {editingCatch.catchType === "DISCARD" && <fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" required defaultChecked={editingCatch.discardCondition === "VIVO"} /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" required defaultChecked={editingCatch.discardCondition === "MORTO"} /> Morto</label></fieldset>}
             <label>
               Observação
               <input name="notes" defaultValue={editingCatch.notes || ""} />

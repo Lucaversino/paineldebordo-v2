@@ -173,9 +173,9 @@ function patchManageMutation(body: any, localSetId?: number) {
     }, ...(next.sets || [])];
 
     const mainSpecies = (next.species || []).find((item: any) => Number(item.id) === Number(body.speciesId));
-    const makeCatch = (type: string, speciesId: number, speciesName: string, weightKg: number) => ({
+    const makeCatch = (type: string, speciesId: number, speciesName: string, weightKg: number, discardCondition: string | null = null) => ({
       id: localId(), tripId: Number(body.tripId), fishingSetId: id, speciesId, species: speciesName,
-      catchType: type, weightKg, caughtAt: finishedAt, notes: "Aguardando sincronização", offlinePending: true,
+      catchType: type, weightKg, discardCondition, caughtAt: finishedAt, notes: "Aguardando sincronização", offlinePending: true,
     });
     const additions: any[] = [];
     if (primary > 0) additions.push(makeCatch("PRIMARY", Number(body.speciesId), mainSpecies?.commonName || "Corvina", primary));
@@ -185,7 +185,7 @@ function patchManageMutation(body: any, localSetId?: number) {
     }
     if (discard > 0) {
       const sp = (next.species || []).find((item: any) => Number(item.id) === Number(body.discardSpeciesId));
-      additions.push(makeCatch("DISCARD", Number(body.discardSpeciesId || 0), String(body.discardSpeciesName || sp?.commonName || "Descarte"), discard));
+      additions.push(makeCatch("DISCARD", Number(body.discardSpeciesId || 0), String(body.discardSpeciesName || sp?.commonName || "Descarte"), discard, String(body.discardCondition || "").toUpperCase()));
     }
     next.catches = [...additions, ...(next.catches || [])];
     if (trip) {
@@ -209,7 +209,7 @@ function patchManageMutation(body: any, localSetId?: number) {
   next.catches = [{
     id: localId(), tripId: Number(body.tripId), fishingSetId: setId, speciesId,
     species: String(body.speciesName || sp?.commonName || (catchType === "PRIMARY" ? "Corvina" : "Espécie")),
-    catchType, weightKg: weight, caughtAt: new Date().toISOString(), notes: "Aguardando sincronização", offlinePending: true,
+    catchType, weightKg: weight, discardCondition: catchType === "DISCARD" ? String(body.discardCondition || "").toUpperCase() : null, caughtAt: new Date().toISOString(), notes: "Aguardando sincronização", offlinePending: true,
   }, ...(next.catches || [])];
   if (targetSet && catchType !== "DISCARD") targetSet.total = Number(targetSet.total || 0) + weight;
   if (trip) {

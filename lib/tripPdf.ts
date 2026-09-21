@@ -1,9 +1,15 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { tripReportData, formatCoordinate } from "./tripReports";
 
 const kg = (value: number) => `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value) || 0)} kg`;
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString("pt-BR") : "Não informada";
 const time = (value?: string | null) => value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-";
+const discardCondition = (item: any) => {
+  const direct = String(item?.discardCondition || "").toUpperCase();
+  if (direct === "VIVO" || direct === "MORTO") return direct;
+  return String(item?.notes || "").match(/^\[DESCARTE:(VIVO|MORTO)\]/i)?.[1]?.toUpperCase() || "NÃO INFORMADO";
+};
 const coord = (value: number | null, latitude: boolean) => {
   if (value == null) return "-";
   const absolute = Math.abs(Number(value));
@@ -17,6 +23,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const tripSets = sets.filter((item) => Number(item.tripId) === Number(trip.id)).sort((a, b) => a.setNumber - b.setNumber);
   const tripCatches = catches.filter((item) => Number(item.tripId) === Number(trip.id));
+  const report = tripReportData(trip, sets, catches);
   const categoryTotal = (type: string) => tripCatches.filter((item) => (item.catchType || "PRIMARY") === type).reduce((sum, item) => sum + Number(item.weightKg || 0), 0);
   const corvinaTotal = categoryTotal("PRIMARY");
   const mixtureTotal = categoryTotal("MIXTURE");
@@ -100,7 +107,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
       const sumType = (type: string) => setCatches.filter((entry) => (entry.catchType || "PRIMARY") === type).reduce((sum, entry) => sum + Number(entry.weightKg || 0), 0);
       const categoryCell = (type: string) => {
         const entries = setCatches.filter((entry) => (entry.catchType || "PRIMARY") === type);
-        const names = [...new Set(entries.map((entry) => entry.species).filter(Boolean))];
+        const names = [...new Set(entries.map((entry) => entry.species ? `${entry.species}${type === "DISCARD" ? ` (${discardCondition(entry).toLocaleLowerCase("pt-BR")})` : ""}` : null).filter(Boolean))];
         return `${kg(sumType(type))}${names.length ? `\n${names.join(", ")}` : ""}`;
       };
       return [
@@ -130,13 +137,14 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   }
 
   let tableEndY = (doc as any).lastAutoTable?.finalY ?? (tripSets.length ? 114 : 137);
-  const speciesMap = new Map<string, { category: string; species: string; total: number; order: number }>();
+  const speciesMap = new Map<string, { category: string; species: string; condition: string; total: number; order: number }>();
   tripCatches.forEach((item) => {
     const type = item.catchType || "PRIMARY";
     const category = type === "MIXTURE" ? "MISTURA" : type === "DISCARD" ? "DESCARTE" : "CORVINA";
     const speciesName = item.species || (type === "PRIMARY" ? "Corvina" : "Não informada");
-    const key = `${type}:${String(speciesName).toLocaleLowerCase("pt-BR")}`;
-    const current = speciesMap.get(key) || { category, species: speciesName, total: 0, order: type === "PRIMARY" ? 0 : type === "MIXTURE" ? 1 : 2 };
+    const condition = type === "DISCARD" ? discardCondition(item) : "—";
+    const key = `${type}:${String(speciesName).toLocaleLowerCase("pt-BR")}:${condition}`;
+    const current = speciesMap.get(key) || { category, species: speciesName, condition, total: 0, order: type === "PRIMARY" ? 0 : type === "MIXTURE" ? 1 : 2 };
     current.total += Number(item.weightKg || 0);
     speciesMap.set(key, current);
   });
@@ -144,12 +152,12 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   autoTable(doc, {
     startY: tableEndY + 9,
     margin: { left: 16, right: 16, bottom: 52 },
-    head: [["RESUMO POR ESPÉCIE", "CLASSIFICAÇÃO", "TOTAL"]],
-    body: speciesRows.map((item) => [item.species, item.category, kg(item.total)]),
+    head: [["RESUMO POR ESPÉCIE", "CLASSIFICAÇÃO", "CONDIÇÃO", "TOTAL"]],
+    body: speciesRows.map((item) => [item.species, item.category, item.condition, kg(item.total)]),
     styles: { font: "helvetica", fontSize: 9, cellPadding: 3, textColor: [28, 53, 59], lineColor: [221, 232, 234], lineWidth: 0.15 },
     headStyles: { fillColor: [5, 54, 62], textColor: [255, 255, 255], fontStyle: "bold" },
     alternateRowStyles: { fillColor: [244, 249, 249] },
-    columnStyles: { 0: { cellWidth: 150, fontStyle: "bold" }, 1: { cellWidth: 65 }, 2: { cellWidth: 50, halign: "right", fontStyle: "bold" } },
+    columnStyles: { 0: { cellWidth: 120, fontStyle: "bold" }, 1: { cellWidth: 55 }, 2: { cellWidth: 40, fontStyle: "bold" }, 3: { cellWidth: 50, halign: "right", fontStyle: "bold" } },
     didParseCell: (data) => {
       const rawRow = data.row.raw;
       const classification = Array.isArray(rawRow) ? rawRow[1] : undefined;
@@ -200,6 +208,68 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.text(`${tripSets.length} ${tripSets.length === 1 ? "largada registrada" : "largadas registradas"}`, 272, summaryY + 22, { align: "right" });
   doc.setFontSize(7.5);
   doc.text("Total capturado = Corvina + Mistura. O descarte é apresentado separadamente.", 272, summaryY + 29, { align: "right" });
+
+  doc.addPage();
+  doc.setFillColor(4, 32, 39);
+  doc.rect(0, 0, 297, 32, "F");
+  doc.setFillColor(31, 207, 160);
+  doc.rect(0, 0, 7, 32, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text("REGIÃO TRABALHADA E DESCARTE", 16, 15);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(153, 201, 207);
+  doc.setFontSize(8.5);
+  doc.text("Área calculada pelas posições registradas nas largadas • classificação Vivo/Morto preservada", 16, 23);
+
+  doc.setTextColor(18, 41, 47);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 45);
+  doc.setFontSize(14);
+  doc.text(report.geography.label, 16, 55);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(70, 96, 102);
+  doc.text(doc.splitTextToSize(report.geography.detail, 255), 16, 64);
+  doc.setFontSize(8);
+  doc.text(`Latitude sul: ${formatCoordinate(report.geography.minLat, true)}`, 16, 82);
+  doc.text(`Latitude norte: ${formatCoordinate(report.geography.maxLat, true)}`, 82, 82);
+  doc.text(`Longitude oeste: ${formatCoordinate(report.geography.minLon, false)}`, 148, 82);
+  doc.text(`Longitude leste: ${formatCoordinate(report.geography.maxLon, false)}`, 218, 82);
+  doc.setTextColor(102, 122, 126);
+  doc.setFontSize(7);
+  doc.text("Região aproximada pelas coordenadas salvas; não utiliza geocodificação externa.", 16, 91);
+  doc.setTextColor(45, 78, 84);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text(`Meta: ${kg(report.target)}  •  Tripulação: ${trip.crewCount || 0}  •  Tipo de pesca: ${trip.fishingType || "—"}  •  Duração: ${report.duration} dia(s)`, 16, 98);
+
+  const discardCards = [["DESCARTE VIVO", report.discardAlive], ["DESCARTE MORTO", report.discardDead], ["NÃO INFORMADO", report.discardUnknown]] as const;
+  discardCards.forEach(([label, value], index) => {
+    const x = 16 + index * 90;
+    doc.setFillColor(index === 1 ? 255 : 240, index === 1 ? 239 : 247, index === 1 ? 239 : 246);
+    doc.roundedRect(x, 103, 84, 25, 2, 2, "F");
+    doc.setTextColor(83, 112, 119); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text(label, x + 5, 112);
+    doc.setTextColor(index === 1 ? 168 : 5, index === 1 ? 50 : 139, index === 1 ? 58 : 108); doc.setFontSize(15); doc.text(kg(value), x + 5, 123);
+  });
+
+  const discardRows = report.tripCatches.filter((item: any) => (item.catchType || "PRIMARY") === "DISCARD");
+  autoTable(doc, {
+    startY: 139,
+    margin: { left: 16, right: 16, bottom: 18 },
+    head: [["Espécie descartada", "Condição", "Peso", "Largada"]],
+    body: discardRows.map((item: any) => [item.species || "Não informada", discardCondition(item), kg(item.weightKg), `#${String(report.tripSets.find((set: any) => Number(set.id) === Number(item.fishingSetId))?.setNumber || "-").padStart(2, "0")}`]),
+    styles: { font: "helvetica", fontSize: 8.5, cellPadding: 3, textColor: [28, 53, 59], lineColor: [221, 232, 234], lineWidth: 0.15 },
+    headStyles: { fillColor: [5, 54, 62], textColor: [255, 255, 255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 249, 249] },
+    didDrawPage: () => drawFooter(),
+  });
+  if (!discardRows.length) {
+    doc.setTextColor(100, 120, 125); doc.setFontSize(9); doc.text("Nenhum descarte registrado nesta viagem.", 16, 148);
+  }
+  drawFooter();
 
   if (environmentalSnapshots.length) {
     doc.addPage();

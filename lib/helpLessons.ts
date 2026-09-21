@@ -54,7 +54,7 @@ export const helpLessons: HelpLesson[] = [
     "steps": [
       "Selecione a largada na qual o peixe foi capturado.",
       "Use a captura principal para corvina; use Mistura para outras espécies aproveitadas.",
-      "Use Descarte para o peixe descartado. Escolha a espécie e informe o peso em kg.",
+      "Use Descarte para o peixe descartado. Escolha a espécie, informe o peso em kg e marque se estava vivo ou morto.",
       "Abra Capturas para conferir, editar ou excluir um lançamento incorreto."
     ],
     "tip": "Exemplo fictício: 600 kg de corvina + 40 kg de mistura. Os 10 kg de descarte ficam identificados separadamente.",
@@ -97,12 +97,27 @@ export const helpLessons: HelpLesson[] = [
     "target": "Comparar viagens",
     "intro": "Compare resultados para aprender com o que já aconteceu.",
     "steps": [
-      "Finalize as viagens que deseja analisar.",
-      "Abra Comparar viagens e selecione as viagens disponíveis.",
-      "Compare peso, dias e desempenho, observando as unidades.",
-      "Considere duração da viagem e esforço de pesca antes de concluir qual foi melhor."
+      "Finalize as viagens que deseja analisar. O painel organiza automaticamente as viagens finalizadas em pastas por ano, como 2026, 2027 e 2028.",
+      "Abra Comparar viagens e toque na pasta do ano. Dentro dela aparecem somente as viagens finalizadas daquele ano.",
+      "Em uma viagem, toque em Abrir relatório completo para ver produção, espécies, descarte Vivo/Morto, posições, região trabalhada e meteorologia histórica das largadas.",
+      "Na mesma pasta, use Relatório anual para consolidar todas as viagens daquele ano ou Compartilhar PDF anual para gerar o arquivo completo."
     ],
-    "tip": "Mais quilos em uma viagem mais longa não significa, sozinho, melhor rendimento.",
+    "tip": "O relatório anual soma apenas viagens finalizadas. Os registros continuam separados dentro de cada viagem.",
+    "visual": ""
+  },
+  {
+    "id": "relatorio-anual",
+    "title": "Veja o resultado do ano inteiro",
+    "category": "Pescaria",
+    "target": "Comparar viagens",
+    "intro": "A pasta do ano funciona como um arquivo: cada viagem continua separada e o relatório anual consolida os totais.",
+    "steps": [
+      "Abra Comparar viagens e toque no ano desejado, por exemplo 2026.",
+      "Toque em Abrir relatório anual para ver viagens, dias de pesca, largadas, captura, espécies, médias e descartes Vivo/Morto.",
+      "Confira Regiões trabalhadas no ano e o resumo meteorológico. Eles usam posições e dados ambientais já salvos nas largadas.",
+      "Use PDF anual para baixar ou Compartilhar PDF anual para enviar o consolidado. Somente viagens finalizadas entram na conta."
+    ],
+    "tip": "Se uma viagem ainda estiver Em andamento, ela não entra no relatório anual até ser finalizada.",
     "visual": ""
   },
   {
@@ -248,11 +263,11 @@ export const helpLessons: HelpLesson[] = [
     "intro": "O relatório reúne os registros da viagem para conferir em terra ou enviar.",
     "steps": [
       "Abra Relatórios e selecione a viagem, ou use PDF da viagem em Viagem atual.",
-      "Confira as datas solicitadas e gere o arquivo.",
-      "Use PDF + previsão quando quiser incluir as informações ambientais disponíveis por largada.",
-      "Use WhatsApp para compartilhar. Se o navegador não abrir o compartilhamento, baixe o PDF e anexe na conversa."
+      "Em Comparar viagens, abra a pasta do ano e use Abrir relatório completo para consultar também região trabalhada, descarte Vivo/Morto e meteorologia histórica.",
+      "Use PDF completo/ PDF + previsão para incluir os dados ambientais que já foram salvos por largada. O relatório histórico não precisa consultar novamente a previsão para montar esses dados.",
+      "Para o ano inteiro, abra Relatório anual e use PDF anual ou Compartilhar PDF anual. Se o navegador não compartilhar arquivos, o painel baixa o PDF para anexar manualmente."
     ],
-    "tip": "Abra o arquivo antes de enviar e confira nome do barco, viagem, datas e totais.",
+    "tip": "Abra o arquivo antes de enviar e confira nome do barco, viagem, datas, totais, Vivo/Morto e ano selecionado.",
     "visual": ""
   },
   {

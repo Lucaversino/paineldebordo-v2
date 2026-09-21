@@ -38,6 +38,16 @@ function parseDmm(value: unknown, latitude: boolean) {
   return ["S", "W"].includes(direction) ? -decimal : decimal;
 }
 
+function discardCondition(value: unknown) {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized === "VIVO" || normalized === "MORTO" ? normalized : null;
+}
+
+function discardConditionNote(value: unknown) {
+  const condition = discardCondition(value);
+  return condition ? `[DESCARTE:${condition}]` : null;
+}
+
 async function resolveCategorySpecies(db: ReturnType<typeof getDb>, ownerId: string, speciesIdValue: unknown, newName: unknown) {
   const speciesId = Number(speciesIdValue || 0);
   const commonName = String(newName || "").trim();
@@ -164,6 +174,7 @@ export async function POST(req: Request) {
     discardSpeciesName?: string;
     discardSpeciesId?: number;
     discardWeightKg?: number;
+    discardCondition?: string;
   };
   const db = getDb();
   await claimLegacyData(db, user.id);
@@ -220,7 +231,10 @@ export async function POST(req: Request) {
     if (!ownedSet) return Response.json({ error: "Largada não encontrada nesta viagem." }, { status: 404 });
     const resolved = await resolveCategorySpecies(db, user.id, body.categorySpeciesId, body.speciesName);
     if (!resolved.id) return Response.json({ error: resolved.error }, { status: 409 });
-    const [row] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: body.fishingSetId, speciesId: resolved.id, catchType, weightKg, caughtAt: new Date().toISOString(), createdBy: user.id }).returning();
+    const condition = catchType === "DISCARD" ? discardCondition(body.discardCondition) : null;
+    if (catchType === "DISCARD" && !condition)
+      return Response.json({ error: "Marque se o descarte estava vivo ou morto." }, { status: 400 });
+    const [row] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: body.fishingSetId, speciesId: resolved.id, catchType, weightKg, caughtAt: new Date().toISOString(), notes: discardConditionNote(condition), createdBy: user.id }).returning();
     return Response.json(row, { status: 201 });
   }
   if (body.action === "set") {
@@ -259,17 +273,19 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     const requestedExtras = [
-      { type: "MIXTURE", label: "a mistura", id: body.mixtureSpeciesId, name: body.mixtureSpeciesName, weight: Number(body.mixtureWeightKg || 0) },
-      { type: "DISCARD", label: "o descarte", id: body.discardSpeciesId, name: body.discardSpeciesName, weight: Number(body.discardWeightKg || 0) },
+      { type: "MIXTURE", label: "a mistura", id: body.mixtureSpeciesId, name: body.mixtureSpeciesName, weight: Number(body.mixtureWeightKg || 0), condition: null },
+      { type: "DISCARD", label: "o descarte", id: body.discardSpeciesId, name: body.discardSpeciesName, weight: Number(body.discardWeightKg || 0), condition: discardCondition(body.discardCondition) },
     ];
-    const preparedExtras: Array<{ type: string; speciesId: number; weight: number }> = [];
+    const preparedExtras: Array<{ type: string; speciesId: number; weight: number; condition: string | null }> = [];
     for (const extra of requestedExtras) {
       if (((extra.name || extra.id) && !extra.weight) || (!extra.name && !extra.id && extra.weight > 0) || extra.weight < 0)
         return Response.json({ error: `Informe espécie e peso válidos para ${extra.label}.` }, { status: 400 });
       if (!extra.name && !extra.id && !extra.weight) continue;
+      if (extra.type === "DISCARD" && !extra.condition)
+        return Response.json({ error: "Marque se o descarte estava vivo ou morto." }, { status: 400 });
       const resolved = await resolveCategorySpecies(db, user.id, extra.id, extra.name);
       if (!resolved.id) return Response.json({ error: resolved.error }, { status: 409 });
-      preparedExtras.push({ type: extra.type, speciesId: resolved.id, weight: extra.weight });
+      preparedExtras.push({ type: extra.type, speciesId: resolved.id, weight: extra.weight, condition: extra.condition });
     }
     const [{ next }] = await db
       .select({
@@ -307,7 +323,7 @@ export async function POST(req: Request) {
       .returning();
     const extraCatches = [];
     for (const extra of preparedExtras) {
-      const [saved] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: row.id, speciesId: extra.speciesId, catchType: extra.type, weightKg: extra.weight, caughtAt: finishedAt, createdBy: user.id }).returning();
+      const [saved] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: row.id, speciesId: extra.speciesId, catchType: extra.type, weightKg: extra.weight, caughtAt: finishedAt, notes: extra.type === "DISCARD" ? discardConditionNote(extra.condition) : null, createdBy: user.id }).returning();
       extraCatches.push(saved);
     }
 

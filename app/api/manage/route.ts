@@ -35,6 +35,22 @@ async function ensureDefaultSpecies(db: ReturnType<typeof getDb>, ownerId: strin
   return created.id;
 }
 
+function discardConditionFromNotes(value: unknown) {
+  const match = String(value || "").match(/^\[DESCARTE:(VIVO|MORTO)\](?:\n|$)/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function cleanDiscardNotes(value: unknown) {
+  return String(value || "").replace(/^\[DESCARTE:(?:VIVO|MORTO)\](?:\n|$)/i, "").trim() || null;
+}
+
+function discardNotes(conditionValue: unknown, noteValue: unknown) {
+  const condition = String(conditionValue || "").trim().toUpperCase();
+  if (condition !== "VIVO" && condition !== "MORTO") return null;
+  const note = cleanDiscardNotes(noteValue);
+  return `[DESCARTE:${condition}]${note ? `\n${note}` : ""}`;
+}
+
 export async function GET() {
   const auth = await requirePanelUserResponse();
   if (auth.response) return auth.response;
@@ -81,6 +97,7 @@ export async function GET() {
         startedAt: fishingSets.startedAt,
         finishedAt: fishingSets.finishedAt,
         depthMeters: fishingSets.depthMeters,
+        netLengthMeters: fishingSets.netLengthMeters,
         startLatitude: fishingSets.startLatitude,
         startLongitude: fishingSets.startLongitude,
         endLatitude: fishingSets.endLatitude,
@@ -116,7 +133,11 @@ export async function GET() {
     species: sp,
     trips: ts,
     sets: fs,
-    catches: cs,
+    catches: cs.map((item) => ({
+      ...item,
+      discardCondition: item.catchType === "DISCARD" ? discardConditionFromNotes(item.notes) : null,
+      notes: item.catchType === "DISCARD" ? cleanDiscardNotes(item.notes) : item.notes,
+    })),
   });
 }
 export async function POST(r: Request) {
@@ -456,7 +477,7 @@ export async function PUT(r: Request) {
     return Response.json(row);
   }
   if (b.type === "catch") {
-    const [ownedCatch] = await db.select({ id: catches.id }).from(catches)
+    const [ownedCatch] = await db.select({ id: catches.id, catchType: catches.catchType }).from(catches)
       .innerJoin(trips, eq(catches.tripId, trips.id))
       .where(and(eq(catches.id, id), eq(trips.ownerId, user.id))).limit(1);
     if (!ownedCatch) return Response.json({ error: "Captura não encontrada." }, { status: 404 });
@@ -470,13 +491,16 @@ export async function PUT(r: Request) {
         { error: "Espécie e peso maior que zero são obrigatórios." },
         { status: 400 },
       );
+    const condition = ownedCatch.catchType === "DISCARD" ? String(b.discardCondition || "").trim().toUpperCase() : null;
+    if (ownedCatch.catchType === "DISCARD" && condition !== "VIVO" && condition !== "MORTO")
+      return Response.json({ error: "Marque se o descarte estava vivo ou morto." }, { status: 400 });
     const [row] = await db
       .update(catches)
       .set({
         speciesId: Number(b.speciesId),
         weightKg: weight,
         caughtAt: b.caughtAt,
-        notes: b.notes || null,
+        notes: ownedCatch.catchType === "DISCARD" ? discardNotes(condition, b.notes) : b.notes || null,
       })
       .where(eq(catches.id, id))
       .returning();
