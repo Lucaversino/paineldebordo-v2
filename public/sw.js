@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v184-menu-mobile-android-ios";
+const CACHE = "painel-bordo-v185-desktop-controls";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

@@ -5571,3 +5571,67 @@ main.loginpage{
     min-height:46px!important;
   }
 }
+
+/* V185 — desktop AIS: separar status do rodapé dos botões NAVEGAR / BUSCA PREMIUM */
+@media (min-width: 781px) {
+  /* O dock continua no canto inferior esquerdo. */
+  .ais-v119-page .ais-v70-mobile-dock.ais-v119-dock {
+    left: 60px !important;
+    right: auto !important;
+    bottom: 14px !important;
+    z-index: 1650 !important;
+  }
+
+  /* Navegação e Premium ficam em uma coluna limpa no centro. */
+  .ais-v119-page .ais-v154-free-nav-trigger {
+    left: 50% !important;
+    right: auto !important;
+    bottom: 70px !important;
+    transform: translateX(-50%) !important;
+    z-index: 1710 !important;
+  }
+  .ais-v119-page .ais-v138-premium-trigger {
+    left: 50% !important;
+    right: auto !important;
+    bottom: 18px !important;
+    transform: translateX(-50%) !important;
+    z-index: 1700 !important;
+  }
+
+  /* Zoom, coordenada do centro e GPS saem de trás do NAVEGAR e vão para a direita. */
+  .ais-v119-page .ais-bottom-status {
+    display: grid !important;
+    grid-template-columns: auto !important;
+    justify-items: end !important;
+    align-items: center !important;
+    left: auto !important;
+    right: 14px !important;
+    top: auto !important;
+    bottom: 14px !important;
+    width: auto !important;
+    max-width: min(330px, 28vw) !important;
+    transform: none !important;
+    gap: 5px !important;
+    z-index: 1650 !important;
+    pointer-events: none !important;
+  }
+  .ais-v119-page .ais-bottom-status span {
+    width: max-content !important;
+    max-width: 100% !important;
+    min-height: 28px !important;
+    padding: 0 9px !important;
+    border-radius: 8px !important;
+    background: rgba(6, 27, 33, .96) !important;
+    box-shadow: 0 7px 20px rgba(0, 15, 22, .34) !important;
+    backdrop-filter: none !important;
+    white-space: nowrap !important;
+    font-size: 7px !important;
+  }
+  .ais-v119-page .ais-bottom-status span:nth-child(2) {
+    display: flex !important;
+  }
+  .ais-v119-page .ais-bottom-status svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+}
