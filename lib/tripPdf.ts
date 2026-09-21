@@ -226,38 +226,39 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.setTextColor(18, 41, 47);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 45);
-  doc.setFontSize(14);
-  doc.text(report.geography.label, 16, 55);
+  doc.text("TRAJETO GEOGRÁFICO DA VIAGEM", 16, 45);
+  doc.setFontSize(13);
+  doc.text(report.geography.routeLabel, 16, 55);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(8.2);
   doc.setTextColor(70, 96, 102);
-  doc.text(doc.splitTextToSize(report.geography.detail, 255), 16, 64);
-  doc.setFontSize(8);
-  doc.text(`Latitude sul: ${formatCoordinate(report.geography.minLat, true)}`, 16, 82);
-  doc.text(`Latitude norte: ${formatCoordinate(report.geography.maxLat, true)}`, 82, 82);
-  doc.text(`Longitude oeste: ${formatCoordinate(report.geography.minLon, false)}`, 148, 82);
-  doc.text(`Longitude leste: ${formatCoordinate(report.geography.maxLon, false)}`, 218, 82);
+  doc.text("Extremos encontrados analisando todas as posições iniciais e finais de todas as largadas.", 16, 65);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(18, 41, 47);
+  doc.text(`MAIS AO SUL: ${formatCoordinate(report.geography.southPoint?.lat, true)} / ${formatCoordinate(report.geography.southPoint?.lon, false)} — ${report.geography.southRegion}`, 16, 78);
+  doc.text(`MAIS AO NORTE: ${formatCoordinate(report.geography.northPoint?.lat, true)} / ${formatCoordinate(report.geography.northPoint?.lon, false)} — ${report.geography.northRegion}`, 16, 88);
   doc.setTextColor(102, 122, 126);
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
-  doc.text("Região aproximada pelas coordenadas salvas; não utiliza geocodificação externa.", 16, 91);
+  doc.text("A longitude é sempre a longitude do próprio ponto extremo encontrado; não mistura limites de largadas diferentes.", 16, 95);
   doc.setTextColor(45, 78, 84);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
-  doc.text(`Meta: ${kg(report.target)}  •  Tripulação: ${trip.crewCount || 0}  •  Tipo de pesca: ${trip.fishingType || "—"}  •  Duração: ${report.duration} dia(s)`, 16, 98);
+  doc.text(`Meta: ${kg(report.target)}  •  Tripulação: ${trip.crewCount || 0}  •  Tipo de pesca: ${trip.fishingType || "—"}  •  Duração: ${report.duration} dia(s)`, 16, 101);
 
   const discardCards = [["DESCARTE VIVO", report.discardAlive], ["DESCARTE MORTO", report.discardDead], ["NÃO INFORMADO", report.discardUnknown]] as const;
   discardCards.forEach(([label, value], index) => {
     const x = 16 + index * 90;
     doc.setFillColor(index === 1 ? 255 : 240, index === 1 ? 239 : 247, index === 1 ? 239 : 246);
-    doc.roundedRect(x, 103, 84, 25, 2, 2, "F");
-    doc.setTextColor(83, 112, 119); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text(label, x + 5, 112);
-    doc.setTextColor(index === 1 ? 168 : 5, index === 1 ? 50 : 139, index === 1 ? 58 : 108); doc.setFontSize(15); doc.text(kg(value), x + 5, 123);
+    doc.roundedRect(x, 106, 84, 25, 2, 2, "F");
+    doc.setTextColor(83, 112, 119); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text(label, x + 5, 115);
+    doc.setTextColor(index === 1 ? 168 : 5, index === 1 ? 50 : 139, index === 1 ? 58 : 108); doc.setFontSize(15); doc.text(kg(value), x + 5, 126);
   });
 
   const discardRows = report.tripCatches.filter((item: any) => (item.catchType || "PRIMARY") === "DISCARD");
   autoTable(doc, {
-    startY: 139,
+    startY: 142,
     margin: { left: 16, right: 16, bottom: 18 },
     head: [["Espécie descartada", "Condição", "Peso", "Largada"]],
     body: discardRows.map((item: any) => [item.species || "Não informada", discardCondition(item), kg(item.weightKg), `#${String(report.tripSets.find((set: any) => Number(set.id) === Number(item.fishingSetId))?.setNumber || "-").padStart(2, "0")}`]),
@@ -267,7 +268,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
     didDrawPage: () => drawFooter(),
   });
   if (!discardRows.length) {
-    doc.setTextColor(100, 120, 125); doc.setFontSize(9); doc.text("Nenhum descarte registrado nesta viagem.", 16, 148);
+    doc.setTextColor(100, 120, 125); doc.setFontSize(9); doc.text("Nenhum descarte registrado nesta viagem.", 16, 151);
   }
   drawFooter();
 

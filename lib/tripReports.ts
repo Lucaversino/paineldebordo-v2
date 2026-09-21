@@ -45,40 +45,111 @@ const COAST_BANDS = [
   { min: -22.6, max: -20.3, label: "Costa do Rio de Janeiro" },
 ];
 
+// Referências operacionais usadas apenas para deixar o relatório fácil de compreender.
+// Não são geocodificação: representam grandes faixas costeiras de trabalho da pesca.
+const COASTAL_ROUTE_BANDS = [
+  { min: -34.5, max: -32.2, label: "Chuí, RS" },
+  { min: -32.2, max: -30.8, label: "Rio Grande, RS" },
+  { min: -30.8, max: -29.2, label: "Tramandaí, RS" },
+  { min: -29.2, max: -27.4, label: "Imbituba, SC" },
+  { min: -27.4, max: -26.45, label: "Itajaí, SC" },
+  { min: -26.45, max: -25.65, label: "São Francisco do Sul, SC" },
+  { min: -25.65, max: -24.75, label: "Cananéia, SP" },
+  { min: -24.75, max: -23.35, label: "Santos, SP" },
+  { min: -23.35, max: -22.65, label: "Ubatuba, SP" },
+  { min: -22.65, max: -21.7, label: "Cabo Frio, RJ" },
+  { min: -21.7, max: -20.3, label: "Campos dos Goytacazes, RJ" },
+];
+
+type GeographicPoint = {
+  lat: number;
+  lon: number;
+  setNumber?: number | string | null;
+  endpoint: "INICIAL" | "FINAL";
+};
+
+export function approximateFishingRegion(latValue: unknown) {
+  const lat = Number(latValue);
+  if (!Number.isFinite(lat)) return "Região não determinada";
+  return COASTAL_ROUTE_BANDS.find((band) => lat >= band.min && lat < band.max)?.label
+    || COAST_BANDS.find((band) => lat >= band.min && lat < band.max)?.label
+    || "Área oceânica registrada";
+}
+
+export function formatGeographicPoint(point?: { lat: number; lon: number } | null) {
+  if (!point) return "—";
+  return `${formatCoordinate(point.lat, true)} / ${formatCoordinate(point.lon, false)}`;
+}
+
 export function geographicSummary(sets: any[]) {
-  const points: Array<{ lat: number; lon: number }> = [];
+  const points: GeographicPoint[] = [];
   sets.forEach((set) => {
-    const candidates = [
-      [set.startLatitude, set.startLongitude],
-      [set.endLatitude, set.endLongitude],
+    const candidates: Array<[unknown, unknown, "INICIAL" | "FINAL"]> = [
+      [set.startLatitude, set.startLongitude, "INICIAL"],
+      [set.endLatitude, set.endLongitude, "FINAL"],
     ];
-    candidates.forEach(([latValue, lonValue]) => {
+    candidates.forEach(([latValue, lonValue, endpoint]) => {
       const lat = Number(latValue);
       const lon = Number(lonValue);
-      if (Number.isFinite(lat) && Number.isFinite(lon)) points.push({ lat, lon });
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        points.push({ lat, lon, setNumber: set.setNumber, endpoint });
+      }
     });
   });
+
   if (!points.length) {
     return {
       label: "Região não determinada",
+      routeLabel: "A viagem não possui posições suficientes para calcular os extremos.",
       detail: "Esta viagem não possui posições suficientes para calcular a área trabalhada.",
       minLat: null,
       maxLat: null,
       minLon: null,
       maxLon: null,
+      southPoint: null,
+      northPoint: null,
+      southRegion: "Região não determinada",
+      northRegion: "Região não determinada",
       pointCount: 0,
     };
   }
+
+  // REGRA V192 FIX4 / V193 FIX:
+  // analisa TODAS as posições inicial e final de TODAS as largadas.
+  // O ponto mais ao Sul mantém a longitude do MESMO ponto encontrado.
+  // O ponto mais ao Norte mantém a longitude do MESMO ponto encontrado.
+  const southPoint = points.reduce((south, point) => (point.lat < south.lat ? point : south), points[0]);
+  const northPoint = points.reduce((north, point) => (point.lat > north.lat ? point : north), points[0]);
+
+  // Mantidos para compatibilidade com relatórios/rotinas antigas, mas não são mais usados
+  // para formar o trajeto da viagem, evitando misturar latitude de um ponto com longitude de outro.
   const lats = points.map((point) => point.lat);
   const lons = points.map((point) => point.lon);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLon = Math.min(...lons);
   const maxLon = Math.max(...lons);
-  const regions = [...new Set(points.map((point) => COAST_BANDS.find((band) => point.lat >= band.min && point.lat < band.max)?.label).filter(Boolean))];
-  const label = regions.length ? `${regions.join(" / ")} (aprox.)` : "Área oceânica registrada";
-  const detail = `Limites calculados pelas posições das largadas: ${formatCoordinate(minLat, true)} a ${formatCoordinate(maxLat, true)} · ${formatCoordinate(minLon, false)} a ${formatCoordinate(maxLon, false)}.`;
-  return { label, detail, minLat, maxLat, minLon, maxLon, pointCount: points.length };
+
+  const southRegion = approximateFishingRegion(southPoint.lat);
+  const northRegion = approximateFishingRegion(northPoint.lat);
+  const label = `${southRegion} → ${northRegion}`;
+  const routeLabel = `A VIAGEM FOI DE: ${southRegion} ATÉ ${northRegion}`;
+  const detail = `Extremos calculados analisando as posições iniciais e finais de todas as largadas. Mais ao Sul: ${formatGeographicPoint(southPoint)}. Mais ao Norte: ${formatGeographicPoint(northPoint)}.`;
+
+  return {
+    label,
+    routeLabel,
+    detail,
+    minLat,
+    maxLat,
+    minLon,
+    maxLon,
+    southPoint,
+    northPoint,
+    southRegion,
+    northRegion,
+    pointCount: points.length,
+  };
 }
 
 export function tripReportData(trip: any, sets: any[], catches: any[]) {

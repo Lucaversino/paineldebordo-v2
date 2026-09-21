@@ -99,7 +99,7 @@ export const helpLessons: HelpLesson[] = [
     "steps": [
       "Finalize as viagens que deseja analisar. O painel organiza automaticamente as viagens finalizadas em pastas por ano, como 2026, 2027 e 2028.",
       "Abra Comparar viagens e toque na pasta do ano. Dentro dela aparecem somente as viagens finalizadas daquele ano.",
-      "Em uma viagem, toque em Abrir relatório completo para ver produção, espécies, descarte Vivo/Morto, posições, região trabalhada e meteorologia histórica das largadas.",
+      "Em uma viagem, toque em Abrir relatório completo para ver produção, espécies, descarte Vivo/Morto, posições, trajeto geográfico e meteorologia histórica das largadas. O trajeto analisa TODAS as posições iniciais e finais e mostra o ponto mais ao Sul e o ponto mais ao Norte com a longitude correspondente ao próprio ponto.",
       "Na mesma pasta, use Relatório anual para consolidar todas as viagens daquele ano ou Compartilhar PDF anual para gerar o arquivo completo."
     ],
     "tip": "O relatório anual soma apenas viagens finalizadas. Os registros continuam separados dentro de cada viagem.",
@@ -114,7 +114,7 @@ export const helpLessons: HelpLesson[] = [
     "steps": [
       "Abra Comparar viagens e toque no ano desejado, por exemplo 2026.",
       "Toque em Abrir relatório anual para ver viagens, dias de pesca, largadas, captura, espécies, médias e descartes Vivo/Morto.",
-      "Confira Regiões trabalhadas no ano e o resumo meteorológico. Eles usam posições e dados ambientais já salvos nas largadas.",
+      "Confira os extremos geográficos do ano e o resumo meteorológico. O sistema analisa todas as posições iniciais e finais das largadas e mantém latitude/longitude pareadas no ponto mais ao Sul e no ponto mais ao Norte.",
       "Use PDF anual para baixar ou Compartilhar PDF anual para enviar o consolidado. Somente viagens finalizadas entram na conta."
     ],
     "tip": "Se uma viagem ainda estiver Em andamento, ela não entra no relatório anual até ser finalizada.",
@@ -263,7 +263,7 @@ export const helpLessons: HelpLesson[] = [
     "intro": "O relatório reúne os registros da viagem para conferir em terra ou enviar.",
     "steps": [
       "Abra Relatórios e selecione a viagem, ou use PDF da viagem em Viagem atual.",
-      "Em Comparar viagens, abra a pasta do ano e use Abrir relatório completo para consultar também região trabalhada, descarte Vivo/Morto e meteorologia histórica.",
+      "Em Comparar viagens, abra a pasta do ano e use Abrir relatório completo para consultar também o trajeto da viagem: o sistema procura entre todas as largadas a posição mais ao Sul e a mais ao Norte e mostra cada uma com sua própria longitude, além do descarte Vivo/Morto e meteorologia histórica.",
       "Use PDF completo/ PDF + previsão para incluir os dados ambientais que já foram salvos por largada. O relatório histórico não precisa consultar novamente a previsão para montar esses dados.",
       "Para o ano inteiro, abra Relatório anual e use PDF anual ou Compartilhar PDF anual. Se o navegador não compartilhar arquivos, o painel baixa o PDF para anexar manualmente."
     ],

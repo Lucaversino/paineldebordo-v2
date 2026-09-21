@@ -37,9 +37,9 @@ export function generateAnnualReportPdf(year: number, trips: any[], sets: any[],
     doc.setTextColor(5, 120, 99); doc.setFontSize(13); doc.text(value, x + 5, y + 16);
   });
 
-  doc.setTextColor(18, 41, 47); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("REGIÃO GEOGRÁFICA TRABALHADA", 16, 111);
+  doc.setTextColor(18, 41, 47); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("EXTREMOS GEOGRÁFICOS DO ANO", 16, 111);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(70, 96, 102);
-  const geoText = `${report.geography.label}. ${report.geography.detail}`;
+  const geoText = `${report.geography.label}. Mais ao Sul: ${formatCoordinate(report.geography.southPoint?.lat, true)} / ${formatCoordinate(report.geography.southPoint?.lon, false)}. Mais ao Norte: ${formatCoordinate(report.geography.northPoint?.lat, true)} / ${formatCoordinate(report.geography.northPoint?.lon, false)}.`;
   doc.text(doc.splitTextToSize(geoText, 265), 16, 119);
 
   autoTable(doc, {
@@ -81,16 +81,14 @@ export function generateAnnualReportPdf(year: number, trips: any[], sets: any[],
     head: [["RESUMO AMBIENTAL", "VALOR"]], body: weatherRows,
     styles: { fontSize: 8.5, cellPadding: 3, textColor: [28, 53, 59] }, headStyles: { fillColor: [5, 54, 62], textColor: [255, 255, 255] },
   });
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(18, 41, 47); doc.text("COORDENADAS EXTREMAS", 158, 50);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(18, 41, 47); doc.text("EXTREMOS REAIS DAS LARGADAS", 158, 50);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(70, 96, 102);
   const coords = [
-    `Latitude sul: ${formatCoordinate(report.geography.minLat, true)}`,
-    `Latitude norte: ${formatCoordinate(report.geography.maxLat, true)}`,
-    `Longitude oeste: ${formatCoordinate(report.geography.minLon, false)}`,
-    `Longitude leste: ${formatCoordinate(report.geography.maxLon, false)}`,
+    `Mais ao Sul: ${formatCoordinate(report.geography.southPoint?.lat, true)} / ${formatCoordinate(report.geography.southPoint?.lon, false)} — ${report.geography.southRegion}`,
+    `Mais ao Norte: ${formatCoordinate(report.geography.northPoint?.lat, true)} / ${formatCoordinate(report.geography.northPoint?.lon, false)} — ${report.geography.northRegion}`,
   ];
   doc.text(coords, 158, 61);
-  doc.setFontSize(8); doc.text(doc.splitTextToSize("A região é uma aproximação baseada apenas nas coordenadas salvas das largadas. Os dados ambientais são históricos/modelados já armazenados no painel; o relatório não força novas consultas de previsão.", 120), 158, 90);
+  doc.setFontSize(8); doc.text(doc.splitTextToSize("O sistema analisa todas as posições iniciais e finais de todas as largadas. A longitude exibida pertence ao mesmo ponto Sul/Norte encontrado, sem misturar limites independentes. Os dados ambientais são históricos/modelados já armazenados no painel.", 120), 158, 82);
   footer();
 
   const filename = `Relatorio-Anual-${year}-Painel-de-Bordo.pdf`;

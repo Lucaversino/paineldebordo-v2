@@ -108,15 +108,13 @@ export default function TripFullReport({ trip, sets, catches, onBack, onPdf }: P
       </section>
 
       <section className="full-report-panel">
-        <div className="full-report-heading"><MapPinned /><div><small>REGIÃO GEOGRÁFICA TRABALHADA</small><h4>{report.geography.label}</h4></div></div>
+        <div className="full-report-heading"><MapPinned /><div><small>TRAJETO GEOGRÁFICO DA VIAGEM</small><h4>{report.geography.routeLabel}</h4></div></div>
         <p>{report.geography.detail}</p>
-        {report.geography.pointCount > 0 && <div className="geography-grid">
-          <span><small>LATITUDE SUL</small><b>{formatCoordinate(report.geography.minLat, true)}</b></span>
-          <span><small>LATITUDE NORTE</small><b>{formatCoordinate(report.geography.maxLat, true)}</b></span>
-          <span><small>LONGITUDE OESTE</small><b>{formatCoordinate(report.geography.minLon, false)}</b></span>
-          <span><small>LONGITUDE LESTE</small><b>{formatCoordinate(report.geography.maxLon, false)}</b></span>
+        {report.geography.pointCount > 0 && <div className="geography-grid route-extremes-grid">
+          <span><small>PONTO MAIS AO SUL</small><b>{formatCoordinate(report.geography.southPoint?.lat, true)} / {formatCoordinate(report.geography.southPoint?.lon, false)}</b><em>{report.geography.southRegion}</em></span>
+          <span><small>PONTO MAIS AO NORTE</small><b>{formatCoordinate(report.geography.northPoint?.lat, true)} / {formatCoordinate(report.geography.northPoint?.lon, false)}</b><em>{report.geography.northRegion}</em></span>
         </div>}
-        <em>Região aproximada pelas coordenadas registradas nas largadas; não usa geocodificação externa.</em>
+        <em>Regra: o sistema analisa TODAS as posições iniciais e finais de TODAS as largadas. A longitude exibida pertence ao mesmo ponto extremo encontrado.</em>
       </section>
 
       <section className="full-report-panel">

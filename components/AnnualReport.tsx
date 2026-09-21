@@ -53,15 +53,13 @@ export default function AnnualReport({ year, trips, sets, catches, snapshots, on
       </section>
 
       <section className="full-report-panel">
-        <div className="full-report-heading"><MapPinned /><div><small>REGIÕES TRABALHADAS NO ANO</small><h4>{report.geography.label}</h4></div></div>
+        <div className="full-report-heading"><MapPinned /><div><small>EXTREMOS GEOGRÁFICOS DO ANO</small><h4>{report.geography.label}</h4></div></div>
         <p>{report.geography.detail}</p>
-        {report.geography.pointCount > 0 && <div className="geography-grid">
-          <span><small>LAT. SUL</small><b>{formatCoordinate(report.geography.minLat, true)}</b></span>
-          <span><small>LAT. NORTE</small><b>{formatCoordinate(report.geography.maxLat, true)}</b></span>
-          <span><small>LONG. OESTE</small><b>{formatCoordinate(report.geography.minLon, false)}</b></span>
-          <span><small>LONG. LESTE</small><b>{formatCoordinate(report.geography.maxLon, false)}</b></span>
+        {report.geography.pointCount > 0 && <div className="geography-grid route-extremes-grid">
+          <span><small>PONTO MAIS AO SUL</small><b>{formatCoordinate(report.geography.southPoint?.lat, true)} / {formatCoordinate(report.geography.southPoint?.lon, false)}</b><em>{report.geography.southRegion}</em></span>
+          <span><small>PONTO MAIS AO NORTE</small><b>{formatCoordinate(report.geography.northPoint?.lat, true)} / {formatCoordinate(report.geography.northPoint?.lon, false)}</b><em>{report.geography.northRegion}</em></span>
         </div>}
-        <em>Área anual calculada somente pelas posições registradas nas viagens finalizadas.</em>
+        <em>Área anual calculada com todas as posições iniciais e finais das largadas das viagens finalizadas.</em>
       </section>
 
       <section className="full-report-panel">

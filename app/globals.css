@@ -5658,3 +5658,9 @@ main.loginpage{
 
 /* V193 — Base de Inteligência da Pesca */
 .intel-notice,.intel-next{display:flex;gap:14px;align-items:flex-start;padding:18px;border:1px solid rgba(59,130,246,.24);border-radius:18px;background:rgba(15,23,42,.72);margin-bottom:16px}.intel-notice svg{width:28px;height:28px;flex:0 0 auto}.intel-notice div,.intel-next{flex-direction:column}.intel-notice b,.intel-next b{display:block;margin-bottom:5px}.intel-notice span,.intel-next span,.intel-grid span{opacity:.72;font-size:.88rem;line-height:1.45}.intel-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}.intel-grid article{min-width:0;padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:rgba(15,23,42,.62);display:flex;flex-direction:column;gap:7px}.intel-grid article svg{width:21px;height:21px}.intel-grid article small{opacity:.62;font-size:.68rem;font-weight:800;letter-spacing:.08em}.intel-grid article b{font-size:1.15rem}.intel-environment{margin:18px 0}.intel-environment h3{margin-bottom:5px}.intel-environment p{opacity:.68;margin-top:0}.intel-grid.compact article b{font-size:1.05rem}@media(max-width:900px){.intel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.intel-grid{grid-template-columns:1fr}.intel-notice{padding:14px}}
+
+/* V193 FIX — extremos Sul/Norte pareados no relatório de viagem */
+.route-extremes-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.route-extremes-grid span{min-height:68px}
+.route-extremes-grid span>em{font-style:normal;color:#63cdb2;font-size:9px;margin-top:2px}
+@media(max-width:650px){.route-extremes-grid{grid-template-columns:1fr}}
