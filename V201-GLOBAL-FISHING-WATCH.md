@@ -34,7 +34,3 @@ A consulta real GFW depende do token configurado no servidor. O pacote não cont
 - Comparação dos arquivos: endpoints PREMIUM, cobrança, mapa e navegação preservados.
 - Não houve teste autenticado em produção nem validação visual em celular físico.
 - Ambiente de build local: Node 24; o projeto mantém a exigência original Node 22 na hospedagem.
-
-
-## V201.1 - Layout da busca FREE
-Formulario com duas colunas isoladas (campo flexivel e botao compacto). Titulo dos resultados nao herda mais o cabecalho global. Ajustes responsivos para celular. Componente compilado com esbuild. Verificacao visual automatizada indisponivel no ambiente. Sem alteracoes nas APIs, mapa ou PREMIUM.

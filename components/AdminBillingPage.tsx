@@ -5,6 +5,7 @@ import { Activity, BarChart3, BrainCircuit, CheckCircle2, CircleDollarSign, Coin
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import AdminOfficialWaypoints from "./AdminOfficialWaypoints";
 import AdminOfficialAreas from "./AdminOfficialAreas";
+import AdminAisRegionalAreas from "./AdminAisRegionalAreas";
 
 function brl(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -365,6 +366,7 @@ export default function AdminBillingPage() {
     </section>
 
 
+    <AdminAisRegionalAreas />
     <AdminOfficialWaypoints />
     <AdminOfficialAreas />
 
@@ -374,7 +376,7 @@ export default function AdminBillingPage() {
         <label>Valor de 1 crédito (R$)<input name="CREDIT_UNIT_PRICE" type="number" min="0.01" step="0.01" defaultValue={s.CREDIT_UNIT_PRICE}/></label>
         <label>Consulta AIS (créditos)<input name="AIS_SINGLE_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_SINGLE_QUERY_CREDITS}/></label>
         <label>Atualizar posição AIS (créditos)<input name="AIS_UPDATE_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_UPDATE_CREDITS}/></label>
-        <label>Busca AIS por área 50 km (créditos)<input name="AIS_AREA_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_AREA_QUERY_CREDITS}/></label>
+        <label>Busca AIS Premium por área 30 MN (créditos)<input name="AIS_AREA_QUERY_CREDITS" type="number" min="0" step="1" defaultValue={s.AIS_AREA_QUERY_CREDITS}/></label>
         
         
         

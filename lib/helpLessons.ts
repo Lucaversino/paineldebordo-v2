@@ -197,17 +197,17 @@ export const helpLessons: HelpLesson[] = [
   },
   {
     "id": "premium",
-    "title": "Premium, 50 km e barcos salvos",
+    "title": "FREE 30 MN, Premium 30 MN e buscas salvas",
     "category": "AIS e navegação",
     "target": "AIS",
     "intro": "As consultas pagas e gratuitas ficam separadas.",
     "steps": [
       "Confira o saldo em Meus créditos.",
-      "No AIS, abra a busca Premium para consultar uma embarcação ou 50 km para consultar uma área.",
-      "Na busca por área, confira o centro escolhido no mapa e o custo informado.",
-      "Abra Barcos salvos, Resultados 50 km ou Histórico AIS para revisar consultas. Atualizar pode consumir novos créditos: confira antes."
+      "No AIS, use BUSCAR FREE 30 MN para consultar a região sem créditos ou BUSCAR PREMIUM 30 MN quando quiser usar a consulta paga por área.",
+      "Na busca por área, confira o centro escolhido no mapa. FREE 30 MN custa 0 crédito; Premium 30 MN usa o valor configurado no painel administrativo (padrão 10 créditos).",
+      "Abra Buscas 30 MN para reabrir as pesquisas salvas sem pagar de novo. Uma nova busca Premium pode consumir novos créditos: confira antes."
     ],
-    "tip": "O raio de 50 km pertence ao centro selecionado. Não presuma que ele acompanha o barco automaticamente.",
+    "tip": "O raio de 30 MN pertence ao centro selecionado. As áreas administrativas de 80 MN são criadas somente pelo administrador e podem atualizar automaticamente uma vez por dia.",
     "visual": ""
   },
   {

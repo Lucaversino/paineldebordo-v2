@@ -109,6 +109,40 @@ type OfficialArea = {
   updatedAt: string;
 };
 
+type UserAreaSearch = {
+  id: number;
+  mode: "free" | "premium";
+  centerLatitude: number;
+  centerLongitude: number;
+  radiusNm: number;
+  creditsUsed: number;
+  vesselCount: number;
+  source: string;
+  vessels: Vessel[];
+  searchedAt: string;
+};
+
+type AdminAisRegionalArea = {
+  id: number;
+  name: string;
+  centerLatitude: number;
+  centerLongitude: number;
+  radiusNm: number;
+  autoUpdate: boolean;
+  visible: boolean;
+  vesselCount: number;
+  source: string;
+  vessels: Vessel[];
+  createdAt: string;
+  updatedAt: string;
+  lastRefreshedAt: string;
+  lastAttemptAt: string;
+};
+
+const USER_AREA_RADIUS_NM = 30;
+const USER_AREA_RADIUS_KM = USER_AREA_RADIUS_NM * 1.852;
+const ADMIN_AREA_RADIUS_NM = 80;
+
 type DhnChart = {
   number: string;
   title: string;
@@ -717,7 +751,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const vesselIconPathCacheRef = useRef<Map<string, string>>(new Map());
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
-  const areaRadiusRef = useRef<50>(50);
   const measureModeRef = useRef(false);
   const measureStartRef = useRef<{ lat: number; lon: number } | null>(null);
   const navigationStartRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -756,7 +789,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
-  const [areaRadius] = useState<50>(50);
   const [areaCenter, setAreaCenter] = useState<{ lat: number; lon: number } | null>({ lat: fallbackLat, lon: fallbackLon });
   const [manualLatDigits, setManualLatDigits] = useState("");
   const [manualLonDigits, setManualLonDigits] = useState("");
@@ -764,6 +796,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [mobileAreaAdvanced, setMobileAreaAdvanced] = useState(false);
   const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
   const [areaCost, setAreaCost] = useState<number | null>(null);
+  const [userAreaSearches, setUserAreaSearches] = useState<UserAreaSearch[]>([]);
+  const [adminAisAreas, setAdminAisAreas] = useState<AdminAisRegionalArea[]>([]);
+  const [adminRadarOpen, setAdminRadarOpen] = useState(false);
+  const [adminRadarName, setAdminRadarName] = useState("");
+  const [adminRadarSaving, setAdminRadarSaving] = useState(false);
   const [freeMapVesselCount, setFreeMapVesselCount] = useState(0);
   const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
@@ -959,7 +996,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => { searchModeRef.current = searchMode; }, [searchMode]);
-  useEffect(() => { areaRadiusRef.current = 50; }, []);
   useEffect(() => {
     measureModeRef.current = measureMode;
     if (!measureMode) {
@@ -1334,7 +1370,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     try {
       const response = await aisFetch(
-        `/api/ais?action=area&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&radius=50&provider=marinesia`
+        `/api/ais?action=area&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&radius=${encodeURIComponent(USER_AREA_RADIUS_KM)}&provider=marinesia`
       );
       const data: any = await response.json().catch(() => ({}));
       if (!response.ok) return;
@@ -1388,12 +1424,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  function drawAreaSelection(lat: number, lon: number, radiusKm: 50 = 50) {
+  function drawAreaSelection(lat: number, lon: number, radiusNm: number = USER_AREA_RADIUS_NM) {
     const source = areaSourceRef.current;
     if (!source) return;
     source.clear();
     const center3857 = fromLonLat([lon, lat]);
-    const circle = new Feature({ geometry: new CircleGeom(center3857, radiusKm * 1000) });
+    const circle = new Feature({ geometry: new CircleGeom(center3857, radiusNm * 1852) });
     circle.setStyle(new Style({
       fill: new Fill({ color: "rgba(43,212,170,.08)" }),
       stroke: new Stroke({ color: "#2bd4aa", width: 2, lineDash: [10, 8] }),
@@ -1401,7 +1437,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const point = new Feature({ geometry: new Point(center3857) });
     point.setStyle(new Style({
       image: new CircleStyle({ radius: 7, fill: new Fill({ color: "#2bd4aa" }), stroke: new Stroke({ color: "#ffffff", width: 2 }) }),
-      text: new Text({ text: `${radiusKm} km`, offsetY: -18, font: "800 11px system-ui", fill: new Fill({ color: "#effffb" }), stroke: new Stroke({ color: "#05252b", width: 3 }) }),
+      text: new Text({ text: `${radiusNm} MN`, offsetY: -18, font: "800 11px system-ui", fill: new Fill({ color: "#effffb" }), stroke: new Stroke({ color: "#05252b", width: 3 }) }),
     }));
     source.addFeatures([circle, point]);
   }
@@ -1712,6 +1748,77 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setCanManageOfficialAreas(data?.canManage === true);
     } catch {
       // Áreas oficiais são complementares e nunca bloqueiam o AIS.
+    }
+  }
+
+  function regionalRows(rawRows: any[], sourcePrefix = ""): Vessel[] {
+    return (Array.isArray(rawRows) ? rawRows : []).map((raw: any) => ({
+      mmsi: String(raw?.mmsi || ""),
+      imo: String(raw?.imo || ""),
+      name: String(raw?.name || raw?.mmsi || "Embarcação"),
+      lat: Number(raw?.lat),
+      lon: Number(raw?.lon),
+      sog: raw?.sog == null ? null : Number(raw.sog),
+      cog: raw?.cog == null ? null : Number(raw.cog),
+      heading: raw?.heading == null ? null : Number(raw.heading),
+      vesselType: String(raw?.vesselType || ""),
+      navStatusText: String(raw?.navStatusText || ""),
+      dataSource: sourcePrefix ? `${sourcePrefix} · ${String(raw?.dataSource || "AIS")}` : String(raw?.dataSource || "AIS"),
+      positionReceived: String(raw?.positionReceived || raw?.updateTime || ""),
+      updateTime: String(raw?.updateTime || raw?.positionReceived || ""),
+      receivedAt: Number(raw?.receivedAt) || Date.now(),
+    })).filter((vessel: Vessel) => Number.isFinite(vessel.lat) && Number.isFinite(vessel.lon) && Boolean(vessel.mmsi || vessel.imo));
+  }
+
+  async function loadRegionalAreaLibrary() {
+    try {
+      const response = await aisFetch("/api/ais-area-search");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      const searches = Array.isArray(data?.searches) ? data.searches : [];
+      const areas = Array.isArray(data?.adminAreas) ? data.adminAreas : [];
+      setUserAreaSearches(searches);
+      setAdminAisAreas(areas);
+      const sharedVessels = areas.flatMap((area: any) => regionalRows(area?.vessels, `ÁREA ADM ${area?.name || "80 MN"}`));
+      if (sharedVessels.length) upsertMapVessels(dedupeVessels(sharedVessels));
+    } catch {
+      // Biblioteca regional é complementar ao AIS e nunca bloqueia o mapa.
+    }
+  }
+
+  async function createAdminRadarArea() {
+    if (!canManageOfficialAreas || adminRadarSaving) return;
+    const selected = areaCenter || center;
+    if (!selected) return;
+    const name = adminRadarName.trim() || `ÁREA AIS ${adminAisAreas.length + 1}`;
+    setAdminRadarSaving(true);
+    setStatus("loading");
+    setStatusMessage(`Buscando e salvando área administrativa de ${ADMIN_AREA_RADIUS_NM} MN...`);
+    drawAreaSelection(selected.lat, selected.lon, ADMIN_AREA_RADIUS_NM);
+    try {
+      const response = await aisFetch("/api/admin-ais-areas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "create", name, latitude: selected.lat, longitude: selected.lon }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatus("error");
+        setStatusMessage(data?.error || "Não foi possível salvar a área administrativa.");
+        return;
+      }
+      setAdminRadarName("");
+      setAdminRadarOpen(false);
+      await loadRegionalAreaLibrary();
+      const rows = regionalRows(data?.area?.vessels || [], `ÁREA ADM ${data?.area?.name || name}`);
+      if (rows.length) upsertMapVessels(rows);
+      setStatus("ready");
+      setStatusMessage(`${name} salva · ${data?.area?.vesselCount || 0} barco(s) · atualização diária automática`);
+    } catch {
+      setStatus("error");
+      setStatusMessage("Falha de rede ao salvar a área administrativa de 80 MN.");
+    } finally {
+      setAdminRadarSaving(false);
     }
   }
 
@@ -2171,7 +2278,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       })
       .catch(() => null);
 
-    // O círculo de 50 km continua aparecendo somente durante uma busca de área.
+    // O círculo de 30 MN continua aparecendo somente durante uma busca de área.
     areaSourceRef.current?.clear();
     setAreaCenter({ lat, lon });
     setMapProbe({ lat, lon });
@@ -2218,7 +2325,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     if (!isFree) {
       const confirmed = window.confirm(
-        `ATENÇÃO — CONSULTA AIS POR ÁREA\n\nTem certeza que deseja pesquisar embarcações em uma área de 50 km?\n\nCUSTO: ${aisPricing.areaCredits} crédito(s) (${areaCostBrl})\n\nOs créditos serão descontados somente se a consulta for concluída com sucesso.`
+        `ATENÇÃO — CONSULTA AIS POR ÁREA\n\nPesquisar embarcações em um raio de ${USER_AREA_RADIUS_NM} milhas náuticas?\n\nCUSTO: ${aisPricing.areaCredits} crédito(s) (${areaCostBrl})\n\nOs créditos serão descontados somente se a consulta for concluída com sucesso.`
       );
       if (!confirmed) {
         setStatus("idle");
@@ -2228,10 +2335,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
 
     setStatus("loading");
-    setStatusMessage(isFree ? "Buscando barcos no AIS Free da região..." : `Pesquisando embarcações Premium em ${areaRadius} km...`);
-    drawAreaSelection(selected.lat, selected.lon, areaRadius);
+    setStatusMessage(isFree ? `Pesquisando AIS FREE em ${USER_AREA_RADIUS_NM} MN...` : `Pesquisando AIS Premium em ${USER_AREA_RADIUS_NM} MN...`);
+    drawAreaSelection(selected.lat, selected.lon, USER_AREA_RADIUS_NM);
 
-    const toRows = (data: any, freeFallback = false): Vessel[] => {
+    const toRows = (data: any): Vessel[] => {
       const areaQueryReceivedAt = Date.now();
       return (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
         mmsi: String(raw?.mmsi || ""),
@@ -2245,8 +2352,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         vesselType: raw?.vesselType || "",
         navStatusText: raw?.navStatusText || "",
         dataSource: isFree
-          ? (raw?.dataSource || data?.provider || (freeFallback ? "AIS Free" : "Marinesia AIS"))
-          : `Premium 50 km · ${raw?.dataSource || data?.provider || "AIS"}`,
+          ? `FREE ${USER_AREA_RADIUS_NM} MN · ${raw?.dataSource || data?.provider || "AISStream"}`
+          : `Premium ${USER_AREA_RADIUS_NM} MN · ${raw?.dataSource || data?.provider || "AIS"}`,
         positionReceived: raw?.positionReceived || raw?.updateTime || "",
         updateTime: raw?.updateTime || raw?.positionReceived || "",
         receivedAt: Number(raw?.receivedAt) || areaQueryReceivedAt,
@@ -2254,14 +2361,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
 
     try {
-      // V166: AIS FREE usa primeiro o cache AISStream alimentado pelo worker Railway.
-      // O próprio /api/ais-map cuida dos fallbacks gratuitos sem alterar o fluxo Premium.
-      let response = isFree
-        ? await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}&refresh=${forceFreeRefresh ? "1" : "0"}`)
+      const response = isFree
+        ? await aisFetch("/api/ais-area-search", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "search", latitude: selected.lat, longitude: selected.lon, refresh: forceFreeRefresh }),
+          })
         : await aisFetch(
-            `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radius=${areaRadius}&provider=${encodeURIComponent(provider)}`
+            `/api/ais?action=area&latitude=${encodeURIComponent(selected.lat)}&longitude=${encodeURIComponent(selected.lon)}&radiusNm=${USER_AREA_RADIUS_NM}&provider=${encodeURIComponent(provider)}`
           );
-      let data: any = await response.json().catch(() => ({}));
+      const data: any = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         setStatus(response.status === 503 ? "config" : "error");
@@ -2269,44 +2378,29 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
 
-      let rows = toRows(data, isFree);
-
-      // A conta Free da Marinesia pode retornar pouquíssimos ou nenhum barco.
-      // Se vier vazia, mantém a experiência funcionando com VesselAPI/Kpler.
-      if (isFree && rows.length === 0) {
-        const fallbackResponse = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(selected.lat)}&lon=${encodeURIComponent(selected.lon)}`);
-        const fallbackData = await fallbackResponse.json().catch(() => ({}));
-        if (fallbackResponse.ok) {
-          rows = toRows(fallbackData, true);
-          data = fallbackData;
-        }
-      }
-
+      const rows = toRows(data);
       setAreaVessels(rows);
       setAreaCost(isFree ? 0 : (Number(data?.creditCost) || aisPricing.areaCredits));
       drawAreaVessels(rows);
 
-      if (!isFree && rows.length) {
-        void aisFetch("/api/ais-library", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "save-area", vessels: rows }),
-        }).then(() => loadAisLibrary()).catch(() => null);
+      if (data?.savedSearch) {
+        setUserAreaSearches((current) => [data.savedSearch, ...current.filter((item) => item.id !== data.savedSearch.id)].slice(0, 30));
+      } else {
+        void loadRegionalAreaLibrary();
       }
+
 
       centerOn(selected.lat, selected.lon, 8);
       setStatus("ready");
-      setStatusMessage(
-        rows.length
-          ? (isFree
-              ? `${rows.length} barco(s) AIS Free · ${String(data?.provider || data?.source || "Marinesia/fallback")} · 0 créditos`
-              : `${rows.length} barco(s) Premium em 50 km · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s) · data/hora registrada`)
-          : ""
-      );
+      setStatusMessage(rows.length
+        ? (isFree
+            ? `${rows.length} barco(s) AIS FREE em ${USER_AREA_RADIUS_NM} MN · busca salva · 0 créditos`
+            : `${rows.length} barco(s) Premium em ${USER_AREA_RADIUS_NM} MN · ${Number(data?.creditCost ?? aisPricing.areaCredits)} crédito(s) · busca salva`)
+        : `Nenhum barco encontrado em ${USER_AREA_RADIUS_NM} MN. A busca foi salva.`);
       if (!isFree) await refreshCredits();
     } catch {
       setStatus("error");
-      setStatusMessage(isFree ? "Falha de rede na busca AIS Free." : "Falha de rede na busca AIS Premium por área.");
+      setStatusMessage(isFree ? "Falha de rede na busca AIS FREE de 30 MN." : "Falha de rede na busca AIS Premium de 30 MN.");
     }
   }
 
@@ -2319,6 +2413,31 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setStatus("ready");
     setStatusMessage(`${vessel.name || vessel.mmsi} selecionado da busca por área · 0 crédito adicional`);
     await recordHistory(vessel);
+  }
+
+  function openSavedAreaSearch(item: UserAreaSearch) {
+    const rows = regionalRows(item.vessels || [], item.mode === "premium" ? `Premium ${item.radiusNm || USER_AREA_RADIUS_NM} MN` : `FREE ${item.radiusNm || USER_AREA_RADIUS_NM} MN`);
+    const coords = { lat: Number(item.centerLatitude), lon: Number(item.centerLongitude) };
+    setAreaCenter(coords);
+    setAreaVessels(rows);
+    drawAreaSelection(coords.lat, coords.lon, Number(item.radiusNm || USER_AREA_RADIUS_NM));
+    drawAreaVessels(rows);
+    centerOn(coords.lat, coords.lon, 8);
+    setMobilePanel(null);
+    setStatus("ready");
+    setStatusMessage(`Busca salva aberta · ${rows.length} barco(s) · ${item.mode === "premium" ? `${item.creditsUsed} CR` : "FREE"}`);
+  }
+
+  async function deleteSavedAreaSearch(id: number) {
+    try {
+      const response = await aisFetch("/api/ais-area-search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-search", id }),
+      });
+      if (!response.ok) return;
+      setUserAreaSearches((current) => current.filter((item) => item.id !== id));
+    } catch {}
   }
 
   async function refreshCredits() {
@@ -2503,15 +2622,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   // V140: toda embarcação salva com posição válida volta automaticamente para o mapa.
-  // Inclui barcos salvos individualmente e resultados persistidos da busca Premium de 50 km.
+  // Inclui barcos salvos individualmente e resultados legados de buscas por área.
   function savedItemToVessel(item: SavedVessel): Vessel | null {
     const lat = Number(item.lastLatitude);
     const lon = Number(item.lastLongitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
     const folder = String(item.folder || "premium").toLowerCase();
-    const fallbackSource = folder === "area50"
-      ? "Premium 50 km"
+    const fallbackSource = (folder === "area30premium" || folder === "area50")
+      ? "Premium 30 MN"
       : folder === "marinesia"
         ? "Marinesia AIS"
         : folder === "shipfinder"
@@ -2828,7 +2947,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function refreshSavedVessel(item: SavedVessel) {
     const match = savedItemToMatch(item);
-    if ((item.folder || "premium") === "premium" || item.folder === "area50") {
+    if ((item.folder || "premium") === "premium" || item.folder === "area30premium" || item.folder === "area50") {
       await openPremiumResult(match, true);
       return;
     }
@@ -2850,7 +2969,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       callsign: tracked.callsign || "",
     };
     const source = String(tracked.dataSource || "").toLowerCase();
-    if (source.includes("data docked") || source.includes("premium 50 km")) {
+    if (source.includes("data docked") || source.includes("premium 30 mn") || source.includes("premium 50 km")) {
       await openPremiumResult(match, true);
       return;
     }
@@ -2888,7 +3007,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           setAreaCenter(coords);
           areaSourceRef.current?.clear();
           inspectMapPoint(coords.lat, coords.lon);
-          setStatusMessage(`GPS definido como centro da busca 50 km · ${formatCoordOperational(coords.lat, true)} · ${formatCoordOperational(coords.lon, false)}`);
+          setStatusMessage(`GPS definido como centro da busca 30 MN · ${formatCoordOperational(coords.lat, true)} · ${formatCoordOperational(coords.lon, false)}`);
         } else {
           drawGpsPositionMarker(coords, resolvedHeading);
           setStatusMessage("GPS localizado — mapa centralizado na sua posição.");
@@ -3055,8 +3174,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       if (!coordinate) return;
       const [lon, lat] = toLonLat(coordinate);
       setAreaCenter({ lat, lon });
-      drawAreaSelection(lat, lon, 50);
-      setStatusMessage(`Círculo 50 km movido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
+      drawAreaSelection(lat, lon, USER_AREA_RADIUS_NM);
+      setStatusMessage(`Círculo 30 MN movido · ${formatCoordMarine(lat, true)} · ${formatCoordMarine(lon, false)}`);
     };
     areaTranslate.on("translateend", handleAreaTranslateEnd);
 
@@ -3356,6 +3475,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     loadWaypoints();
     loadOfficialWaypoints();
     loadOfficialAreas();
+    loadRegionalAreaLibrary();
     loadRoutes();
   }, []);
 
@@ -3376,7 +3496,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [officialAreaDraftPoints, officialAreaColor, officialAreaTransparency]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { void loadOfficialWaypoints(); void loadOfficialAreas(); }, 120_000);
+    const timer = window.setInterval(() => { void loadOfficialWaypoints(); void loadOfficialAreas(); void loadRegionalAreaLibrary(); }, 120_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -3640,7 +3760,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const trackedFishing = tracked ? isFishingVessel(tracked) : false;
   const savedKeys = useMemo(() => new Set(savedVessels.map((item) => item.vesselKey)), [savedVessels]);
   const premiumSavedVessels = useMemo(() => savedVessels.filter((item) => (item.folder || "premium") !== "area50"), [savedVessels]);
-  const areaSavedVessels = useMemo(() => savedVessels.filter((item) => item.folder === "area50"), [savedVessels]);
   const trackedKey = tracked ? vesselKeyFrom(tracked) : "";
   const recentCards = useMemo(() => {
     const rows: Array<{ key: string; vessel: Vessel; historyItem?: AisHistoryItem; current: boolean }> = [];
@@ -3783,6 +3902,27 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             <div className="ais-library-empty"><History /><span>As posições consultadas aparecerão aqui automaticamente. O histórico não consome créditos para abrir.</span></div>
           )}
         </section>
+
+        <section className="ais-v202-area-history-panel">
+          <div className="ais-library-head">
+            <div><Crosshair /><span><small>ÁREAS</small><b>Buscas 30 MN salvas</b><em>{userAreaSearches.length} busca(s)</em></span></div>
+          </div>
+          {userAreaSearches.length ? (
+            <div className="ais-v202-area-history-list">
+              {userAreaSearches.slice(0, 12).map((item) => (
+                <article key={`desktop-area-${item.id}`}>
+                  <button type="button" className="main" onClick={() => openSavedAreaSearch(item)}>
+                    <Crosshair />
+                    <span><b>{item.mode === "premium" ? "PREMIUM" : "FREE"} · {item.radiusNm || USER_AREA_RADIUS_NM} MN</b><small>{item.vesselCount} barcos · {formatCoordOperational(Number(item.centerLatitude), true)} · {formatCoordOperational(Number(item.centerLongitude), false)}</small><em>{formatLocalDateTime(new Date(item.searchedAt))}</em></span>
+                  </button>
+                  <button type="button" className="danger" onClick={() => void deleteSavedAreaSearch(item.id)} title="Excluir busca salva"><Trash2 /></button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="ais-library-empty"><Crosshair /><span>As pesquisas FREE e PREMIUM de 30 MN serão salvas aqui automaticamente.</span></div>
+          )}
+        </section>
       </div>
 
       <div className="ais-shell ais-v61-shell">
@@ -3800,7 +3940,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             className="ais-v128-marinesia-refresh"
             onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia", true); }}
             disabled={status === "loading"}
-            title="Atualizar AIS Free Marinesia dentro do círculo de 50 km"
+            title="Pesquisar AIS FREE em 30 milhas náuticas"
           >
             <RefreshCw className={status === "loading" ? "spin" : ""} />
             <span>AIS FREE</span>
@@ -3810,7 +3950,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             className="ais-v129-vessel-free-refresh"
             onClick={() => void loadFreeMapLayer(true, areaCenter)}
             disabled={freeMapStatus === "loading"}
-            title="Atualizar Vessel Free na região do círculo de 50 km"
+            title="Atualizar camada AIS Free próxima do centro"
           >
             <RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} />
             <span>VESSEL FREE</span>
@@ -3823,6 +3963,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </button>
           {canManageOfficialAreas && <button type="button" className={`ais-v143-map-tool ais-v200-area-tool ${officialAreaDrawMode ? "active" : ""}`} onClick={toggleOfficialAreaDrawMode} title="Desenhar área/reserva administrativa">
             <MapPinned /><span>ÁREA</span>
+          </button>}
+          {canManageOfficialAreas && <button type="button" className={`ais-v143-map-tool ais-v202-admin-radar-tool ${adminRadarOpen ? "active" : ""}`} onClick={() => { const opening = !adminRadarOpen; setAdminRadarOpen(opening); if (opening) chooseAreaCenterFromMap(); }} title="Buscar e salvar área AIS administrativa de 80 MN">
+            <Radio /><span>ADM 80</span>
           </button>}
           <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância livre no mapa">
             <Ruler /><span>MEDIR</span>
@@ -3845,6 +3988,18 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
+
+        {canManageOfficialAreas && adminRadarOpen && (
+          <div className="ais-v202-admin-radar-panel">
+            <div className="ais-v202-admin-radar-head"><span><Radio /><b>AIS ADMIN · 80 MN</b></span><button type="button" onClick={() => setAdminRadarOpen(false)}>×</button></div>
+            <p>Escolha o centro, pesquise a área e salve. Os barcos ficam disponíveis no AIS de todos os usuários e a área atualiza automaticamente 1 vez por dia.</p>
+            <input value={adminRadarName} onChange={(e) => setAdminRadarName(e.target.value.slice(0, 80))} placeholder="Nome da área (ex.: Cananéia / Imbituba)" />
+            <div className="ais-v202-admin-radar-coords"><small>CENTRO</small><b>{areaCenter ? `${formatCoordOperational(areaCenter.lat, true)} · ${formatCoordOperational(areaCenter.lon, false)}` : "Defina o centro"}</b></div>
+            <div className="ais-v202-admin-radar-pick"><button type="button" onClick={() => locateDevice(true)}><LocateFixed /> GPS</button><button type="button" onClick={chooseAreaCenterFromMap}><Crosshair /> CENTRO DO MAPA</button></div>
+            <button type="button" className="save" onClick={() => void createAdminRadarArea()} disabled={adminRadarSaving || !areaCenter}>{adminRadarSaving ? <RefreshCw className="spin" /> : <Save />} PESQUISAR 80 MN E SALVAR</button>
+            <small>{adminAisAreas.length} área(s) administrativa(s) salvas.</small>
+          </div>
+        )}
 
         {canManageOfficialAreas && officialAreaDrawMode && (
           <div className="ais-v200-area-panel">
@@ -4250,13 +4405,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }}
               disabled={status === "loading" || !areaCenter}
             >
-              <Crosshair /> BUSCAR ÁREA 50 KM · {aisPricing.areaCredits} CR
+              <Crosshair /> BUSCAR ÁREA 30 MN · {aisPricing.areaCredits} CR
             </button>
           </div>
         )}
 
         <div className="ais-v70-mobile-dock ais-v119-dock ais-v138-dock">
-          <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>50 km</span></button>
+          <button type="button" className={mobilePanel === "areaSearch" ? "active area" : "area"} onClick={() => { const opening = mobilePanel !== "areaSearch"; setMobilePanel(opening ? "areaSearch" : null); if (opening && !areaCenter) chooseAreaCenterFromMap(); }}><Crosshair /><span>30 MN</span></button>
           <button type="button" className={mobilePanel === "saved" ? "active saved" : "saved"} onClick={() => setMobilePanel(mobilePanel === "saved" ? null : "saved")}><FolderHeart /><span>Barcos</span><em>{premiumSavedVessels.length}</em></button>
           <button type="button" className={mobilePanel === "waypoints" ? "active waypoints" : "waypoints"} onClick={() => setMobilePanel(mobilePanel === "waypoints" ? null : "waypoints")}><Flag /><span>Waypoints</span><em>{waypoints.length}</em></button>
           <button type="button" className={mobilePanel === "history" ? "active history" : "history"} onClick={() => setMobilePanel(mobilePanel === "history" ? null : "history")}><History /><span>Histórico</span><em>{historyItems.length}</em></button>
@@ -4265,7 +4420,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         {mobilePanel && (
           <div className={`ais-v70-mobile-panel ${mobilePanel}`}>
             <div className="ais-v70-mobile-panel-head">
-              <b>{mobilePanel === "areaSearch" ? "Buscar em 50 km" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Resultados 50 km" : mobilePanel === "waypoints" ? "Waypoints salvos" : "Histórico AIS"}</b>
+              <b>{mobilePanel === "areaSearch" ? "Buscar em 30 MN" : mobilePanel === "saved" ? "Barcos salvos" : mobilePanel === "areaSaved" ? "Buscas 30 MN" : mobilePanel === "waypoints" ? "Waypoints salvos" : "Histórico AIS"}</b>
               <button type="button" onClick={() => setMobilePanel(null)}>×</button>
             </div>
 
@@ -4273,8 +4428,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <div className="ais-v127-area-simple">
                 <div className="ais-v127-area-hero">
                   <span><Crosshair /></span>
-                  <div><b>RADAR 50 KM</b><small>Uma busca simples na região escolhida</small></div>
-                  <em>{aisPricing.areaCredits} CR</em>
+                  <div><b>RADAR 30 MN</b><small>Busca FREE ou Premium na região escolhida</small></div>
+                  <em>FREE / {aisPricing.areaCredits} CR</em>
                 </div>
 
                 <div className="ais-v127-area-pick">
@@ -4287,10 +4442,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                   <b>{areaCenter ? `${formatCoordMarine(areaCenter.lat, true)} · ${formatCoordMarine(areaCenter.lon, false)}` : "Use GPS ou o centro do mapa"}</b>
                 </div>
 
-                <button type="button" className="ais-v127-area-main" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading" || !areaCenter}>
-                  {status === "loading" ? <RefreshCw className="spin" /> : <Radio />}
-                  {status === "loading" ? "BUSCANDO..." : `BUSCAR 50 KM · ${aisPricing.areaCredits} CR`}
-                </button>
+                <div className="ais-v202-area-actions">
+                  <button type="button" className="ais-v127-area-main free" onClick={() => { setSearchProvider("marinesia"); void searchArea("marinesia", true); }} disabled={status === "loading" || !areaCenter}>
+                    {status === "loading" ? <RefreshCw className="spin" /> : <Radio />}
+                    {status === "loading" ? "BUSCANDO..." : `BUSCAR FREE · ${USER_AREA_RADIUS_NM} MN · 0 CR`}
+                  </button>
+                  <button type="button" className="ais-v127-area-main premium" onClick={() => { setSearchProvider("premium"); void searchArea("premium"); }} disabled={status === "loading" || !areaCenter}>
+                    {status === "loading" ? <RefreshCw className="spin" /> : <Crosshair />}
+                    {status === "loading" ? "BUSCANDO..." : `BUSCAR PREMIUM · ${USER_AREA_RADIUS_NM} MN · ${aisPricing.areaCredits} CR`}
+                  </button>
+                </div>
 
                 <button type="button" className="ais-v127-area-more" onClick={() => setMobileAreaAdvanced((value) => !value)}>
                   {mobileAreaAdvanced ? "Ocultar posição manual" : "Digitar outra posição"}
@@ -4305,7 +4466,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                 )}
                 {manualCoordError && <p className="ais-v74-coordinate-error mobile">{manualCoordError}</p>}
 
-                <button type="button" className="ais-v127-area-saved" onClick={() => setMobilePanel("areaSaved")}><FolderHeart /> Ver resultados salvos <em>{areaSavedVessels.length}</em></button>
+                <button type="button" className="ais-v127-area-saved" onClick={() => setMobilePanel("areaSaved")}><FolderHeart /> Ver buscas salvas <em>{userAreaSearches.length}</em></button>
               </div>
             )}
 
@@ -4314,10 +4475,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <button type="button" className="ais-mobile-saved-update" onClick={() => void refreshSavedVessel(item)}><RefreshCw /><span>{item.folder === "marinesia" ? "ATUALIZAR GRÁTIS" : item.folder === "shipfinder" ? "ATUALIZAR SHIPFINDER" : `ATUALIZAR · ${aisPricing.updateCredits} CR`}</span></button>
             </article>) : <p>Nenhum barco salvo.</p>}</div>}
 
-            {mobilePanel === "areaSaved" && <div className="ais-v70-mobile-list area-saved">{areaSavedVessels.length ? areaSavedVessels.slice(0, 80).map((item) => <article className="ais-mobile-saved-row" key={item.vesselKey}>
-              <button type="button" className="ais-mobile-saved-main" onClick={() => { openSavedVessel(item); setMobilePanel(null); }}><Ship /><span><b>{item.name}</b><small>{item.lastLatitude != null ? `${formatCoordOperational(Number(item.lastLatitude), true)} · ${formatCoordOperational(Number(item.lastLongitude), false)}` : "Sem posição"}</small></span></button>
-              <button type="button" className="ais-mobile-saved-update" onClick={() => void refreshSavedVessel(item)}><RefreshCw /><span>ATUALIZAR</span></button>
-            </article>) : <p>Nenhuma busca premium de 50 km salva ainda.</p>}</div>}
+            {mobilePanel === "areaSaved" && <div className="ais-v70-mobile-list area-saved">{userAreaSearches.length ? userAreaSearches.slice(0, 30).map((item) => <article className="ais-mobile-saved-row" key={`area-search-${item.id}`}>
+              <button type="button" className="ais-mobile-saved-main" onClick={() => openSavedAreaSearch(item)}><Crosshair /><span><b>{item.mode === "premium" ? "PREMIUM" : "FREE"} · {item.radiusNm || USER_AREA_RADIUS_NM} MN · {item.vesselCount} barcos</b><small>{formatCoordOperational(Number(item.centerLatitude), true)} · {formatCoordOperational(Number(item.centerLongitude), false)} · {formatLocalDateTime(new Date(item.searchedAt))}</small></span></button>
+              <button type="button" className="ais-mobile-saved-update danger" onClick={() => void deleteSavedAreaSearch(item.id)}><Trash2 /><span>EXCLUIR</span></button>
+            </article>) : <p>Nenhuma busca de 30 MN salva ainda.</p>}</div>}
 
             {mobilePanel === "waypoints" && (
               <div className="ais-v70-mobile-list waypoints">

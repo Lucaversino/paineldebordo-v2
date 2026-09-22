@@ -38,12 +38,12 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
     </div>
     <div hidden={tab !== "other"}>{children}</div>
     <div hidden={tab !== "gfw"}>
-      <form className={styles.searchForm} onSubmit={e => { e.preventDefault(); void search(); }}>
+      <form className="ais-v138-free-form" onSubmit={e => { e.preventDefault(); void search(); }}>
         <input aria-label="Pesquisar no Global Fishing Watch" placeholder="Nome, MMSI, IMO ou indicativo" value={query} maxLength={100} onChange={e => setQuery(e.target.value)} />
         <button type="submit" disabled={busy}>{busy ? "BUSCANDO…" : "BUSCAR"}</button>
       </form>
       {open && <section className={styles.results} aria-live="polite">
-        <div className={styles.resultHeading}><b>Pesquisa de embarcações</b><button type="button" onClick={() => setOpen(false)} aria-label="Fechar resultados">×</button></div>
+        <header><b>Pesquisa de embarcações</b><button type="button" onClick={() => setOpen(false)} aria-label="Fechar resultados">×</button></header>
         <p>Cadastro e histórico de identidade. Esta pesquisa não fornece posição atual.</p>
         {error && <p role="alert">{error}</p>}
         {!busy && !error && !rows.length && <p>Nenhum barco encontrado para “{searched}”. Tente o MMSI ou outro nome.</p>}

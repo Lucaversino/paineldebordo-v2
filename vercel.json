@@ -5,5 +5,11 @@
       "maxDuration": 60,
       "excludeFiles": "{node_modules/**,.next/**,public/**,app/**,components/**,lib/**,tools/**,electron/**,*.md}"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/admin-ais-areas",
+      "schedule": "0 12 * * *"
+    }
+  ]
 }

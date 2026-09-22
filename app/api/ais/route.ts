@@ -11,6 +11,7 @@ import {
   priceForCredits,
 } from "../../../lib/credits";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
+import { USER_AREA_RADIUS_NM, NM_TO_KM, saveUserAreaSearch } from "../../../lib/aisRegionalAreas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ const DATADOCKED_BASE_URL = "https://datadocked.com/api/vessels_operations";
 const APRSFI_BASE_URL = "https://api.aprs.fi/api/get";
 const MARINESIA_BASE_URL = "https://api.marinesia.com/api/v2";
 const SHIPFINDER_BASE_URL = "https://api.elaneglobal.com/v1/AIS";
+const USER_AREA_RADIUS_KM = USER_AREA_RADIUS_NM * NM_TO_KM;
 
 type MarinesiaState = {
   cache: Map<string, { body: any; expiresAt: number }>;
@@ -1146,10 +1148,10 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        const vessels = await getMarinesiaArea(marinesiaApiKey, latitude, longitude, 50);
+        const vessels = await getMarinesiaArea(marinesiaApiKey, latitude, longitude, USER_AREA_RADIUS_KM);
         void logAisUsage({
           userId: user.id,
-          action: "area_50km_ais_free",
+          action: "area_30nm_ais_free",
           vesselName: null,
           providerCalls: 1,
           creditsCharged: 0,
@@ -1162,7 +1164,8 @@ export async function GET(request: NextRequest) {
           provider: "Marinesia AIS",
           free: true,
           center: { latitude, longitude },
-          radiusKm: 50,
+          radiusKm: USER_AREA_RADIUS_KM,
+          radiusNm: USER_AREA_RADIUS_NM,
           vessels,
           total: vessels.length,
           creditCost: 0,
@@ -1183,7 +1186,7 @@ export async function GET(request: NextRequest) {
       const params = new URLSearchParams({
         latitude: String(Math.round(latitude * 10000) / 10000),
         longitude: String(Math.round(longitude * 10000) / 10000),
-        circle_radius: "50",
+        circle_radius: USER_AREA_RADIUS_KM.toFixed(2),
       });
       const data = await callDataDocked(`/get-vessels-by-area?${params.toString()}`, dataDockedApiKey);
       const source = detailOf(data);
@@ -1193,14 +1196,14 @@ export async function GET(request: NextRequest) {
       const debit = await debitCreditsAfterSuccess({
         user,
         mode: "ais_area",
-        description: "Busca AIS Premium por área — 50 km",
+        description: "Busca AIS Premium por área — 30 MN",
         reference: `${latitude.toFixed(4)},${longitude.toFixed(4)}`,
-        metadata: { latitude, longitude, radiusKm: 50, vessels: vessels.length, provider: "Data Docked" },
+        metadata: { latitude, longitude, radiusNm: USER_AREA_RADIUS_NM, radiusKm: USER_AREA_RADIUS_KM, vessels: vessels.length, provider: "Data Docked" },
       });
 
       void logAisUsage({
         userId: user.id,
-        action: "area_50km_premium",
+        action: "area_30nm_premium",
         vesselName: null,
         providerCalls: 1,
         creditsCharged: debit.charged,
@@ -1208,16 +1211,29 @@ export async function GET(request: NextRequest) {
         status: "success",
       }).catch(() => null);
 
+      const savedSearch = await saveUserAreaSearch({
+        ownerId: user.id,
+        mode: "premium",
+        latitude,
+        longitude,
+        radiusNm: USER_AREA_RADIUS_NM,
+        creditsUsed: debit.charged,
+        source: "Data Docked · Premium 30 MN",
+        vessels,
+      }).catch(() => null);
+
       return NextResponse.json({
         configured: true,
         provider: "Data Docked",
         free: false,
         center: { latitude, longitude },
-        radiusKm: 50,
+        radiusNm: USER_AREA_RADIUS_NM,
+        radiusKm: USER_AREA_RADIUS_KM,
         vessels,
         total: vessels.length,
         creditCost: debit.charged,
         billing: debit,
+        savedSearch,
         adminFree: false,
       });
     }
