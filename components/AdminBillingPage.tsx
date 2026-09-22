@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, BrainCircuit, CheckCircle2, CircleDollarSign, Coins, ExternalLink, LoaderCircle, PlusCircle, Power, PowerOff, RefreshCw, Save, Search, ShieldCheck, UserRound, WalletCards } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
+import AdminOfficialWaypoints from "./AdminOfficialWaypoints";
 
 function brl(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
@@ -361,6 +362,9 @@ export default function AdminBillingPage() {
         </article>) : <div className="admin-no-users">Nenhum usuário encontrado.</div>}
       </div>
     </section>
+
+
+    <AdminOfficialWaypoints />
 
     <form className="admin-settings-form" onSubmit={submit}>
       <h3>Configurações administrativas <small>• FISH IA</small></h3>

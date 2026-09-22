@@ -177,6 +177,21 @@ export const mapWaypoints = pgTable("map_waypoints", {
   index("idx_map_waypoints_owner_time").on(t.ownerId, t.id),
 ]);
 
+export const officialWaypoints = pgTable("official_waypoints", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  waypointType: text("waypoint_type").notNull(),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  description: text("description").notNull().default(""),
+  visible: boolean("visible").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_official_waypoints_visible_id").on(t.visible, t.id),
+]);
+
 export const forecastHistory = pgTable("forecast_history", {
   id: serial("id").primaryKey(),
   ownerId: text("owner_id").notNull(),

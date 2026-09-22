@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v197-mapa-livre-navegacao";
+const CACHE = "painel-bordo-v198-waypoints-oficiais";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -8,7 +8,11 @@ const ASSETS = [
   "/icon-maskable-512.png",
   "/apple-touch-icon.png",
   "/favicon.ico",
-  "/icons/baco-malha-v152.svg"
+  "/icons/baco-malha-v152.svg",
+  "/icons/official-waypoints/skull.svg",
+  "/icons/official-waypoints/rock.svg",
+  "/icons/official-waypoints/reef.svg",
+  "/icons/official-waypoints/wreck.svg"
 ];
 
 self.addEventListener("install", (event) => {

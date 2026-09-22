@@ -77,6 +77,20 @@ type MapWaypoint = {
   updatedAt: string;
 };
 
+type OfficialWaypointType = "skull" | "rock" | "reef" | "wreck";
+type OfficialWaypoint = {
+  id: number;
+  name: string;
+  waypointType: OfficialWaypointType;
+  latitude: number;
+  longitude: number;
+  description: string;
+  visible: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DhnChart = {
   number: string;
   title: string;
@@ -667,6 +681,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const positionSourceRef = useRef<VectorSource | null>(null);
   const probeSourceRef = useRef<VectorSource | null>(null);
   const waypointSourceRef = useRef<VectorSource | null>(null);
+  const officialWaypointSourceRef = useRef<VectorSource | null>(null);
   const routeSourceRef = useRef<VectorSource | null>(null);
   const routeTranslateRef = useRef<Translate | null>(null);
   const measureSourceRef = useRef<VectorSource | null>(null);
@@ -736,6 +751,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
   const [mapProbe, setMapProbe] = useState<{ lat: number; lon: number } | null>(null);
   const [waypoints, setWaypoints] = useState<MapWaypoint[]>([]);
+  const [officialWaypoints, setOfficialWaypoints] = useState<OfficialWaypoint[]>([]);
+  const [selectedOfficialWaypoint, setSelectedOfficialWaypoint] = useState<OfficialWaypoint | null>(null);
   const [waypointPanelOpen, setWaypointPanelOpen] = useState(false);
   const [waypointName, setWaypointName] = useState("");
   const [waypointIcon, setWaypointIcon] = useState<WaypointIcon>("diamond");
@@ -1395,6 +1412,54 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
+  function officialWaypointTypeLabel(type: OfficialWaypointType) {
+    if (type === "skull") return "CAVEIRA · PERIGO";
+    if (type === "rock") return "PEDRA / LAJE";
+    if (type === "reef") return "PARCEL";
+    return "NAUFRÁGIO";
+  }
+
+  function officialWaypointIcon(type: OfficialWaypointType) {
+    return `/icons/official-waypoints/${type}.svg`;
+  }
+
+  function buildOfficialWaypointStyle(item: OfficialWaypoint, currentZoom: number) {
+    const scale = currentZoom < 8 ? 0.56 : currentZoom < 11 ? 0.72 : 0.86;
+    const showName = currentZoom >= 10;
+    return new Style({
+      image: new IconStyle({
+        src: officialWaypointIcon(item.waypointType),
+        anchor: [0.5, 0.5],
+        anchorXUnits: "fraction",
+        anchorYUnits: "fraction",
+        scale,
+      }),
+      text: showName ? new Text({
+        text: item.name,
+        offsetY: 27,
+        font: "900 10px system-ui, sans-serif",
+        fill: new Fill({ color: "#f7ffff" }),
+        stroke: new Stroke({ color: "#04181e", width: 4 }),
+        padding: [2, 3, 2, 3],
+      }) : undefined,
+      zIndex: 68,
+    });
+  }
+
+  function renderOfficialWaypoints(items: OfficialWaypoint[]) {
+    const source = officialWaypointSourceRef.current;
+    if (!source) return;
+    source.clear();
+    const zoomNow = mapRef.current?.getView().getZoom() || 10;
+    items.filter((item) => item.visible !== false).forEach((item) => {
+      if (!Number.isFinite(Number(item.latitude)) || !Number.isFinite(Number(item.longitude))) return;
+      const feature = new Feature({ geometry: new Point(fromLonLat([Number(item.longitude), Number(item.latitude)])) });
+      feature.set("officialWaypoint", item);
+      feature.setStyle(buildOfficialWaypointStyle(item, zoomNow));
+      source.addFeature(feature);
+    });
+  }
+
   function drawRouteDraft(points: RoutePoint[]) {
     const source = routeSourceRef.current; if (!source) return; source.clear();
     if (points.length >= 2) {
@@ -1427,6 +1492,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setWaypoints(Array.isArray(data?.waypoints) ? data.waypoints : []);
     } catch {
       // Waypoints não bloqueiam o AIS.
+    }
+  }
+
+  async function loadOfficialWaypoints() {
+    try {
+      const response = await aisFetch("/api/official-waypoints");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      setOfficialWaypoints(Array.isArray(data?.waypoints) ? data.waypoints : []);
+    } catch {
+      // Waypoints oficiais nunca devem bloquear o funcionamento do AIS.
     }
   }
 
@@ -2720,6 +2796,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const probeLayer = new VectorLayer({ source: probeSource });
     const waypointSource = new VectorSource();
     const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
+    const officialWaypointSource = new VectorSource();
+    const officialWaypointLayer = new VectorLayer({ source: officialWaypointSource, declutter: true });
     const routeSource = new VectorSource();
     const routeLayer = new VectorLayer({ source: routeSource, declutter: true });
     const measureSource = new VectorSource();
@@ -2738,11 +2816,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationLayer.setZIndex(49);
     waypointLayer.setZIndex(50);
     routeLayer.setZIndex(52);
+    officialWaypointLayer.setZIndex(58);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
+      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer],
       view,
     });
 
@@ -2774,6 +2853,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     positionSourceRef.current = positionSource;
     probeSourceRef.current = probeSource;
     waypointSourceRef.current = waypointSource;
+    officialWaypointSourceRef.current = officialWaypointSource;
     routeSourceRef.current = routeSource;
     const routeTranslate = new Translate({ layers:[routeLayer], hitTolerance:18 });
     routeTranslateRef.current=routeTranslate; map.addInteraction(routeTranslate);
@@ -2802,6 +2882,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           feature.set("_aisStyleBucket", styleBucket, true);
         });
       }
+      officialWaypointSource.getFeatures().forEach((feature) => {
+        const item = feature.get("officialWaypoint") as OfficialWaypoint | undefined;
+        if (item) feature.setStyle(buildOfficialWaypointStyle(item, currentZoom));
+      });
       const selected = trackedRef.current;
       if (selected) anchorCardForVessel(selected);
       scheduleFreeMapLayer(false);
@@ -2835,12 +2919,28 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
 
+      const officialWaypoint = map.forEachFeatureAtPixel(
+        event.pixel,
+        (feature: any) => (feature.get("officialWaypoint") || null) as OfficialWaypoint | null,
+        { hitTolerance: 14 },
+      );
+      if (officialWaypoint) {
+        const lat = Number(officialWaypoint.latitude);
+        const lon = Number(officialWaypoint.longitude);
+        setSelectedOfficialWaypoint(officialWaypoint);
+        setWaypointPanelOpen(false);
+        setMapProbe({ lat, lon });
+        setStatusMessage(`${officialWaypointTypeLabel(officialWaypoint.waypointType)} · ${officialWaypoint.name} · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
+        return;
+      }
+
       const waypoint = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("waypoint") || null) as MapWaypoint | null,
         { hitTolerance: 10 },
       );
       if (waypoint) {
+        setSelectedOfficialWaypoint(null);
         const lat = Number(waypoint.latitude);
         const lon = Number(waypoint.longitude);
         setMapProbe({ lat, lon });
@@ -2854,6 +2954,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }
 
       const [lon, lat] = toLonLat(event.coordinate);
+      setSelectedOfficialWaypoint(null);
       trackedRef.current = null;
       setTracked(null);
       setCardAnchor(null);
@@ -3029,12 +3130,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     refreshCredits();
     loadAisLibrary();
     loadWaypoints();
+    loadOfficialWaypoints();
     loadRoutes();
   }, []);
 
   useEffect(() => {
     renderWaypoints(waypoints);
   }, [waypoints]);
+
+  useEffect(() => {
+    renderOfficialWaypoints(officialWaypoints);
+  }, [officialWaypoints]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void loadOfficialWaypoints(); }, 120_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(()=>{ drawRouteDraft(routePoints); },[routePoints]);
 
@@ -3498,6 +3609,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
+
+        {selectedOfficialWaypoint && (
+          <div className="ais-v198-official-card">
+            <button type="button" className="close" onClick={() => setSelectedOfficialWaypoint(null)} aria-label="Fechar waypoint oficial">×</button>
+            <img src={officialWaypointIcon(selectedOfficialWaypoint.waypointType)} alt="" />
+            <div>
+              <small>WAYPOINT OFICIAL · {officialWaypointTypeLabel(selectedOfficialWaypoint.waypointType)}</small>
+              <b>{selectedOfficialWaypoint.name}</b>
+              <span>{formatCoordOperational(Number(selectedOfficialWaypoint.latitude), true)} · {formatCoordOperational(Number(selectedOfficialWaypoint.longitude), false)}</span>
+              {selectedOfficialWaypoint.description && <p>{selectedOfficialWaypoint.description}</p>}
+            </div>
+            <button type="button" className="center" onClick={() => centerOn(Number(selectedOfficialWaypoint.latitude), Number(selectedOfficialWaypoint.longitude), Math.max(12, mapRef.current?.getView().getZoom() || 12))}><Crosshair /> CENTRALIZAR</button>
+          </div>
+        )}
 
         <div className="ais-v138-free-header">
           <form
