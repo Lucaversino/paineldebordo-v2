@@ -43,10 +43,9 @@ import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, S
 import { fromLonLat, toLonLat } from "ol/proj";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 
-const DHN_WMS_URL = "https://idem.dhn.mar.mil.br/geoserver/wms";
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
-// V140: cartas da Marinha/DHN foram retiradas da interface AIS.
-const ENABLE_DHN_CHARTS = false;
+// V194: carta náutica DHN automática no AIS. Não exige botão do usuário.
+const ENABLE_DHN_CHARTS = true;
 
 type Props = {
   defaultLat?: number | null;
@@ -250,14 +249,35 @@ function idealScaleForZoom(zoom: number) {
   return 12000;
 }
 
+function chartCoverageSpan(chart: DhnChart) {
+  if (!chart.bounds || chart.bounds.length !== 4) return Number.POSITIVE_INFINITY;
+  const [west, south, east, north] = chart.bounds;
+  const width = Math.max(0.0001, Math.abs(east - west));
+  const height = Math.max(0.0001, Math.abs(north - south));
+  return Math.max(width, height);
+}
+
+function idealSpanForZoom(zoom: number) {
+  // Aproxima a largura visível de um mapa de 4,5 tiles. Em zoom maior,
+  // prefere automaticamente cartas de área menor (mais detalhadas).
+  return (360 / Math.pow(2, Math.max(3, zoom))) * 4.5;
+}
+
 function chooseDhnChart(charts: DhnChart[], lon: number, lat: number, zoom: number) {
   const covering = charts.filter((chart) => chartContains(chart, lon, lat));
   if (!covering.length) return null;
-  const ideal = idealScaleForZoom(zoom);
+  const idealScale = idealScaleForZoom(zoom);
+  const idealSpan = idealSpanForZoom(zoom);
+
   return [...covering].sort((a, b) => {
-    const as = Number(a.scale || 9999999);
-    const bs = Number(b.scale || 9999999);
-    return Math.abs(Math.log(as / ideal)) - Math.abs(Math.log(bs / ideal));
+    const score = (chart: DhnChart) => {
+      const scale = Number(chart.scale || 0);
+      if (scale > 0) return Math.abs(Math.log(scale / idealScale));
+      const span = chartCoverageSpan(chart);
+      return Number.isFinite(span) ? Math.abs(Math.log(span / idealSpan)) + 0.08 : 99;
+    };
+    const sourcePenalty = (chart: DhnChart) => chart.source === "local" ? -0.05 : 0;
+    return (score(a) + sourcePenalty(a)) - (score(b) + sourcePenalty(b));
   })[0];
 }
 
@@ -618,6 +638,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const areaSourceRef = useRef<VectorSource | null>(null);
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
+  const bathymetryLayerRef = useRef<TileLayer<TileWMS> | null>(null);
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const vesselFeatureRegistryRef = useRef<Map<string, Feature>>(new Map());
   const vesselStyleBucketRef = useRef<number | null>(null);
@@ -870,13 +891,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [center, setCenter] = useState({ lat: fallbackLat, lon: fallbackLon });
   const [devicePosition, setDevicePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [zoom, setZoom] = useState(10);
-  const [baseMode, setBaseMode] = useState<BaseMode>("map");
+  const [baseMode, setBaseMode] = useState<BaseMode>("dhn");
   const [dhnCharts, setDhnCharts] = useState<DhnChart[]>([]);
   const [dhnAuto, setDhnAuto] = useState(true);
   const [selectedDhnChart, setSelectedDhnChart] = useState("");
-  const [dhnOpacity, setDhnOpacity] = useState(0.58);
+  const [dhnOpacity, setDhnOpacity] = useState(0.92);
   const [dhnPanelOpen, setDhnPanelOpen] = useState(false);
-  const [dhnLoadMessage, setDhnLoadMessage] = useState("Conectando ao serviço oficial IDEM-DHN...");
+  const [dhnLoadMessage, setDhnLoadMessage] = useState("Carregando carta náutica automática...");
   const [savedVessels, setSavedVessels] = useState<SavedVessel[]>([]);
   const [historyItems, setHistoryItems] = useState<AisHistoryItem[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -2556,9 +2577,28 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   useEffect(() => {
     if (!hostRef.current) return;
     const street = new TileLayer({ visible: true, source: new OSM() });
+    const bathymetry = new TileLayer({
+      visible: true,
+      opacity: 0.42,
+      source: new TileWMS({
+        url: "/api/gebco-map",
+        params: {
+          LAYERS: "GEBCO_Latest_2",
+          TILED: true,
+          FORMAT: "image/png",
+          TRANSPARENT: true,
+          VERSION: "1.1.1",
+        },
+        serverType: "mapserver",
+        crossOrigin: "anonymous",
+        transition: 0,
+      }),
+    });
+    bathymetry.setZIndex(3);
+
     const dhn = new TileLayer({
       visible: false,
-      opacity: 0.58,
+      opacity: 0.92,
       source: new XYZ({
         url: `${DHN_TILE_BASE}/__nenhuma__/{z}/{x}/{y}.png`,
         attributions: "Carta Raster DHN/CHM",
@@ -2616,7 +2656,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
+      layers: [street, bathymetry, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
       view,
     });
 
@@ -2656,6 +2696,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationSourceRef.current = navigationSource;
     areaSourceRef.current = areaSource;
     streetLayerRef.current = street;
+    bathymetryLayerRef.current = bathymetry;
     dhnLayerRef.current = dhn;
 
     const updateCenter = () => {
@@ -2758,49 +2799,63 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, []);
 
   useEffect(() => {
-    // V140: não carregar catálogo/WMS da Marinha enquanto a função estiver retirada.
     if (!ENABLE_DHN_CHARTS) return;
     let cancelled = false;
 
     (async () => {
-      try {
-        setDhnLoadMessage("Carregando catálogo de cartas DHN...");
-        const [catalogResponse, capabilitiesResponse] = await Promise.all([
-          fetch("/data/dhn/catalog-rj-sp-pr-sc-rs.json", { cache: "force-cache" }),
-          fetch("/api/dhn-wms", { cache: "no-store" }),
-        ]);
+      setDhnLoadMessage("Carregando carta náutica automática...");
 
-        if (!catalogResponse.ok) throw new Error("catalog");
-        const catalogData = await catalogResponse.json();
-        const catalog = (Array.isArray(catalogData?.charts) ? catalogData.charts : []) as DhnCatalogEntry[];
+      const localPromise = fetch(`${DHN_TILE_BASE}/installed.json`, { cache: "no-store" })
+        .then(async (response) => response.ok ? await response.json() : { charts: [] })
+        .catch(() => ({ charts: [] }));
+      const remotePromise = (async () => {
+        try {
+          const response = await fetch("/api/dhn/charts", { cache: "no-store" });
+          const data = response.ok ? await response.json() : { charts: [] };
+          if (Array.isArray(data?.charts) && data.charts.length) return data;
 
-        if (!capabilitiesResponse.ok) {
-          if (!cancelled) {
-            setDhnCharts([]);
-            setDhnLoadMessage("Serviço oficial DHN indisponível no momento.");
-          }
-          return;
+          // Fallback de descoberta: reutiliza o catálogo local e interpreta o
+          // GetCapabilities bruto caso o parser do endpoint não encontre camadas.
+          const [catalogResponse, capabilitiesResponse] = await Promise.all([
+            fetch("/data/dhn/catalog-rj-sp-pr-sc-rs.json", { cache: "force-cache" }),
+            fetch("/api/dhn-wms", { cache: "no-store" }),
+          ]);
+          if (!catalogResponse.ok || !capabilitiesResponse.ok) return { charts: [] };
+          const catalogData = await catalogResponse.json();
+          const catalog = (Array.isArray(catalogData?.charts) ? catalogData.charts : []) as DhnCatalogEntry[];
+          const xml = await capabilitiesResponse.text();
+          return { charts: parseDhnCapabilities(xml, catalog) };
+        } catch {
+          return { charts: [] };
         }
+      })();
 
-        const xml = await capabilitiesResponse.text();
-        const charts = parseDhnCapabilities(xml, catalog);
-        if (cancelled) return;
+      const [localData, remoteData] = await Promise.all([localPromise, remotePromise]);
+      if (cancelled) return;
 
-        setDhnCharts(charts);
-        setDhnLoadMessage(
-          charts.length
-            ? `${charts.length} cartas DHN disponíveis para RJ, SP, PR, SC e RS.`
-            : "Catálogo carregado, mas nenhuma camada raster DHN foi localizada no WMS."
-        );
+      const localCharts = (Array.isArray(localData?.charts) ? localData.charts : [])
+        .filter((chart: any) => chart?.number && Array.isArray(chart?.bounds))
+        .map((chart: any) => ({ ...chart, source: "local" as const })) as DhnChart[];
+      const remoteCharts = (Array.isArray(remoteData?.charts) ? remoteData.charts : [])
+        .filter((chart: any) => chart?.number && chart?.layerName && Array.isArray(chart?.bounds))
+        .map((chart: any) => ({ ...chart, source: "wms" as const })) as DhnChart[];
 
-        const automatic = chooseDhnChart(charts, center.lon, center.lat, zoom) || charts[0];
-        if (automatic) setSelectedDhnChart((current) => current || automatic.number);
-      } catch {
-        if (!cancelled) {
-          setDhnCharts([]);
-          setDhnLoadMessage("Não foi possível carregar as cartas DHN agora.");
-        }
+      // Se houver tiles locais instalados, eles têm prioridade. O WMS oficial
+      // completa automaticamente as áreas sem tile local.
+      const merged = new Map<string, DhnChart>();
+      for (const chart of remoteCharts) merged.set(chart.number, chart);
+      for (const chart of localCharts) merged.set(chart.number, chart);
+      const charts = Array.from(merged.values());
+
+      setDhnCharts(charts);
+      if (!charts.length) {
+        setDhnLoadMessage("Carta DHN temporariamente indisponível; mapa base mantido.");
+        return;
       }
+
+      const automatic = chooseDhnChart(charts, center.lon, center.lat, zoom) || charts[0];
+      if (automatic) setSelectedDhnChart(automatic.number);
+      setDhnLoadMessage(`Carta automática ativa · ${charts.length} cartas disponíveis`);
     })();
 
     return () => { cancelled = true; };
@@ -2822,23 +2877,39 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
 
     const chart = dhnCharts.find((item) => item.number === selectedDhnChart);
-    if (!chart?.layerName) {
+    if (!chart) {
       layer.setVisible(false);
       return;
     }
 
-    layer.setSource(new TileWMS({
-      url: DHN_WMS_URL,
-      params: {
-        LAYERS: chart.layerName,
-        TILED: true,
-        FORMAT: "image/png",
-        TRANSPARENT: true,
-        VERSION: "1.3.0",
-      },
-      crossOrigin: "anonymous",
-      transition: 0,
-    }));
+    if (chart.source === "local") {
+      layer.setSource(new XYZ({
+        url: `${DHN_TILE_BASE}/${chart.number}/{z}/{x}/{y}.png`,
+        attributions: "Carta Raster DHN/CHM",
+        crossOrigin: "anonymous",
+        transition: 0,
+      }));
+    } else if (chart.layerName) {
+      layer.setSource(new TileWMS({
+        // Proxy do próprio app: evita CORS no navegador e mantém a carta
+        // funcionando da mesma forma em desktop, Android e iPhone.
+        url: "/api/dhn-map",
+        params: {
+          LAYERS: chart.layerName,
+          TILED: true,
+          FORMAT: "image/png",
+          TRANSPARENT: true,
+          VERSION: "1.1.1",
+        },
+        serverType: "geoserver",
+        crossOrigin: "anonymous",
+        transition: 0,
+      }));
+    } else {
+      layer.setVisible(false);
+      return;
+    }
+
     layer.setOpacity(dhnOpacity);
     layer.setVisible(true);
     setDhnLoadMessage(`Carta ${chart.number} · ${chart.title}`);

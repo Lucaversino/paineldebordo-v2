@@ -1,19 +1,18 @@
-# Cartas Náuticas da Marinha — v65
+# Cartas Náuticas DHN — V194
 
-A v65 usa duas formas de carregar as cartas da DHN/CHM:
+A carta náutica agora é **automática no AIS**. Ao entrar no mapa, o sistema escolhe a carta que cobre a posição e troca para uma carta de maior detalhe conforme o zoom aumenta. Não é necessário apertar botão de cartas.
 
-1. **Oficial online (padrão):** o painel consulta o WMS público do GeoServer IDEM-DHN (`https://idem.dhn.mar.mil.br/geoserver/wms`). Não é necessário converter KAP para o mapa funcionar.
-2. **Tiles locais (opcional/offline):** se existirem cartas convertidas em `public/cartas/<numero>/{z}/{x}/{y}.png`, o painel pode usá-las localmente.
+## Ordem de carregamento
 
-## Por que o modo online foi adotado
+1. **Tiles locais**, se existirem em `public/cartas/<numero>/{z}/{x}/{y}.png`.
+2. **WMS oficial IDEM-DHN**, quando não houver tile local, usando `/api/dhn-map` como proxy interno para evitar CORS.
+3. **Mapa base OSM** continua embaixo e serve de fallback se a DHN estiver temporariamente indisponível.
 
-O pacote `cartas_marinha_RS_SC_SP_RJ_setup.zip` contém o catálogo e os scripts, mas não contém os arquivos `.KAP`/`.BSB` binários das cartas. Sem esses arquivos não existe imagem para converter localmente. Além disso, dezenas de cartas convertidas em XYZ podem ocupar centenas de MB ou vários GB, o que não é uma boa solução para um deploy normal da Vercel.
+## Pacote de cartas enviado
 
-Na v65, `/api/dhn/charts` lê o GetCapabilities do GeoServer oficial e identifica as camadas das cartas selecionadas de RJ, SP, PR, SC e RS. Quando uma carta possui vários painéis, as camadas são combinadas automaticamente.
+O arquivo `cartas_marinha_RS_SC_SP_RJ_setup` contém catálogo e scripts, mas não contém os binários `.KAP/.BSB`. Por isso a V194 funciona online sem depender da conversão local.
 
-## Conversão local opcional
-
-Se quiser manter cópia offline, rode em uma máquina com internet e GDAL:
+Para preparar uma cópia local/offline em uma máquina com internet e GDAL:
 
 ```bash
 npm run charts:download
@@ -21,17 +20,8 @@ npm run charts:extract
 npm run charts:convert
 ```
 
-Os scripts permanecem em `tools/cartas-marinha`.
+Depois do `charts:convert`, o AIS detecta automaticamente `public/cartas/installed.json` e prioriza as cartas locais.
 
-## Uso
+## Área
 
-No AIS agora existem somente dois botões de base:
-
-- **Marinha** — carta oficial IDEM-DHN, quando disponível.
-- **Mapa** — OpenStreetMap.
-
-O modo **Oceano** foi removido.
-
-## Aviso
-
-As cartas raster da DHN são auxílio à navegação. Consulte as regras de uso do CHM/DHN e mantenha cartas/avisos oficiais atualizados. Para uso comercial das cartas, verifique a autorização aplicável junto à DHN/EMGEPRON.
+A estrutura contempla RJ, SP, PR, SC e RS, incluindo as cartas costeiras 23100, 23200, 23300, 23400, 23500 e 23600 e cartas locais de maior detalhe quando disponíveis no serviço.
