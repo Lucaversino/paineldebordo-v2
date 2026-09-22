@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v191-descarte-vivo-morto";
+const CACHE = "painel-bordo-v196-curvas-batimetricas";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

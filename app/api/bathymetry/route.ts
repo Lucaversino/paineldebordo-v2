@@ -30,67 +30,64 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Latitude/longitude inválidas." }, { status: 400 });
   }
 
-  // Janela pequena em torno do ponto; o pixel central é consultado pelo GetFeatureInfo.
   const delta = 0.03;
-  const params = new URLSearchParams({
-    SERVICE: "WMS",
-    VERSION: "1.1.1",
-    REQUEST: "GetFeatureInfo",
-    LAYERS: "GEBCO_LATEST_2",
-    QUERY_LAYERS: "GEBCO_LATEST_2",
-    STYLES: "",
-    SRS: "EPSG:4326",
-    BBOX: `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`,
-    WIDTH: "101",
-    HEIGHT: "101",
-    X: "50",
-    Y: "50",
-    FORMAT: "image/png",
-    INFO_FORMAT: "text/plain",
-    FEATURE_COUNT: "1",
-  });
+  const layerCandidates = ["GEBCO_Latest_2", "GEBCO_LATEST_2"];
 
   try {
-    const response = await fetch(`${GEBCO_WMS}?${params.toString()}`, {
-      headers: {
-        accept: "text/plain,*/*;q=0.8",
-        "user-agent": "Painel-de-Bordo/141",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(7000),
-    });
+    for (const layerName of layerCandidates) {
+      const params = new URLSearchParams({
+        SERVICE: "WMS",
+        VERSION: "1.1.1",
+        REQUEST: "GetFeatureInfo",
+        LAYERS: layerName,
+        QUERY_LAYERS: layerName,
+        STYLES: "",
+        SRS: "EPSG:4326",
+        BBOX: `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`,
+        WIDTH: "101",
+        HEIGHT: "101",
+        X: "50",
+        Y: "50",
+        FORMAT: "image/png",
+        INFO_FORMAT: "text/plain",
+        FEATURE_COUNT: "1",
+      });
 
-    if (!response.ok) {
+      const response = await fetch(`${GEBCO_WMS}?${params.toString()}`, {
+        headers: {
+          accept: "text/plain,*/*;q=0.8",
+          "user-agent": "Painel-de-Bordo/196",
+        },
+        cache: "force-cache",
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(7000),
+      }).catch(() => null);
+
+      if (!response?.ok) continue;
+      const raw = await response.text();
+      const elevationMeters = parseElevation(raw);
+      if (elevationMeters == null) continue;
+
       return NextResponse.json(
-        { error: `GEBCO indisponível (${response.status}).` },
-        { status: 502 },
-      );
-    }
-
-    const raw = await response.text();
-    const elevationMeters = parseElevation(raw);
-
-    if (elevationMeters == null) {
-      return NextResponse.json(
-        { error: "Não foi possível obter a profundidade neste ponto." },
-        { status: 502 },
+        {
+          lat,
+          lon,
+          elevationMeters,
+          depthMeters: elevationMeters < 0 ? Math.round(Math.abs(elevationMeters)) : 0,
+          source: "GEBCO",
+          approximate: true,
+        },
+        {
+          headers: {
+            "cache-control": "public, s-maxage=86400, stale-while-revalidate=604800",
+          },
+        },
       );
     }
 
     return NextResponse.json(
-      {
-        lat,
-        lon,
-        elevationMeters,
-        depthMeters: elevationMeters < 0 ? Math.round(Math.abs(elevationMeters)) : 0,
-        source: "GEBCO",
-        approximate: true,
-      },
-      {
-        headers: {
-          "cache-control": "public, s-maxage=86400, stale-while-revalidate=604800",
-        },
-      },
+      { error: "Não foi possível obter a profundidade neste ponto." },
+      { status: 502 },
     );
   } catch {
     return NextResponse.json(

@@ -30,10 +30,13 @@ import OlMap from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
+import VectorTileLayer from "ol/layer/VectorTile";
 import XYZ from "ol/source/XYZ";
 import TileWMS from "ol/source/TileWMS";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
+import VectorTileSource from "ol/source/VectorTile";
+import GeoJSON from "ol/format/GeoJSON";
 import Translate from "ol/interaction/Translate";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
@@ -594,6 +597,39 @@ function sourceInfo(dataSource?: string) {
   return { title: source ? `AIS · ${source}` : "FONTE AIS", short: "AIS", className: "unknown" };
 }
 
+const BATHYMETRY_STYLE_CACHE = new Map<number, Style>();
+
+function bathymetryContourStyle(feature: any) {
+  const depth = Number(feature?.get?.("depth"));
+  if (!Number.isFinite(depth) || depth <= 0 || depth > 200) return undefined;
+
+  const cached = BATHYMETRY_STYLE_CACHE.get(depth);
+  if (cached) return cached;
+
+  const major = depth % 50 === 0 || depth === 200;
+  const emphasized = depth === 20 || depth === 30 || depth === 40 || depth === 100 || depth === 200;
+  const style = new Style({
+    stroke: new Stroke({
+      color: major ? "rgba(0, 78, 126, 0.96)" : "rgba(0, 126, 167, 0.88)",
+      width: major ? 2.15 : emphasized ? 1.65 : 1.25,
+    }),
+    text: new Text({
+      text: `${Math.round(depth)} m`,
+      placement: "line",
+      repeat: major ? 165 : 235,
+      overflow: true,
+      maxAngle: Math.PI / 7,
+      keepUpright: true,
+      font: major ? "800 12px system-ui, sans-serif" : "750 11px system-ui, sans-serif",
+      fill: new Fill({ color: major ? "#003b63" : "#005f7a" }),
+      stroke: new Stroke({ color: "rgba(255,255,255,0.98)", width: major ? 4 : 3.4 }),
+      padding: [1, 2, 1, 2],
+    }),
+  });
+  BATHYMETRY_STYLE_CACHE.set(depth, style);
+  return style;
+}
+
 export default function AISPage({ defaultLat, defaultLon }: Props) {
   const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
   const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
@@ -639,6 +675,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const streetLayerRef = useRef<TileLayer<OSM> | null>(null);
   const dhnLayerRef = useRef<TileLayer<XYZ | TileWMS> | null>(null);
   const bathymetryLayerRef = useRef<TileLayer<TileWMS> | null>(null);
+  const probeDepthRequestRef = useRef(0);
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const vesselFeatureRegistryRef = useRef<Map<string, Feature>>(new Map());
   const vesselStyleBucketRef = useRef<number | null>(null);
@@ -1398,7 +1435,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return { lat, lon };
   }
 
-  function drawProbePoint(lat: number, lon: number) {
+  function drawProbePoint(lat: number, lon: number, depthMeters?: number | null) {
     const source = probeSourceRef.current;
     source?.clear();
     const marker = new Feature({ geometry: new Point(fromLonLat([lon, lat])) });
@@ -1408,6 +1445,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         fill: new Fill({ color: "#2bd4aa" }),
         stroke: new Stroke({ color: "#ffffff", width: 2 }),
       }),
+      text: Number.isFinite(Number(depthMeters)) && Number(depthMeters) > 0
+        ? new Text({
+            text: `~${Math.round(Number(depthMeters))} m`,
+            offsetY: -19,
+            font: "900 12px system-ui, sans-serif",
+            fill: new Fill({ color: "#003b63" }),
+            stroke: new Stroke({ color: "rgba(255,255,255,.98)", width: 4 }),
+            padding: [2, 4, 2, 4],
+          })
+        : undefined,
     }));
     source?.addFeature(marker);
   }
@@ -1825,7 +1872,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setWaypointLonDigits(coordDigitsFromDecimal(lon, false));
     setWaypointCoordError("");
 
-    // V142: ponto simples. Sem metragem/profundidade.
+    // V196: além das curvas automáticas, um toque no mar consulta a profundidade
+    // aproximada GEBCO do ponto e escreve o valor junto ao marcador.
+    const requestId = ++probeDepthRequestRef.current;
+    void fetch(`/api/bathymetry?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`, { cache: "force-cache" })
+      .then(async (response) => response.ok ? await response.json() : null)
+      .then((data) => {
+        if (requestId !== probeDepthRequestRef.current) return;
+        const depth = Number(data?.depthMeters);
+        if (!Number.isFinite(depth) || depth <= 0) return;
+        drawProbePoint(lat, lon, depth);
+        setStatusMessage(`Profundidade aproximada ~${Math.round(depth)} m · GEBCO · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
+      })
+      .catch(() => null);
+
     // O círculo de 50 km continua aparecendo somente durante uma busca de área.
     areaSourceRef.current?.clear();
     setAreaCenter({ lat, lon });
@@ -1834,6 +1894,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function clearMapProbe() {
+    probeDepthRequestRef.current += 1;
     probeSourceRef.current?.clear();
     setMapProbe(null);
   }
@@ -2579,7 +2640,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const street = new TileLayer({ visible: true, source: new OSM() });
     const bathymetry = new TileLayer({
       visible: true,
-      opacity: 0.42,
+      opacity: 0.18,
       source: new TileWMS({
         url: "/api/gebco-map",
         params: {
@@ -2595,6 +2656,26 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }),
     });
     bathymetry.setZIndex(3);
+
+    const bathymetryContours = new VectorTileLayer({
+      visible: true,
+      opacity: 1,
+      declutter: true,
+      renderBuffer: 90,
+      updateWhileAnimating: false,
+      updateWhileInteracting: false,
+      source: new VectorTileSource({
+        format: new GeoJSON({ dataProjection: "EPSG:4326" }),
+        url: "/api/bathymetry-contours/{z}/{x}/{y}",
+        minZoom: 5,
+        maxZoom: 12,
+        wrapX: false,
+        transition: 0,
+        attributions: "Batimetria: AWS Open Data / Mapzen Terrain Tiles (ETOPO1 no oceano)",
+      }),
+      style: bathymetryContourStyle,
+    });
+    bathymetryContours.setZIndex(8);
 
     const dhn = new TileLayer({
       visible: false,
@@ -2656,7 +2737,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, bathymetry, dhn, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
+      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer],
       view,
     });
 
@@ -3520,6 +3601,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <span className="ais-v119-layer marinesia"><i /> AIS Free</span>
           <span className="ais-v119-layer premium"><i /> Premium</span>
           {ENABLE_DHN_CHARTS && baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
+          <span className="ais-v119-layer bathy"><i /> Batimetria 10–200 m</span>
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 

@@ -5664,3 +5664,7 @@ main.loginpage{
 .route-extremes-grid span{min-height:68px}
 .route-extremes-grid span>em{font-style:normal;color:#63cdb2;font-size:9px;margin-top:2px}
 @media(max-width:650px){.route-extremes-grid{grid-template-columns:1fr}}
+
+/* V196 — indicador da camada de curvas batimétricas automáticas */
+.ais-v119-layer.bathy{border-color:#176d8d!important;background:#082531!important;color:#7ed7ee!important}
+.ais-v119-layer.bathy i{background:#1ba3c6!important}
