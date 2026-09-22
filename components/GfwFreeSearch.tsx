@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Search } from "lucide-react";
 import type { GfwVessel } from "../lib/gfw";
 import styles from "./GfwFreeSearch.module.css";
 type Props = { children: ReactNode; request: (url: string, init?: RequestInit) => Promise<Response>; locate: (vessel: GfwVessel) => void; locating: boolean };
@@ -38,9 +39,10 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
     </div>
     <div hidden={tab !== "other"}>{children}</div>
     <div hidden={tab !== "gfw"}>
-      <form className="ais-v138-free-form" onSubmit={e => { e.preventDefault(); void search(); }}>
+      <form className={`ais-v138-free-form ${styles.gfwForm}`} onSubmit={e => { e.preventDefault(); void search(); }}>
+        <Search aria-hidden="true" />
         <input aria-label="Pesquisar no Global Fishing Watch" placeholder="Nome, MMSI, IMO ou indicativo" value={query} maxLength={100} onChange={e => setQuery(e.target.value)} />
-        <button type="submit" disabled={busy}>{busy ? "BUSCANDO…" : "BUSCAR"}</button>
+        <button type="submit" disabled={busy}><span>{busy ? "BUSCANDO…" : "BUSCAR"}</span></button>
       </form>
       {open && <section className={styles.results} aria-live="polite">
         <header><b>Pesquisa de embarcações</b><button type="button" onClick={() => setOpen(false)} aria-label="Fechar resultados">×</button></header>

@@ -6,3 +6,8 @@
 .results p,.results small{color:#b6cbd3}.results article{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid #315b64;overflow-wrap:anywhere}
 .results button{min-height:34px;padding:6px 10px;border:1px solid #397461;border-radius:6px;background:#143e36;color:#dbffef;cursor:pointer}
 .results button:disabled{opacity:.5;cursor:default}.results footer{padding-top:12px}.results a{color:#81d9bf}
+
+
+.gfwForm{width:100%}
+.gfwForm>svg{flex:none}
+.gfwForm button{white-space:nowrap}
