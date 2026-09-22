@@ -6006,3 +6006,128 @@ main.loginpage{
 .admin-ais-source-legend p{margin:0;color:#7f9fa5;font-size:7px;line-height:1.4}
 .app:not(.dark) .admin-ais-source-legend{background:#fff;border-color:#c5d9d6;color:#173a41}
 @media(max-width:760px){.admin-ais-source-legend>div{display:grid;grid-template-columns:1fr 1fr}.admin-ais-source-legend span{min-width:0}}
+
+/* ===== V210 — BUSCA FREE EM POPUP, NO MESMO PADRÃO DA PREMIUM =====
+   Apenas organização visual/abertura da busca. Não altera AIS, GPS, mapa,
+   batimetria, metragem, waypoints, rotas, régua, XTE ou APIs. */
+.ais-v119-page .ais-v210-free-trigger{
+  position:absolute;
+  left:50%;
+  bottom:122px;
+  z-index:1720;
+  min-width:218px;
+  min-height:40px;
+  transform:translateX(-50%);
+  padding:0 14px;
+  border:1px solid rgba(69,220,176,.62);
+  border-radius:12px;
+  background:linear-gradient(180deg,rgba(12,85,72,.98),rgba(7,58,50,.98));
+  color:#dffff5;
+  box-shadow:0 10px 30px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.07);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  cursor:pointer;
+  touch-action:manipulation;
+  pointer-events:auto;
+  font:950 11px system-ui;
+}
+.ais-v119-page .ais-v210-free-trigger:hover,
+.ais-v119-page .ais-v210-free-trigger.active{
+  border-color:#75f0ce;
+  background:linear-gradient(180deg,rgba(17,108,91,.99),rgba(8,71,60,.99));
+}
+.ais-v119-page .ais-v210-free-trigger svg{width:16px;height:16px}
+.ais-v119-page .ais-v210-free-trigger em{
+  padding:3px 7px;
+  border-radius:999px;
+  background:#47d9b0;
+  color:#063128;
+  font:950 8px system-ui;
+  font-style:normal;
+}
+
+.ais-v119-page .ais-v210-free-panel{
+  position:absolute;
+  left:50%;
+  bottom:174px;
+  z-index:1760;
+  width:min(460px,calc(100% - 24px));
+  max-height:min(64vh,540px);
+  transform:translateX(-50%);
+  overflow:auto;
+  overscroll-behavior:contain;
+  border:1px solid rgba(69,220,176,.44);
+  border-radius:16px;
+  padding:12px;
+  color:#eafff8;
+  background:rgba(5,29,27,.98);
+  box-shadow:0 18px 50px rgba(0,0,0,.48);
+  backdrop-filter:blur(14px);
+  pointer-events:auto;
+}
+.ais-v119-page .ais-v210-free-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:5px;
+}
+.ais-v119-page .ais-v210-free-head>span{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+}
+.ais-v119-page .ais-v210-free-head>span svg{width:17px;height:17px;color:#47d9b0}
+.ais-v119-page .ais-v210-free-head>button{
+  width:32px;
+  height:32px;
+  border:0;
+  border-radius:9px;
+  color:#dcfff5;
+  background:rgba(255,255,255,.07);
+  cursor:pointer;
+  pointer-events:auto;
+  font-size:20px;
+  line-height:1;
+}
+.ais-v119-page .ais-v210-free-panel>small{
+  display:block;
+  margin-bottom:9px;
+  color:rgba(212,255,244,.66);
+  font-weight:700;
+}
+.ais-v119-page .ais-v210-free-panel .ais-v138-free-form{
+  box-shadow:none;
+}
+
+/* Com três ações centrais, o popup Premium também abre acima da pilha inteira. */
+.ais-v119-page .ais-v138-premium-panel{
+  bottom:174px!important;
+}
+
+@media(max-width:780px){
+  .ais-v119-page .ais-v210-free-trigger{
+    bottom:168px;
+    min-width:210px;
+    min-height:40px;
+  }
+  .ais-v119-page .ais-v210-free-panel{
+    bottom:218px;
+    width:calc(100% - 18px);
+    max-height:min(58dvh,500px);
+    padding:10px;
+  }
+  .ais-v119-page .ais-v138-premium-panel{
+    bottom:218px!important;
+    width:calc(100% - 18px)!important;
+    max-height:min(58dvh,500px)!important;
+  }
+}
+
+@media(max-width:430px){
+  .ais-v119-page .ais-v210-free-panel{
+    width:calc(100% - 12px);
+  }
+}

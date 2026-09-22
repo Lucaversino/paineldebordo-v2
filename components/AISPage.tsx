@@ -754,6 +754,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [premiumSearchLoading, setPremiumSearchLoading] = useState(false);
   const [premiumSearchError, setPremiumSearchError] = useState("");
   const [premiumSearchResults, setPremiumSearchResults] = useState<VesselMatch[]>([]);
+  const [freePanelOpen, setFreePanelOpen] = useState(false);
   const [premiumPanelOpen, setPremiumPanelOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<SearchMode>("vessel");
   const [searchProvider, setSearchProvider] = useState<SearchProvider>("premium");
@@ -3192,6 +3193,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
     map.on("moveend", updateCenter);
     const selectMapFeature = (event: any) => {
+      // V210: qualquer toque/clique no mapa recolhe as janelas de busca.
+      setFreePanelOpen(false);
+      setPremiumPanelOpen(false);
       if (officialAreaDrawModeRef.current) {
         const [lon, lat] = toLonLat(event.coordinate);
         const next = [...officialAreaDraftPointsRef.current, { latitude: lat, longitude: lon }];
@@ -3932,62 +3936,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
         )}
 
-        <div className="ais-v138-free-header">
-          <GfwFreeSearch request={aisFetch} locating={freeSearchLoading} locate={(vessel) => {
-            setFreeSearchQuery(vessel.name || vessel.mmsi || vessel.imo);
-            void openFreeResult({
-              name: vessel.name,
-              mmsi: vessel.mmsi,
-              imo: vessel.imo,
-              country: "",
-              countryIso: vessel.flag,
-              shipType: "",
-              typeSpecific: "",
-              callsign: vessel.callsign,
-              freeProvider: undefined,
-            });
-          }}>
-          <form
-            className="ais-v138-free-form"
-            onSubmit={(event) => { event.preventDefault(); void searchFreeVessel(); }}
-          >
-            <Search />
-            <input
-              value={freeSearchQuery}
-              onChange={(event) => setFreeSearchQuery(event.target.value)}
-              placeholder="PESQUISAR BARCO FREE"
-              autoComplete="off"
-              aria-label="Pesquisar barco no AIS Free"
-            />
-            <button type="submit" disabled={freeSearchLoading}>
-              {freeSearchLoading ? <RefreshCw className="spin" /> : <Search />}
-              <span>BUSCAR</span>
-            </button>
-          </form>
-
-          {freeSearchError && <div className="ais-v138-search-error free">{freeSearchError}</div>}
-          {freeSearchResults.length > 0 && (
-            <div className="ais-v138-search-results free">
-              {freeSearchResults.slice(0, 8).map((match, index) => (
-                <button
-                  type="button"
-                  key={"free-" + (match.mmsi || match.imo || match.name || index)}
-                  onClick={() => void openFreeResult(match)}
-                  disabled={freeSearchLoading}
-                >
-                  <Ship />
-                  <span>
-                    <b>{match.name || match.mmsi || match.imo}</b>
-                    <small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small>
-                  </span>
-                  <em>FREE</em>
-                </button>
-              ))}
-            </div>
-          )}
-          </GfwFreeSearch>
-        </div>
-
         {ENABLE_DHN_CHARTS && dhnPanelOpen && (
           <div className="ais-v137-chart-panel">
             <div className="ais-v137-chart-head">
@@ -4240,7 +4188,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button
             type="button"
             className={`ais-v154-free-nav-trigger ${freeNavigationActive ? "active" : ""}`}
-            onClick={startFreeNavigation}
+            onClick={() => { setFreePanelOpen(false); setPremiumPanelOpen(false); startFreeNavigation(); }}
           >
             <Navigation />
             <span>{freeNavigationActive ? "NAVEGANDO" : "NAVEGAR"}</span>
@@ -4250,8 +4198,91 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
         <button
           type="button"
+          className={`ais-v210-free-trigger ${freePanelOpen ? "active" : ""}`}
+          onClick={() => {
+            setFreePanelOpen((open) => !open);
+            setPremiumPanelOpen(false);
+            setFreeSearchError("");
+          }}
+          aria-expanded={freePanelOpen}
+        >
+          <Search />
+          <span>BUSCAR FREE</span>
+          <em>FREE</em>
+        </button>
+
+        {freePanelOpen && (
+          <div className="ais-v210-free-panel">
+            <div className="ais-v210-free-head">
+              <span><Search /><b>BUSCA AIS FREE</b></span>
+              <button type="button" onClick={() => setFreePanelOpen(false)} aria-label="Fechar Busca FREE">×</button>
+            </div>
+            <small>Pesquisa gratuita de embarcações · sem cobrança de créditos</small>
+            <GfwFreeSearch request={aisFetch} locating={freeSearchLoading} locate={(vessel) => {
+              setFreeSearchQuery(vessel.name || vessel.mmsi || vessel.imo);
+              setFreePanelOpen(false);
+              void openFreeResult({
+                name: vessel.name,
+                mmsi: vessel.mmsi,
+                imo: vessel.imo,
+                country: "",
+                countryIso: vessel.flag,
+                shipType: "",
+                typeSpecific: "",
+                callsign: vessel.callsign,
+                freeProvider: undefined,
+              });
+            }}>
+              <form
+                className="ais-v138-free-form"
+                onSubmit={(event) => { event.preventDefault(); void searchFreeVessel(); }}
+              >
+                <Search />
+                <input
+                  value={freeSearchQuery}
+                  onChange={(event) => setFreeSearchQuery(event.target.value)}
+                  placeholder="PESQUISAR BARCO FREE"
+                  autoComplete="off"
+                  aria-label="Pesquisar barco no AIS Free"
+                />
+                <button type="submit" disabled={freeSearchLoading}>
+                  {freeSearchLoading ? <RefreshCw className="spin" /> : <Search />}
+                  <span>BUSCAR</span>
+                </button>
+              </form>
+
+              {freeSearchError && <div className="ais-v138-search-error free">{freeSearchError}</div>}
+              {freeSearchResults.length > 0 && (
+                <div className="ais-v138-search-results free">
+                  {freeSearchResults.slice(0, 8).map((match, index) => (
+                    <button
+                      type="button"
+                      key={"free-" + (match.mmsi || match.imo || match.name || index)}
+                      onClick={() => { setFreePanelOpen(false); void openFreeResult(match); }}
+                      disabled={freeSearchLoading}
+                    >
+                      <Ship />
+                      <span>
+                        <b>{match.name || match.mmsi || match.imo}</b>
+                        <small>MMSI {match.mmsi || "—"} · IMO {match.imo || "—"}</small>
+                      </span>
+                      <em>FREE</em>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </GfwFreeSearch>
+          </div>
+        )}
+
+        <button
+          type="button"
           className={`ais-v138-premium-trigger ${premiumPanelOpen ? "active" : ""}`}
-          onClick={() => { setPremiumPanelOpen((open) => !open); setPremiumSearchError(""); }}
+          onClick={() => {
+            setPremiumPanelOpen((open) => !open);
+            setFreePanelOpen(false);
+            setPremiumSearchError("");
+          }}
           aria-expanded={premiumPanelOpen}
         >
           <Search />
@@ -4287,7 +4318,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
                   <button
                     type="button"
                     key={"premium-" + (match.mmsi || match.imo || match.name || index)}
-                    onClick={() => void openPremiumResult(match)}
+                    onClick={() => { setPremiumPanelOpen(false); void openPremiumResult(match); }}
                     disabled={premiumSearchLoading}
                   >
                     <Ship />
