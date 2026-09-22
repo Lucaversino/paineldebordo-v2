@@ -4073,7 +4073,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
             </div>
             <div className="ais-v143-waypoint-actions">
               {selectedWaypointId != null && <button type="button" className="danger" onClick={() => void deleteWaypoint(selectedWaypointId)}><Trash2 /></button>}
-              <button type="button" className="save" onClick={() => void saveWaypoint()} disabled={!mapProbe || waypointSaving}>
+              <button type="button" className="save" onClick={() => void saveWaypoint()} disabled={waypointSaving}>
                 <Save /> {waypointSaving ? "SALVANDO" : "SALVAR"}
               </button>
             </div>

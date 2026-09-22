@@ -6131,3 +6131,101 @@ main.loginpage{
     width:calc(100% - 12px);
   }
 }
+
+/* ===== V211 — LAYOUT MOBILE + WAYPOINT MANUAL =====
+   Objetivos:
+   - reduzir e baixar a pilha BUSCAR FREE / NAVEGAR / BUSCA PREMIUM no mobile;
+   - manter o card de waypoint acima da pilha, sem sobreposição;
+   - aproximar carteira de créditos e GPS atual do cabeçalho do mapa;
+   - ampliar SOMENTE no desktop o editor de waypoint para digitação das posições.
+   Não altera AIS, GPS, batimetria, rotas, régua, XTE ou APIs. */
+
+/* Desktop: editor de waypoint maior e mais confortável para digitar coordenadas. */
+@media (min-width: 781px) {
+  .ais-v119-page .ais-v143-waypoint-panel{
+    width:320px!important;
+    padding:12px!important;
+    gap:9px!important;
+  }
+  .ais-v119-page .ais-v143-waypoint-head b{font-size:9px!important}
+  .ais-v119-page .ais-v143-waypoint-head svg{width:16px!important;height:16px!important}
+  .ais-v119-page .ais-v143-waypoint-head>button{width:28px!important;height:28px!important}
+  .ais-v119-page .ais-v146-waypoint-coords{gap:9px!important}
+  .ais-v119-page .ais-v146-waypoint-coords span{font-size:7px!important}
+  .ais-v119-page .ais-v146-waypoint-coords input{
+    height:42px!important;
+    padding:0 10px!important;
+    font-size:14px!important;
+    border-radius:9px!important;
+  }
+  .ais-v119-page .ais-v143-waypoint-panel>input{
+    height:42px!important;
+    padding:0 11px!important;
+    font-size:12px!important;
+    border-radius:9px!important;
+  }
+  .ais-v119-page .ais-v143-waypoint-icons{gap:7px!important}
+  .ais-v119-page .ais-v143-waypoint-icons button{height:38px!important;font-size:17px!important}
+  .ais-v119-page .ais-v143-waypoint-colors button{width:25px!important;height:25px!important}
+  .ais-v119-page .ais-v143-waypoint-actions button,
+  .ais-v119-page .ais-v146-goto{height:38px!important;font-size:9px!important}
+}
+
+/* Mobile: preserva o tamanho do card de waypoint e só corrige a posição. */
+@media (max-width: 780px) {
+  /* Carteira e GPS bem próximos ao topo/cabeçalho do mapa. */
+  .ais-v119-page .ais-v119-wallet{
+    top:12px!important;
+  }
+  .ais-v119-page .ais-v143-gps-card{
+    top:12px!important;
+  }
+
+  /* Três ações centrais menores, mais compactas e mais próximas do rodapé. */
+  .ais-v119-page .ais-v138-premium-trigger,
+  .ais-v119-page .ais-v154-free-nav-trigger,
+  .ais-v119-page .ais-v210-free-trigger{
+    min-width:184px!important;
+    width:184px!important;
+    min-height:36px!important;
+    height:36px!important;
+    padding:0 11px!important;
+    font-size:9px!important;
+    border-radius:11px!important;
+  }
+  .ais-v119-page .ais-v138-premium-trigger svg,
+  .ais-v119-page .ais-v154-free-nav-trigger svg,
+  .ais-v119-page .ais-v210-free-trigger svg{
+    width:14px!important;
+    height:14px!important;
+  }
+  .ais-v119-page .ais-v138-premium-trigger em,
+  .ais-v119-page .ais-v154-free-nav-trigger em,
+  .ais-v119-page .ais-v210-free-trigger em{
+    font-size:7px!important;
+    padding:3px 6px!important;
+  }
+
+  .ais-v119-page .ais-v138-premium-trigger{bottom:68px!important}
+  .ais-v119-page .ais-v154-free-nav-trigger{bottom:110px!important}
+  .ais-v119-page .ais-v210-free-trigger{bottom:152px!important}
+
+  /* O editor fica acima da pilha; largura/tamanho do mobile permanecem como antes. */
+  .ais-v119-page .ais-v143-waypoint-panel{
+    bottom:198px!important;
+  }
+
+  /* Popups de busca abrem acima dos três botões compactos. */
+  .ais-v119-page .ais-v210-free-panel,
+  .ais-v119-page .ais-v138-premium-panel{
+    bottom:198px!important;
+  }
+}
+
+@media (max-width: 430px) {
+  .ais-v119-page .ais-v119-wallet{top:10px!important}
+  .ais-v119-page .ais-v143-gps-card{top:10px!important}
+  .ais-v119-page .ais-v143-waypoint-panel{bottom:196px!important}
+  .ais-v119-page .ais-v210-free-panel,
+  .ais-v119-page .ais-v138-premium-panel{bottom:196px!important}
+}
