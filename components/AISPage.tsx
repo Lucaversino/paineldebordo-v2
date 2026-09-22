@@ -41,6 +41,7 @@ import Translate from "ol/interaction/Translate";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import LineString from "ol/geom/LineString";
+import Polygon from "ol/geom/Polygon";
 import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
@@ -85,6 +86,21 @@ type OfficialWaypoint = {
   waypointType: OfficialWaypointType;
   latitude: number;
   longitude: number;
+  description: string;
+  visible: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type OfficialAreaColor = "green" | "yellow" | "red";
+type OfficialAreaPoint = { latitude: number; longitude: number };
+type OfficialArea = {
+  id: number;
+  name: string;
+  color: OfficialAreaColor;
+  transparency: number;
+  points: OfficialAreaPoint[];
   description: string;
   visible: boolean;
   createdBy: string;
@@ -683,6 +699,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const probeSourceRef = useRef<VectorSource | null>(null);
   const waypointSourceRef = useRef<VectorSource | null>(null);
   const officialWaypointSourceRef = useRef<VectorSource | null>(null);
+  const officialAreaSourceRef = useRef<VectorSource | null>(null);
+  const officialAreaDraftSourceRef = useRef<VectorSource | null>(null);
   const routeSourceRef = useRef<VectorSource | null>(null);
   const routeTranslateRef = useRef<Translate | null>(null);
   const measureSourceRef = useRef<VectorSource | null>(null);
@@ -754,6 +772,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [waypoints, setWaypoints] = useState<MapWaypoint[]>([]);
   const [officialWaypoints, setOfficialWaypoints] = useState<OfficialWaypoint[]>([]);
   const [selectedOfficialWaypoint, setSelectedOfficialWaypoint] = useState<OfficialWaypoint | null>(null);
+  const [officialAreas, setOfficialAreas] = useState<OfficialArea[]>([]);
+  const [canManageOfficialAreas, setCanManageOfficialAreas] = useState(false);
+  const [officialAreaDrawMode, setOfficialAreaDrawMode] = useState(false);
+  const [officialAreaDraftPoints, setOfficialAreaDraftPoints] = useState<OfficialAreaPoint[]>([]);
+  const [officialAreaName, setOfficialAreaName] = useState("");
+  const [officialAreaColor, setOfficialAreaColor] = useState<OfficialAreaColor>("green");
+  const [officialAreaTransparency, setOfficialAreaTransparency] = useState(55);
+  const [officialAreaSaving, setOfficialAreaSaving] = useState(false);
   const [waypointPanelOpen, setWaypointPanelOpen] = useState(false);
   const [waypointName, setWaypointName] = useState("");
   const [waypointIcon, setWaypointIcon] = useState<WaypointIcon>("diamond");
@@ -765,6 +791,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [waypointCoordError, setWaypointCoordError] = useState("");
   const [routeMode, setRouteMode] = useState(false);
   const routeModeRef = useRef(false);
+  const officialAreaDrawModeRef = useRef(false);
+  const officialAreaDraftPointsRef = useRef<OfficialAreaPoint[]>([]);
   const [routePoints, setRoutePoints] = useState<RoutePoint[]>([]);
   const routePointsRef = useRef<RoutePoint[]>([]);
   const [routes, setRoutes] = useState<SavedRoute[]>([]);
@@ -1465,6 +1493,168 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
+
+  function officialAreaHex(color: OfficialAreaColor) {
+    if (color === "red") return "#ef5350";
+    if (color === "yellow") return "#f0c84b";
+    return "#2bd47d";
+  }
+
+  function officialAreaRgba(color: OfficialAreaColor, transparency: number) {
+    const alpha = Math.max(0, Math.min(1, 1 - Number(transparency || 0) / 100));
+    const rgb = color === "red" ? "239,83,80" : color === "yellow" ? "240,200,75" : "43,212,125";
+    return `rgba(${rgb},${alpha.toFixed(3)})`;
+  }
+
+  function buildOfficialAreaStyle(item: OfficialArea) {
+    const color = officialAreaHex(item.color);
+    return new Style({
+      stroke: new Stroke({ color, width: 3 }),
+      fill: new Fill({ color: officialAreaRgba(item.color, item.transparency) }),
+      text: new Text({
+        text: item.name,
+        font: "900 11px system-ui, sans-serif",
+        fill: new Fill({ color: "#ffffff" }),
+        stroke: new Stroke({ color: "#061b21", width: 4 }),
+        padding: [3, 5, 3, 5],
+      }),
+      zIndex: 36,
+    });
+  }
+
+  function renderOfficialAreas(items: OfficialArea[]) {
+    const source = officialAreaSourceRef.current;
+    if (!source) return;
+    source.clear();
+    items.filter((item) => item.visible !== false && Array.isArray(item.points) && item.points.length >= 3).forEach((item) => {
+      const coords = item.points.map((point) => fromLonLat([Number(point.longitude), Number(point.latitude)]));
+      if (coords.some((coord) => !Number.isFinite(coord[0]) || !Number.isFinite(coord[1]))) return;
+      const ring = [...coords, coords[0]];
+      const feature = new Feature({ geometry: new Polygon([ring]) });
+      feature.set("officialArea", item);
+      feature.setStyle(buildOfficialAreaStyle(item));
+      source.addFeature(feature);
+
+      // V200: os vértices permanecem visíveis como pequenos waypoints, no estilo de plotter marítimo.
+      coords.forEach((coord) => {
+        const vertex = new Feature({ geometry: new Point(coord) });
+        vertex.setStyle(new Style({
+          image: new CircleStyle({
+            radius: 4.5,
+            fill: new Fill({ color: "#f8ffff" }),
+            stroke: new Stroke({ color: officialAreaHex(item.color), width: 2.5 }),
+          }),
+          zIndex: 37,
+        }));
+        source.addFeature(vertex);
+      });
+    });
+  }
+
+  function setOfficialAreaDraft(points: OfficialAreaPoint[]) {
+    const normalized = points.slice(0, 120);
+    officialAreaDraftPointsRef.current = normalized;
+    setOfficialAreaDraftPoints(normalized);
+  }
+
+  function drawOfficialAreaDraft(points: OfficialAreaPoint[], color: OfficialAreaColor, transparency: number) {
+    const source = officialAreaDraftSourceRef.current;
+    if (!source) return;
+    source.clear();
+    const coords = points.map((point) => fromLonLat([point.longitude, point.latitude]));
+    if (coords.length >= 2) {
+      const line = new Feature({ geometry: new LineString(coords) });
+      line.setStyle(new Style({ stroke: new Stroke({ color: officialAreaHex(color), width: 3, lineDash: [8, 5] }), zIndex: 97 }));
+      source.addFeature(line);
+    }
+    if (coords.length >= 3) {
+      const polygon = new Feature({ geometry: new Polygon([[...coords, coords[0]]]) });
+      polygon.setStyle(new Style({
+        stroke: new Stroke({ color: officialAreaHex(color), width: 3 }),
+        fill: new Fill({ color: officialAreaRgba(color, transparency) }),
+        zIndex: 96,
+      }));
+      source.addFeature(polygon);
+    }
+    coords.forEach((coord, index) => {
+      const vertex = new Feature({ geometry: new Point(coord) });
+      vertex.setStyle(new Style({
+        image: new CircleStyle({ radius: 9, fill: new Fill({ color: "#071f27" }), stroke: new Stroke({ color: officialAreaHex(color), width: 3 }) }),
+        text: new Text({ text: String(index + 1), font: "900 9px system-ui", fill: new Fill({ color: "#ffffff" }) }),
+        zIndex: 99,
+      }));
+      source.addFeature(vertex);
+    });
+  }
+
+  function toggleOfficialAreaDrawMode() {
+    if (!canManageOfficialAreas) return;
+    const next = !officialAreaDrawModeRef.current;
+    officialAreaDrawModeRef.current = next;
+    setOfficialAreaDrawMode(next);
+    setSelectedOfficialWaypoint(null);
+    setWaypointPanelOpen(false);
+    routeModeRef.current = false;
+    setRouteMode(false);
+    setRoutesPanelOpen(false);
+    measureModeRef.current = false;
+    setMeasureMode(false);
+    if (next) {
+      setOfficialAreaDraft([]);
+      setOfficialAreaName(`RESERVA ${String(officialAreas.length + 1).padStart(2, "0")}`);
+      setStatusMessage("ÁREA ADMIN ativa — toque/clique no mapa para criar os vértices.");
+    } else {
+      setOfficialAreaDraft([]);
+      setStatusMessage("Desenho de área administrativa encerrado.");
+    }
+  }
+
+  function cancelOfficialAreaDraw() {
+    officialAreaDrawModeRef.current = false;
+    setOfficialAreaDrawMode(false);
+    setOfficialAreaDraft([]);
+    setOfficialAreaName("");
+    setStatusMessage("Criação da área cancelada.");
+  }
+
+  async function saveOfficialArea() {
+    if (!canManageOfficialAreas || officialAreaSaving) return;
+    const points = officialAreaDraftPointsRef.current;
+    if (points.length < 3) {
+      setStatusMessage("A área precisa de pelo menos 3 pontos antes de fechar.");
+      return;
+    }
+    setOfficialAreaSaving(true);
+    try {
+      const response = await aisFetch("/api/official-areas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: officialAreaName.trim() || `RESERVA ${String(officialAreas.length + 1).padStart(2, "0")}`,
+          color: officialAreaColor,
+          transparency: officialAreaTransparency,
+          points,
+          visible: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatusMessage(data?.error || "Não foi possível salvar a área.");
+        return;
+      }
+      await loadOfficialAreas();
+      officialAreaDrawModeRef.current = false;
+      setOfficialAreaDrawMode(false);
+      setOfficialAreaDraft([]);
+      setOfficialAreaName("");
+      setStatusMessage(`Área ${data?.area?.name || "oficial"} fechada e salva no AIS ✓`);
+    } catch {
+      setStatusMessage("Falha de conexão ao salvar a área oficial.");
+    } finally {
+      setOfficialAreaSaving(false);
+    }
+  }
+
   function drawRouteDraft(points: RoutePoint[]) {
     const source = routeSourceRef.current; if (!source) return; source.clear();
     if (points.length >= 2) {
@@ -1508,6 +1698,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setOfficialWaypoints(Array.isArray(data?.waypoints) ? data.waypoints : []);
     } catch {
       // Waypoints oficiais nunca devem bloquear o funcionamento do AIS.
+    }
+  }
+
+
+  async function loadOfficialAreas() {
+    try {
+      const response = await aisFetch("/api/official-areas");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      setOfficialAreas(Array.isArray(data?.areas) ? data.areas : []);
+      setCanManageOfficialAreas(data?.canManage === true);
+    } catch {
+      // Áreas oficiais são complementares e nunca bloqueiam o AIS.
     }
   }
 
@@ -2803,6 +3006,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
     const officialWaypointSource = new VectorSource();
     const officialWaypointLayer = new VectorLayer({ source: officialWaypointSource, declutter: false, renderBuffer: 140 });
+    const officialAreaSource = new VectorSource();
+    const officialAreaLayer = new VectorLayer({ source: officialAreaSource, declutter: false, renderBuffer: 160 });
+    const officialAreaDraftSource = new VectorSource();
+    const officialAreaDraftLayer = new VectorLayer({ source: officialAreaDraftSource, declutter: false, renderBuffer: 160 });
     const routeSource = new VectorSource();
     const routeLayer = new VectorLayer({ source: routeSource, declutter: true });
     const measureSource = new VectorSource();
@@ -2821,12 +3028,14 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationLayer.setZIndex(49);
     waypointLayer.setZIndex(50);
     routeLayer.setZIndex(52);
+    officialAreaLayer.setZIndex(36);
     officialWaypointLayer.setZIndex(88);
+    officialAreaDraftLayer.setZIndex(96);
 
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer],
+      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, officialAreaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer, officialAreaDraftLayer],
       view,
     });
 
@@ -2859,6 +3068,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     probeSourceRef.current = probeSource;
     waypointSourceRef.current = waypointSource;
     officialWaypointSourceRef.current = officialWaypointSource;
+    officialAreaSourceRef.current = officialAreaSource;
+    officialAreaDraftSourceRef.current = officialAreaDraftSource;
     routeSourceRef.current = routeSource;
     const routeTranslate = new Translate({ layers:[routeLayer], hitTolerance:18 });
     routeTranslateRef.current=routeTranslate; map.addInteraction(routeTranslate);
@@ -2897,6 +3108,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
     map.on("moveend", updateCenter);
     const selectMapFeature = (event: any) => {
+      if (officialAreaDrawModeRef.current) {
+        const [lon, lat] = toLonLat(event.coordinate);
+        const next = [...officialAreaDraftPointsRef.current, { latitude: lat, longitude: lon }];
+        setOfficialAreaDraft(next);
+        setStatusMessage(`Área Admin · ponto ${next.length} adicionado. ${next.length >= 3 ? "Já pode FECHAR E SALVAR." : "Adicione pelo menos 3 pontos."}`);
+        return;
+      }
       if (routeModeRef.current) {
         const hit = map.forEachFeatureAtPixel(event.pixel,(feature:any)=>feature.get("routePointIndex") != null ? feature : null,{hitTolerance:14});
         if (hit) return;
@@ -3136,6 +3354,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     loadAisLibrary();
     loadWaypoints();
     loadOfficialWaypoints();
+    loadOfficialAreas();
     loadRoutes();
   }, []);
 
@@ -3148,7 +3367,15 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [officialWaypoints]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { void loadOfficialWaypoints(); }, 120_000);
+    renderOfficialAreas(officialAreas);
+  }, [officialAreas]);
+
+  useEffect(() => {
+    drawOfficialAreaDraft(officialAreaDraftPoints, officialAreaColor, officialAreaTransparency);
+  }, [officialAreaDraftPoints, officialAreaColor, officialAreaTransparency]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void loadOfficialWaypoints(); void loadOfficialAreas(); }, 120_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -3593,6 +3820,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           <button type="button" className={`ais-v143-map-tool ais-v167-route-tool ${routeMode || routesPanelOpen ? "active" : ""}`} onClick={toggleRouteMode} title="Criar rota">
             <Route /><span>ROTA</span>
           </button>
+          {canManageOfficialAreas && <button type="button" className={`ais-v143-map-tool ais-v200-area-tool ${officialAreaDrawMode ? "active" : ""}`} onClick={toggleOfficialAreaDrawMode} title="Desenhar área/reserva administrativa">
+            <MapPinned /><span>ÁREA</span>
+          </button>}
           <button type="button" className={`ais-v143-map-tool measure ${measureMode ? "active" : ""}`} onClick={toggleMeasureMode} title="Medir distância livre no mapa">
             <Ruler /><span>MEDIR</span>
           </button>
@@ -3614,6 +3844,19 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
           {/* V140: botão/camada de cartas DHN removidos da interface AIS. */}
         </div>
+
+        {canManageOfficialAreas && officialAreaDrawMode && (
+          <div className="ais-v200-area-panel">
+            <div className="ais-v200-area-head"><span><MapPinned /><b>ÁREA ADMIN</b><em>{officialAreaDraftPoints.length} PONTOS</em></span><button type="button" onClick={cancelOfficialAreaDraw}>×</button></div>
+            <input value={officialAreaName} onChange={(e) => setOfficialAreaName(e.target.value.slice(0, 80))} placeholder="Nome da área / reserva" />
+            <div className="ais-v200-area-colors">
+              {(["green", "yellow", "red"] as OfficialAreaColor[]).map((color) => <button type="button" key={color} className={officialAreaColor === color ? "active" : ""} onClick={() => setOfficialAreaColor(color)}><i style={{ background: officialAreaHex(color) }} /><span>{color === "green" ? "VERDE" : color === "yellow" ? "AMARELO" : "VERMELHO"}</span></button>)}
+            </div>
+            <label className="ais-v200-area-opacity"><span>TRANSPARÊNCIA <b>{officialAreaTransparency}%</b></span><input type="range" min="0" max="100" step="1" value={officialAreaTransparency} onChange={(e) => setOfficialAreaTransparency(Number(e.target.value))} /></label>
+            <small>Toque/clique no mapa para criar os vértices. O contorno fecha automaticamente ao salvar.</small>
+            <div className="ais-v200-area-actions"><button type="button" onClick={() => setOfficialAreaDraft(officialAreaDraftPointsRef.current.slice(0, -1))} disabled={!officialAreaDraftPoints.length}><Undo2 /> DESFAZER</button><button type="button" className="save" onClick={() => void saveOfficialArea()} disabled={officialAreaSaving || officialAreaDraftPoints.length < 3}>{officialAreaSaving ? <RefreshCw className="spin" /> : <Save />} FECHAR E SALVAR</button></div>
+          </div>
+        )}
 
         {selectedOfficialWaypoint && (
           <div className="ais-v198-official-card">

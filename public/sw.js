@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v199-icon-waypoints-sidebar-desktop";
+const CACHE = "painel-bordo-v200-areas-admin-ais";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

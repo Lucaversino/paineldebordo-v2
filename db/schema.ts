@@ -192,6 +192,21 @@ export const officialWaypoints = pgTable("official_waypoints", {
   index("idx_official_waypoints_visible_id").on(t.visible, t.id),
 ]);
 
+export const officialAreas = pgTable("official_areas", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("green"),
+  transparency: integer("transparency").notNull().default(55),
+  pointsJson: text("points_json").notNull(),
+  description: text("description").notNull().default(""),
+  visible: boolean("visible").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  index("idx_official_areas_visible_id").on(t.visible, t.id),
+]);
+
 export const forecastHistory = pgTable("forecast_history", {
   id: serial("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
