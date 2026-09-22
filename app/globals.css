@@ -4916,34 +4916,8 @@ main.loginpage{
 }
 
 
-/* V161 — MEU BARCO fixo no centro da tela durante a navegação.
-   O mapa acompanha o GPS em passos leves; o SVG não é animado quadro a quadro. */
-.ais-v161-fixed-own-boat{
-  position:absolute;
-  z-index:125;
-  left:50%;
-  top:50%;
-  width:42px;
-  height:56px;
-  transform-origin:50% 50%;
-  pointer-events:none;
-  will-change:transform;
-}
-.ais-v161-fixed-own-boat img{
-  display:block;
-  width:100%;
-  height:100%;
-  object-fit:contain;
-  user-select:none;
-  -webkit-user-drag:none;
-}
-@media(max-width:760px){
-  .ais-v161-fixed-own-boat{
-    width:38px;
-    height:52px;
-  }
-}
-
+/* V197 — o MEU BARCO voltou a ser um marcador georreferenciado do OpenLayers.
+   Não existe mais overlay fixo no centro: o mapa pode ser arrastado durante a navegação. */
 
 /* V162 — card AIS mobile menor e fora do botão NAVEGAR */
 @media (max-width: 760px) {

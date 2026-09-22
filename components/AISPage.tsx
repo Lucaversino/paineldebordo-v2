@@ -699,6 +699,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const gpsCenteredRef = useRef(false);
   const navigationFollowAtRef = useRef(0);
   const navigationFollowCoordRef = useRef<{ lat: number; lon: number } | null>(null);
+  // V197: follow é automático ao iniciar, mas o usuário pode arrastar o mapa livremente.
+  // O botão GPS religa o acompanhamento do barco.
+  const navigationFollowEnabledRef = useRef(true);
   const freeLayerTimerRef = useRef<number | null>(null);
   const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
   // V139: trava síncrona para impedir clique duplo antes do React atualizar o estado loading.
@@ -1602,17 +1605,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     if (!source) return;
 
     const navigating = Boolean(navigationTargetRef.current || freeNavigationActiveRef.current);
-    if (navigating) {
-      if (gpsAnimationFrameRef.current != null) {
-        window.cancelAnimationFrame(gpsAnimationFrameRef.current);
-        gpsAnimationFrameRef.current = null;
-      }
-      const previousFeature = gpsFeatureRef.current;
-      if (previousFeature && source.getFeatures().includes(previousFeature)) source.removeFeature(previousFeature);
-      gpsFeatureRef.current = null;
-      return;
-    }
 
+    // V197: o MEU BARCO nunca é um overlay preso ao centro da tela.
+    // Durante a navegação ele continua sendo um Feature georreferenciado na posição GPS real.
     const target = fromLonLat([coords.lon, coords.lat]);
     const resolvedHeading = Number.isFinite(Number(headingDegrees))
       ? Number(headingDegrees)
@@ -1628,7 +1623,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     feature.setStyle(
       gpsPositionStyle(
-        Boolean(navigationTargetRef.current || freeNavigationActiveRef.current),
+        navigating,
         resolvedHeading,
         navBoatImageReadyRef.current,
       ),
@@ -1671,6 +1666,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function followNavigationPosition(coords: { lat: number; lon: number }) {
     if (!navigationTargetRef.current && !freeNavigationActiveRef.current) return;
+    if (!navigationFollowEnabledRef.current) return;
     const view = mapRef.current?.getView();
     if (!view) return;
 
@@ -1725,6 +1721,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationPersistAtRef.current = 0;
     navigationFollowAtRef.current = 0;
     navigationFollowCoordRef.current = null;
+    navigationFollowEnabledRef.current = true;
     try { window.localStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
     if (devicePosition) drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
     setStatusMessage("Navegação para waypoint encerrada.");
@@ -1744,6 +1741,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationPersistAtRef.current = 0;
     navigationFollowAtRef.current = 0;
     navigationFollowCoordRef.current = null;
+    navigationFollowEnabledRef.current = true;
     try { window.localStorage.removeItem(NAVIGATION_STORAGE_KEY); } catch {}
     if (devicePosition) drawGpsPositionMarker(devicePosition, gpsHeadingDegrees);
     setStatusMessage("Navegação livre encerrada.");
@@ -1771,6 +1769,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationPersistAtRef.current = 0;
     navigationFollowAtRef.current = 0;
     navigationFollowCoordRef.current = null;
+    navigationFollowEnabledRef.current = true;
     persistActiveNavigation(true);
 
     if (devicePosition) {
@@ -1814,6 +1813,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationPersistAtRef.current = 0;
     navigationFollowAtRef.current = 0;
     navigationFollowCoordRef.current = null;
+    navigationFollowEnabledRef.current = true;
     persistActiveNavigation(true);
 
     if (devicePosition) {
@@ -2593,6 +2593,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         }
 
         setDevicePosition(coords);
+        if (!useAsArea && (navigationTargetRef.current || freeNavigationActiveRef.current)) {
+          navigationFollowEnabledRef.current = true;
+          navigationFollowAtRef.current = 0;
+          navigationFollowCoordRef.current = null;
+        }
         centerOn(coords.lat, coords.lon, useAsArea ? 8 : 12, false);
         if (useAsArea) {
           setAreaCenter(coords);
@@ -2855,6 +2860,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       inspectMapPoint(lat, lon);
       setStatusMessage(`Ponto marcado · ${formatCoordOperational(lat, true)} · ${formatCoordOperational(lon, false)}`);
     };
+    const pauseNavigationFollowOnDrag = () => {
+      if (!navigationTargetRef.current && !freeNavigationActiveRef.current) return;
+      navigationFollowEnabledRef.current = false;
+    };
+    map.on("pointerdrag", pauseNavigationFollowOnDrag);
     map.on("singleclick", selectMapFeature);
     scheduleFreeMapLayer(true);
     const ro = new ResizeObserver(() => map.updateSize());
@@ -2863,6 +2873,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return () => {
       ro.disconnect();
       map.un("moveend", updateCenter);
+      map.un("pointerdrag", pauseNavigationFollowOnDrag);
       map.un("singleclick", selectMapFeature);
       areaTranslate.un("translateend", handleAreaTranslateEnd);
       map.removeInteraction(areaTranslate);
@@ -3273,16 +3284,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       })
     : null;
   const navigationArrivalClock = formatArrivalClock(new Date(), navigationEtaMinutes);
-  const navigationActive = Boolean(navigationTarget || freeNavigationActive);
-  const fixedNavBoatRotation = (() => {
-    const heading = Number.isFinite(Number(gpsHeadingDegrees)) ? Number(gpsHeadingDegrees) : 0;
-    let mapUpDegrees = 0;
-    if (mapOrientationMode === "south") mapUpDegrees = 180;
-    else if (mapOrientationMode === "heading") mapUpDegrees = heading;
-    else if (mapOrientationMode === "course") mapUpDegrees = navigationWaypointBearing ?? heading;
-    const relative = heading - mapUpDegrees;
-    return ((relative + 540) % 360) - 180;
-  })();
+
 
   const trackedSource = tracked ? sourceInfo(tracked.dataSource) : null;
   const trackedProviderTimeText = tracked ? (tracked.positionReceived || tracked.updateTime || "") : "";
@@ -3442,15 +3444,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       <div className="ais-shell ais-v61-shell">
         <div ref={hostRef} className="ais-map" aria-label="Mapa da posição AIS da embarcação" />
 
-        {navigationActive && devicePosition && (
-          <div
-            className="ais-v161-fixed-own-boat"
-            style={{ transform: `translate(-50%, -50%) rotate(${fixedNavBoatRotation}deg)` }}
-            aria-hidden="true"
-          >
-            <img src={NAV_BOAT_SRC} alt="" draggable={false} />
-          </div>
-        )}
 
         <div className="ais-map-tools ais-left-tools">
           <button type="button" onClick={() => zoomBy(1)} title="Aumentar zoom"><Plus /></button>
