@@ -8,8 +8,8 @@
   },
   "crons": [
     {
-      "path": "/api/cron/admin-ais-areas",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron/admin-free-vessels",
+      "schedule": "0 9 * * *"
     }
   ]
 }

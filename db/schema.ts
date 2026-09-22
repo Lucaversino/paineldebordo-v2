@@ -138,6 +138,34 @@ export const aisSavedVessels = pgTable("ais_saved_vessels", {
   index("idx_ais_saved_owner_updated").on(t.ownerId, t.updatedAt),
 ]);
 
+export const adminFreeVessels = pgTable("admin_free_vessels", {
+  id: serial("id").primaryKey(),
+  vesselKey: text("vessel_key").notNull(),
+  name: text("name").notNull(),
+  mmsi: text("mmsi"),
+  imo: text("imo"),
+  callsign: text("callsign"),
+  flag: text("flag"),
+  automatic: boolean("automatic").notNull().default(true),
+  lastLatitude: doublePrecision("last_latitude"),
+  lastLongitude: doublePrecision("last_longitude"),
+  lastSog: doublePrecision("last_sog"),
+  lastCog: doublePrecision("last_cog"),
+  lastHeading: doublePrecision("last_heading"),
+  vesselType: text("vessel_type"),
+  navStatus: text("nav_status"),
+  lastDataSource: text("last_data_source"),
+  lastPositionReceived: text("last_position_received"),
+  lastCheckedAt: text("last_checked_at"),
+  lastError: text("last_error"),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(nowText),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  uniqueIndex("idx_admin_free_vessel_key").on(t.vesselKey),
+  index("idx_admin_free_vessels_auto").on(t.automatic, t.id),
+]);
+
 export const aisSearchHistory = pgTable("ais_search_history", {
   id: serial("id").primaryKey(),
   ownerId: text("owner_id").notNull(),

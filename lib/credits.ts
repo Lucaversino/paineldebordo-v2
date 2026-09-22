@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS: Record<keyof BillingSettings, string> = {
 
 const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "brendaelucas.765@gmail.com").trim().toLowerCase();
 const SETTINGS_CACHE_MS = 60_000;
-const BILLING_SCHEMA_VERSION = "202";
+const BILLING_SCHEMA_VERSION = "87";
 const ADMIN_INITIAL_CREDITS = Math.max(0, Math.round(Number(process.env.ADMIN_INITIAL_CREDITS || 80) || 80));
 
 let schemaPromise: Promise<void> | null = null;
@@ -213,7 +213,7 @@ async function migrateBillingSchemaIfNeeded() {
   `), 1));
   if (String(versionRows[0]?.value || "") === BILLING_SCHEMA_VERSION) return;
 
-  // V202: mantém FISH IA grátis e fixa a nova busca Premium de 30 MN em 10 créditos na migração inicial.
+  // V87: FISH IA sem cobrança, com controle liga/desliga individual pelo administrador.
   await db.execute(sql`
     alter table public.credit_wallets
       add column if not exists ai_bonus_brl double precision not null default 0,
@@ -226,7 +226,6 @@ async function migrateBillingSchemaIfNeeded() {
     set ai_bonus_brl = 0, ai_bonus_granted = true, free_ai_access = true, free_ais_access = false, updated_at = CURRENT_TIMESTAMP::text
   `);
   for (const [key, value] of Object.entries({
-    AIS_AREA_QUERY_CREDITS: '10',
     AI_BASIC_QUERY_CREDITS: '0',
     AI_FULL_ANALYSIS_CREDITS: '0',
     AI_ADVANCED_ANALYSIS_CREDITS: '0',
