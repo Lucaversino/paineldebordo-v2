@@ -11,3 +11,11 @@
 .gfwForm{width:100%}
 .gfwForm>svg{flex:none}
 .gfwForm button{white-space:nowrap}
+
+/* V209 — no celular o botão de busca é somente a lupa, mantendo a busca FREE intacta. */
+.gfwForm button>svg{width:15px;height:15px;flex:none}
+@media(max-width:780px){
+  .gfwForm button{width:40px;min-width:40px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+  .gfwForm button span{display:none}
+  .gfwForm button>svg{width:17px;height:17px}
+}

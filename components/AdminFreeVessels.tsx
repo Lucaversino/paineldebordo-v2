@@ -189,6 +189,17 @@ export default function AdminFreeVessels() {
       <button type="button" onClick={() => void refreshAll()} disabled={refreshingAll || !items.length}>{refreshingAll ? <LoaderCircle className="spin" /> : <RefreshCw />} Atualizar automáticos</button>
     </div>
 
+    <div className="admin-ais-source-legend" aria-label="Fontes AIS do sistema — somente administrador">
+      <small>FONTES AIS · VISÍVEL SOMENTE NO ADMIN</small>
+      <div>
+        <span className="gfw"><i /> Global Fishing Watch</span>
+        <span className="free"><i /> AIS Free</span>
+        <span className="vessel"><i /> Vessel Free</span>
+        <span className="premium"><i /> Premium / Data Locked</span>
+      </div>
+      <p>Esta legenda técnica foi retirada do mapa operacional para manter a navegação limpa. As fontes e atualizações continuam funcionando normalmente.</p>
+    </div>
+
     {message && <div className="admin-official-success"><CheckCircle2 /> {message}</div>}
     {error && <div className="credits-error">{error}</div>}
 

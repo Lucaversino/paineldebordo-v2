@@ -44,7 +44,7 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
       <form className={`ais-v138-free-form ${styles.gfwForm}`} onSubmit={e => { e.preventDefault(); void search(); }}>
         <Search aria-hidden="true" />
         <input aria-label="Pesquisar no Global Fishing Watch" placeholder="Nome, MMSI, IMO ou indicativo" value={query} maxLength={100} onChange={e => setQuery(e.target.value)} />
-        <button type="submit" disabled={busy}><span>{busy ? "BUSCANDO…" : "BUSCAR"}</span></button>
+        <button type="submit" disabled={busy} aria-label={busy ? "Buscando embarcação" : "Buscar embarcação"}><Search aria-hidden="true" /><span>{busy ? "BUSCANDO…" : "BUSCAR"}</span></button>
       </form>
       {open && <section className={styles.results} aria-live="polite">
         <header><b>Pesquisa de embarcações</b><button type="button" onClick={() => setOpen(false)} aria-label="Fechar resultados">×</button></header>
