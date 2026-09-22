@@ -5707,3 +5707,113 @@ main.loginpage{
 .admin-free-vessels{margin:18px 0;padding:18px;border:1px solid #31545d;border-radius:16px;background:linear-gradient(145deg,#08262d,#071d23);box-shadow:0 10px 28px #00141a2b;color:#eafff9}.admin-free-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:13px}.admin-free-head>div{min-width:0}.admin-free-head small{font:900 7px system-ui;letter-spacing:.1em;color:#62dcbf}.admin-free-head h3{display:flex;align-items:center;gap:7px;margin:3px 0 4px;font-size:16px}.admin-free-head h3 svg{width:18px}.admin-free-head p{margin:0;max-width:780px;color:#8daeb2;font-size:9px;line-height:1.45}.admin-free-head>button,.admin-free-search button{height:36px;border:1px solid #2bd4aa;border-radius:9px;background:#123b36;color:#baffee;padding:0 11px;font:900 8px system-ui;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}.admin-free-head>button svg,.admin-free-search button svg{width:14px}.admin-free-head>button:disabled,.admin-free-search button:disabled{opacity:.5}.admin-free-search{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px;border:1px solid #244950;border-radius:12px;background:#061a20}.admin-free-search>svg{width:16px;color:#72bdae}.admin-free-search input{height:36px;min-width:0;border:1px solid #2a5057;border-radius:9px;background:#05161b;color:#effffb;padding:0 10px;outline:0;font:800 10px system-ui}.admin-free-search input:focus{border-color:#2bd4aa}.admin-free-results,.admin-free-list{display:grid;gap:8px;margin-top:12px}.admin-free-subhead{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#88aaaE;font:900 7px system-ui;letter-spacing:.08em}.admin-free-subhead b{color:#b8ded7}.admin-free-results article{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px;border:1px solid #22464d;border-radius:10px;background:#071b21}.admin-free-results article>svg{width:25px;height:25px;color:#5ddabb}.admin-free-results article>div{display:grid;gap:2px;min-width:0}.admin-free-results article b{font-size:10px}.admin-free-results article small,.admin-free-results article span{font-size:7px;color:#7fa3a8}.admin-free-results article button{height:31px;border:1px solid #2b6a60;border-radius:8px;background:#0f3834;color:#aaf3df;font:900 7px system-ui;padding:0 9px;display:flex;align-items:center;gap:5px}.admin-free-results article button svg{width:13px}.admin-free-results article button:disabled{opacity:.45}.admin-free-list article{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px;border:1px solid #21474e;border-radius:11px;background:#071b21}.admin-free-list article.manual{border-style:dashed;opacity:.85}.admin-free-ship{width:40px;height:40px;border:1px solid #2b5c62;border-radius:10px;background:#0a2a30;display:grid;place-items:center;color:#3da4ff}.admin-free-ship svg{width:23px}.admin-free-info{min-width:0;display:grid;gap:2px}.admin-free-info>b{font-size:11px;color:#ecfffb}.admin-free-info>small{font-size:7px;color:#7ca0a5}.admin-free-info .position{font:900 8px ui-monospace,SFMono-Regular,Menlo,monospace;color:#d6ae5d}.admin-free-info .position.ok{color:#66e1c2}.admin-free-info em{display:flex;align-items:center;gap:4px;font:700 7px system-ui;font-style:normal;color:#718f94}.admin-free-info em svg{width:10px}.admin-free-info p{margin:2px 0 0;color:#dc9c78;font-size:7px;line-height:1.3}.admin-free-actions{display:flex;gap:5px}.admin-free-actions button{height:34px;min-width:38px;border:1px solid #31545d;border-radius:8px;background:#09252c;color:#a9c7ca;padding:0 7px;display:flex;align-items:center;justify-content:center;gap:4px;font:900 6px system-ui}.admin-free-actions button svg{width:13px}.admin-free-actions .auto.on{border-color:#2a7565;color:#7ee7cc;background:#0d3732}.admin-free-actions .auto.off{border-color:#6a5c34;color:#e2ca83;background:#302a17}.admin-free-actions .danger{border-color:#6b3c42;background:#321d22;color:#ee9aa0}
 .app:not(.dark) .admin-free-vessels{background:linear-gradient(145deg,#f8fffd,#eef8f6);border-color:#bdd6d2;color:#173a41}.app:not(.dark) .admin-free-search,.app:not(.dark) .admin-free-results article,.app:not(.dark) .admin-free-list article{background:#fff;border-color:#c5d9d6}.app:not(.dark) .admin-free-search input{background:#fff;color:#173a41;border-color:#bdcfcd}.app:not(.dark) .admin-free-info>b,.app:not(.dark) .admin-free-results article b{color:#173a41}
 @media(max-width:760px){.admin-free-vessels{padding:12px}.admin-free-head{align-items:flex-start;flex-direction:column}.admin-free-head>button{width:100%}.admin-free-search{grid-template-columns:auto minmax(0,1fr)}.admin-free-search button{grid-column:1/-1}.admin-free-results article,.admin-free-list article{grid-template-columns:38px minmax(0,1fr)}.admin-free-results article>button,.admin-free-actions{grid-column:1/-1}.admin-free-results article>button{justify-self:stretch}.admin-free-actions{justify-content:flex-end;flex-wrap:wrap}.admin-free-actions button{flex:1;min-width:88px}.admin-free-ship{width:36px;height:36px}}
+
+/* V207 — fontes AIS em coluna compacta à direita, fora da BUSCA FREE */
+.ais-v119-page .ais-map-header-controls.ais-v119-layerbar{
+  top:92px!important;
+  right:8px!important;
+  left:auto!important;
+  width:92px!important;
+  max-width:92px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  gap:4px!important;
+  overflow:visible!important;
+  transform:none!important;
+  z-index:96!important;
+  pointer-events:auto!important;
+}
+.ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-layer{
+  width:100%!important;
+  min-width:0!important;
+  height:24px!important;
+  padding:0 6px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:5px!important;
+  border-radius:7px!important;
+  font-size:6.4px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  box-sizing:border-box!important;
+  backdrop-filter:none!important;
+}
+.ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-layer i{
+  width:6px!important;
+  height:6px!important;
+  flex:0 0 6px!important;
+}
+.ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-refresh-free{
+  width:100%!important;
+  height:24px!important;
+  min-width:0!important;
+  border-radius:7px!important;
+  display:grid!important;
+  place-items:center!important;
+}
+.ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-refresh-free svg{
+  width:12px!important;
+  height:12px!important;
+}
+/* não duplica a legenda na coluna esquerda do mobile */
+.ais-v119-page .ais-v152-mobile-layerbar{display:none!important}
+/* orientação começa abaixo da nova coluna */
+.ais-v119-page .ais-v147-orientation{
+  right:8px!important;
+  top:232px!important;
+}
+
+@media(max-width:780px){
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar{
+    top:90px!important;
+    right:6px!important;
+    width:76px!important;
+    max-width:76px!important;
+    display:flex!important;
+    gap:3px!important;
+  }
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-layer{
+    height:21px!important;
+    padding:0 5px!important;
+    font-size:5.4px!important;
+    border-radius:6px!important;
+  }
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-layer i{
+    width:5px!important;
+    height:5px!important;
+    flex-basis:5px!important;
+  }
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-refresh-free{
+    height:21px!important;
+    border-radius:6px!important;
+  }
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-refresh-free svg{
+    width:11px!important;
+    height:11px!important;
+  }
+  .ais-v119-page .ais-v147-orientation{
+    right:6px!important;
+    top:218px!important;
+  }
+}
+
+@media(max-width:430px){
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar{
+    top:88px!important;
+    right:5px!important;
+    width:70px!important;
+    max-width:70px!important;
+  }
+  .ais-v119-page .ais-map-header-controls.ais-v119-layerbar .ais-v119-layer{
+    font-size:5px!important;
+    padding:0 4px!important;
+  }
+  .ais-v119-page .ais-v147-orientation{
+    right:5px!important;
+    top:214px!important;
+  }
+}

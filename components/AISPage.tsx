@@ -4063,11 +4063,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         <div className="ais-map-header-controls ais-single-map-badge ais-v119-layerbar">
-          <span className="ais-v119-layer free"><i /> Vessel Free · {freeMapVesselCount}</span>
-          <span className="ais-v119-layer marinesia"><i /> AIS Free</span>
-          <span className="ais-v119-layer premium"><i /> Premium</span>
-          {ENABLE_DHN_CHARTS && baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart"><i /> Carta {selectedDhnChart}</span>}
-          <span className="ais-v119-layer bathy"><i /> Batimetria 10–200 m</span>
+          <span className="ais-v119-layer free" title="Vessel Free"><i /> Vessel · {freeMapVesselCount}</span>
+          <span className="ais-v119-layer marinesia" title="AIS Free"><i /> AIS Free</span>
+          <span className="ais-v119-layer premium" title="AIS Premium"><i /> Premium</span>
+          {ENABLE_DHN_CHARTS && baseMode === "dhn" && selectedDhnChart && <span className="ais-v119-layer chart" title={`Carta ${selectedDhnChart}`}><i /> Carta {selectedDhnChart}</span>}
+          <span className="ais-v119-layer bathy" title="Batimetria 10–200 m"><i /> Bat. 10–200 m</span>
           <button type="button" className={`ais-v119-refresh-free ${freeMapStatus}`} onClick={() => void loadFreeMapLayer(true)} title="Atualizar barcos gratuitos"><RefreshCw className={freeMapStatus === "loading" ? "spin" : ""} /></button>
         </div>
 

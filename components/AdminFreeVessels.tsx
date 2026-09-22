@@ -11,6 +11,7 @@ type FreeSearchVessel = {
   imo: string;
   callsign: string;
   flag: string;
+  source?: string;
 };
 
 type AdminFreeVessel = {
@@ -101,7 +102,7 @@ export default function AdminFreeVessels() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Pesquisa FREE indisponível.");
       setResults(Array.isArray(data?.vessels) ? data.vessels : []);
-      if (!data?.vessels?.length) setMessage("Nenhuma embarcação encontrada. Tente MMSI, IMO ou outro nome.");
+      if (!data?.vessels?.length) setMessage("Nenhuma embarcação encontrada no Global Fishing Watch nem nos fallbacks FREE. Tente MMSI, IMO, indicativo ou confira o nome.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha na pesquisa FREE."); }
     finally { setSearching(false); }
   };
@@ -204,7 +205,7 @@ export default function AdminFreeVessels() {
         const already = items.some((item) => (row.mmsi && item.mmsi === row.mmsi) || (row.imo && item.imo === row.imo));
         return <article key={`${key}-${index}`}>
           <Ship />
-          <div><b>{row.name || "Embarcação sem nome"}</b><small>MMSI {row.mmsi || "—"} · IMO {row.imo || "—"} · {row.flag || "bandeira —"}</small><span>{row.callsign ? `Indicativo ${row.callsign}` : "Fonte AIS FREE atual"}</span></div>
+          <div><b>{row.name || "Embarcação sem nome"}</b><small>MMSI {row.mmsi || "—"} · IMO {row.imo || "—"} · {row.flag || "bandeira —"}</small><span>{row.callsign ? `Indicativo ${row.callsign} · ` : ""}Fonte: {row.source || "AIS FREE"}</span></div>
           <button type="button" disabled={already || addingKey === key} onClick={() => void add(row)}>{addingKey === key ? <LoaderCircle className="spin" /> : <PlusCircle />}{already ? "JÁ ADICIONADO" : "ADICIONAR"}</button>
         </article>;
       })}

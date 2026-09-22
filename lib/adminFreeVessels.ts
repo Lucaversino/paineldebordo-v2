@@ -1,9 +1,11 @@
 import { desc, eq, sql } from "drizzle-orm";
 import type { getDb } from "../db";
 import { adminFreeVessels } from "../db/schema";
+import { rankGfwEntries } from "./gfw";
 
 const APRSFI_BASE_URL = "https://api.aprs.fi/api/get";
 const SHIPFINDER_BASE_URL = "https://api.elaneglobal.com/v1/AIS";
+const GFW_SEARCH_URL = "https://gateway.api.globalfishingwatch.org/v3/vessels/search";
 
 let ready = false;
 let readyPromise: Promise<void> | null = null;
@@ -162,15 +164,49 @@ export type AdminFreeSearchVessel = {
   imo: string;
   callsign: string;
   flag: string;
+  source?: string;
 };
 
-export async function searchFreeForAdmin(query: string): Promise<{ vessels: AdminFreeSearchVessel[]; total: number }> {
+async function searchGfwForAdmin(query: string, token: string): Promise<AdminFreeSearchVessel[]> {
+  const params = new URLSearchParams({
+    query,
+    "datasets[0]": "public-global-vessel-identity:latest",
+    "includes[0]": "MATCH_CRITERIA",
+    limit: "50",
+  });
+  const response = await fetch(`${GFW_SEARCH_URL}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = response.status === 429
+      ? "Limite temporário do Global Fishing Watch atingido."
+      : response.status === 401 || response.status === 403
+        ? "Token do Global Fishing Watch inválido ou sem permissão."
+        : "Global Fishing Watch indisponível no momento.";
+    throw Object.assign(new Error(message), { status: response.status || 502 });
+  }
+  if (!Array.isArray(body?.entries)) return [];
+  return rankGfwEntries(body.entries, query).slice(0, 30).map((row) => ({
+    id: row.id || row.mmsi || row.imo || row.name,
+    name: row.name,
+    mmsi: row.mmsi,
+    imo: row.imo,
+    callsign: row.callsign,
+    flag: row.flag,
+    source: "Global Fishing Watch",
+  }));
+}
+
+export async function searchFreeForAdmin(query: string): Promise<{ vessels: AdminFreeSearchVessel[]; total: number; source?: string }> {
   const q = text(query, 100);
   if (q.length < 2) throw Object.assign(new Error("Digite nome, MMSI ou IMO."), { status: 400 });
 
+  const gfwToken = process.env.GFW_API_TOKEN?.trim();
   const aprsKey = process.env.APRSFI_API_KEY?.trim();
   const shipFinderKey = process.env.SHIPFINDER_API_KEY?.trim();
-  if (!aprsKey && !shipFinderKey) throw Object.assign(new Error("Nenhuma API AIS Free está configurada."), { status: 503 });
 
   const onlyDigits = digits(q);
   if (onlyDigits.length === 7 || onlyDigits.length === 9) {
@@ -181,34 +217,63 @@ export async function searchFreeForAdmin(query: string): Promise<{ vessels: Admi
       imo: onlyDigits.length === 7 ? onlyDigits : "",
       callsign: "",
       flag: "",
+      source: "Identificador direto",
     };
-    return { vessels: [vessel], total: 1 };
+    return { vessels: [vessel], total: 1, source: "identifier" };
   }
 
+  // V206: nome/indicativo primeiro no GFW, que é a fonte de identidade.
+  // APRS.fi/ShipFinder ficam para a posição atual após o barco ser escolhido.
+  if (gfwToken) {
+    try {
+      const vessels = await searchGfwForAdmin(q, gfwToken);
+      if (vessels.length) return { vessels, total: vessels.length, source: "gfw" };
+    } catch (error) {
+      // Se GFW estiver temporariamente indisponível, ainda tentamos a fonte de identidade alternativa.
+      if (!shipFinderKey && !aprsKey) throw error;
+    }
+  }
+
+  // Fallback de identidade: ShipFinder é melhor que APRS.fi para pesquisa textual por nome.
+  if (shipFinderKey) {
+    try {
+      const data = await callShipFinder("/VesselSearch", new URLSearchParams({ keywords: q, max: "20" }), shipFinderKey);
+      const vessels = (Array.isArray(data?.data) ? data.data : []).map((raw: any) => ({
+        id: digits(raw?.mmsi) || digits(raw?.imo) || text(raw?.ship_name || raw?.name, 120),
+        name: text(raw?.ship_name || raw?.name, 120),
+        mmsi: digits(raw?.mmsi),
+        imo: digits(raw?.imo),
+        callsign: text(raw?.call_sign, 80),
+        flag: text(raw?.country || raw?.flag, 24),
+        source: "ShipFinder",
+      })).filter((item: AdminFreeSearchVessel) => item.name || item.mmsi || item.imo);
+      if (vessels.length) return { vessels, total: vessels.length, source: "shipfinder" };
+    } catch {}
+  }
+
+  // APRS.fi fica como último fallback; ele é mais útil para posição/identificador do que busca textual.
   if (aprsKey) {
-    const raw = await callAprsFi(q, aprsKey);
-    if (!raw) return { vessels: [], total: 0 };
-    const vessel = {
-      id: digits(raw?.mmsi) || text(raw?.name || raw?.showname, 120),
-      name: text(raw?.showname || raw?.name, 120) || q,
-      mmsi: digits(raw?.mmsi),
-      imo: digits(raw?.imo),
-      callsign: text(raw?.srccall, 80),
-      flag: "",
-    };
-    return { vessels: [vessel], total: 1 };
+    try {
+      const raw = await callAprsFi(q, aprsKey);
+      if (raw) {
+        const vessel: AdminFreeSearchVessel = {
+          id: digits(raw?.mmsi) || text(raw?.name || raw?.showname, 120),
+          name: text(raw?.showname || raw?.name, 120) || q,
+          mmsi: digits(raw?.mmsi),
+          imo: digits(raw?.imo),
+          callsign: text(raw?.srccall, 80),
+          flag: "",
+          source: "APRS.fi",
+        };
+        return { vessels: [vessel], total: 1, source: "aprsfi" };
+      }
+    } catch {}
   }
 
-  const data = await callShipFinder("/VesselSearch", new URLSearchParams({ keywords: q, max: "20" }), shipFinderKey!);
-  const vessels = (Array.isArray(data?.data) ? data.data : []).map((raw: any) => ({
-    id: digits(raw?.mmsi) || digits(raw?.imo) || text(raw?.ship_name || raw?.name, 120),
-    name: text(raw?.ship_name || raw?.name, 120),
-    mmsi: digits(raw?.mmsi),
-    imo: digits(raw?.imo),
-    callsign: text(raw?.call_sign, 80),
-    flag: text(raw?.country || raw?.flag, 24),
-  })).filter((item: AdminFreeSearchVessel) => item.name || item.mmsi || item.imo);
-  return { vessels, total: vessels.length };
+  if (!gfwToken && !shipFinderKey && !aprsKey) {
+    throw Object.assign(new Error("Nenhuma fonte de busca FREE está configurada. Configure GFW_API_TOKEN e pelo menos uma API de posição FREE."), { status: 503 });
+  }
+  return { vessels: [], total: 0, source: gfwToken ? "gfw" : shipFinderKey ? "shipfinder" : "aprsfi" };
 }
 
 async function callAprsFi(target: string, apiKey: string) {
