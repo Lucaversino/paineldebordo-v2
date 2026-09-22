@@ -1,4 +1,5 @@
 "use client";
+import GfwFreeSearch from "./GfwFreeSearch";
 import { formatCoordinateInput } from "../lib/marineCoordinate";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -3873,6 +3874,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         )}
 
         <div className="ais-v138-free-header">
+          <GfwFreeSearch request={aisFetch} locating={freeSearchLoading} locate={(vessel) => {
+            setFreeSearchQuery(vessel.mmsi);
+            void (async () => {
+              try {
+                const response = await aisFetch("/api/ais-free?action=status");
+                const data = await response.json();
+                if (!response.ok || !data.configured) { setFreeSearchError(data.error || "Consulta de posição FREE não configurada. O cadastro GFW foi encontrado, mas não fornece coordenadas."); return; }
+                await openFreeResult({ name: vessel.name, mmsi: vessel.mmsi, imo: vessel.imo, country: "", countryIso: vessel.flag, shipType: "", typeSpecific: "", callsign: vessel.callsign, freeProvider: data.provider === "shipfinder" ? "shipfinder" : "aprsfi" });
+              } catch { setFreeSearchError("Não foi possível consultar a posição FREE. Tente novamente."); }
+            })();
+          }}>
           <form
             className="ais-v138-free-form"
             onSubmit={(event) => { event.preventDefault(); void searchFreeVessel(); }}
@@ -3911,6 +3923,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               ))}
             </div>
           )}
+          </GfwFreeSearch>
         </div>
 
         {ENABLE_DHN_CHARTS && dhnPanelOpen && (

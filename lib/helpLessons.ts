@@ -188,7 +188,7 @@ export const helpLessons: HelpLesson[] = [
     "intro": "AIS mostra informações transmitidas por embarcações e recebidas pelas fontes disponíveis.",
     "steps": [
       "Abra AIS. Arraste o mapa e aproxime com dois dedos; no computador, use o mouse.",
-      "Use a busca FREE no cabeçalho para consultar as fontes gratuitas.",
+      "Na busca FREE, Global Fishing Watch é a primeira aba: pesquise nome, MMSI, IMO ou indicativo (mínimo 3 caracteres). Retorna identidade, não posição atual. Use Outras fontes para a pesquisa de posição gratuita.",
       "Toque no barco para ler nome, posição e horário da informação.",
       "Use a busca PREMIUM separada quando precisar dessa consulta. Leia o custo antes de confirmar."
     ],
