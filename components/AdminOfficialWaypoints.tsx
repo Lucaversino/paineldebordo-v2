@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Eye, EyeOff, LoaderCircle, MapPin, Pencil, PlusCircle, RefreshCw, Save, ShieldCheck, Trash2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import { coordinateInputToDecimal, decimalToCoordinateInput, formatCoordinateInput } from "../lib/marineCoordinate";
+import { officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
 
 type OfficialWaypointType = "skull" | "rock" | "reef" | "wreck";
 type OfficialWaypoint = {
@@ -27,7 +28,7 @@ const TYPES: Array<{ value: OfficialWaypointType; label: string; hint: string }>
 ];
 
 function iconSrc(type: OfficialWaypointType) {
-  return `/icons/official-waypoints/${type}.svg`;
+  return officialWaypointIconDataUri(type);
 }
 
 function typeLabel(type: OfficialWaypointType) {

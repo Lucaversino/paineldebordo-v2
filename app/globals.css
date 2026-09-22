@@ -5655,3 +5655,36 @@ main.loginpage{
 
 @media(max-width:900px){.admin-official-grid{grid-template-columns:1fr}.admin-official-list{max-height:none}.ais-v198-official-card{top:66px;width:calc(100% - 82px);grid-template-columns:42px minmax(0,1fr);padding-right:35px}.ais-v198-official-card>img{width:40px;height:40px}.ais-v198-official-card .center{grid-column:1/-1;justify-self:stretch;justify-content:center}}
 @media(max-width:560px){.admin-official-waypoints{padding:12px}.admin-official-head{align-items:flex-start}.admin-official-head>button{padding:0 9px}.admin-official-types{grid-template-columns:1fr 1fr}.admin-official-types button{min-height:52px;padding:5px}.admin-official-types img{width:34px;height:34px}.admin-official-coords{grid-template-columns:1fr 1fr}.admin-official-list article{grid-template-columns:40px minmax(0,1fr);align-items:start}.admin-official-list article>img{width:38px;height:38px}.admin-official-item-actions{grid-column:1/-1;justify-content:flex-end}.ais-v198-official-card{top:58px;width:calc(100% - 52px)}}
+
+
+/* V199 — barra lateral DESKTOP rolável. Deliberadamente fora das media queries mobile V182/V183/V184. */
+@media (min-width: 901px) {
+  .sidebar {
+    height: 100vh;
+    max-height: 100vh;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: #2b5a62 #071b22;
+  }
+  .sidebar::-webkit-scrollbar { width: 8px; }
+  .sidebar::-webkit-scrollbar-track { background: #071b22; }
+  .sidebar::-webkit-scrollbar-thumb {
+    background: #2b5a62;
+    border: 2px solid #071b22;
+    border-radius: 999px;
+  }
+  .sidebar::-webkit-scrollbar-thumb:hover { background: #3b777f; }
+  .sidebar nav { flex: 0 0 auto; padding-bottom: 10px; }
+  .sidebar .legal { margin-top: 16px; flex: 0 0 auto; }
+}
+
+/* V199 — miniaturas dos waypoints sempre inteiras, sem crop. */
+.admin-official-types img,
+.admin-official-list article > img,
+.ais-v198-official-card > img {
+  object-fit: contain;
+  object-position: center;
+}

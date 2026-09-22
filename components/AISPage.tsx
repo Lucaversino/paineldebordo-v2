@@ -45,6 +45,7 @@ import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
+import { officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
 
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
 // V194: carta náutica DHN automática no AIS. Não exige botão do usuário.
@@ -1420,29 +1421,33 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function officialWaypointIcon(type: OfficialWaypointType) {
-    return `/icons/official-waypoints/${type}.svg`;
+    // V199: SVG inline evita 404/cache/CSP e garante o símbolo junto do nome.
+    return officialWaypointIconDataUri(type);
   }
 
   function buildOfficialWaypointStyle(item: OfficialWaypoint, currentZoom: number) {
-    const scale = currentZoom < 8 ? 0.56 : currentZoom < 11 ? 0.72 : 0.86;
-    const showName = currentZoom >= 10;
+    // V199: o ícone é um pin 96x96 com margem interna; a ponta do pin fica exatamente na coordenada.
+    const iconPx = currentZoom < 8 ? 36 : currentZoom < 11 ? 46 : 56;
+    const scale = iconPx / 96;
+    const showName = currentZoom >= 9;
     return new Style({
       image: new IconStyle({
         src: officialWaypointIcon(item.waypointType),
-        anchor: [0.5, 0.5],
+        anchor: [0.5, 0.91],
         anchorXUnits: "fraction",
         anchorYUnits: "fraction",
         scale,
+        opacity: 1,
       }),
       text: showName ? new Text({
         text: item.name,
-        offsetY: 27,
+        offsetY: 17,
         font: "900 10px system-ui, sans-serif",
         fill: new Fill({ color: "#f7ffff" }),
         stroke: new Stroke({ color: "#04181e", width: 4 }),
-        padding: [2, 3, 2, 3],
+        padding: [3, 4, 3, 4],
       }) : undefined,
-      zIndex: 68,
+      zIndex: 88,
     });
   }
 
@@ -2797,7 +2802,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const waypointSource = new VectorSource();
     const waypointLayer = new VectorLayer({ source: waypointSource, declutter: true });
     const officialWaypointSource = new VectorSource();
-    const officialWaypointLayer = new VectorLayer({ source: officialWaypointSource, declutter: true });
+    const officialWaypointLayer = new VectorLayer({ source: officialWaypointSource, declutter: false, renderBuffer: 140 });
     const routeSource = new VectorSource();
     const routeLayer = new VectorLayer({ source: routeSource, declutter: true });
     const measureSource = new VectorSource();
@@ -2816,7 +2821,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     navigationLayer.setZIndex(49);
     waypointLayer.setZIndex(50);
     routeLayer.setZIndex(52);
-    officialWaypointLayer.setZIndex(58);
+    officialWaypointLayer.setZIndex(88);
 
     const map = new OlMap({
       target: hostRef.current,

@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v198-waypoints-oficiais";
+const CACHE = "painel-bordo-v199-icon-waypoints-sidebar-desktop";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,
@@ -9,10 +9,6 @@ const ASSETS = [
   "/apple-touch-icon.png",
   "/favicon.ico",
   "/icons/baco-malha-v152.svg",
-  "/icons/official-waypoints/skull.svg",
-  "/icons/official-waypoints/rock.svg",
-  "/icons/official-waypoints/reef.svg",
-  "/icons/official-waypoints/wreck.svg"
 ];
 
 self.addEventListener("install", (event) => {
