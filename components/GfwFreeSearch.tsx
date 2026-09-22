@@ -11,6 +11,7 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
   const [rows, setRows] = useState<GfwVessel[]>([]);
   const [since, setSince] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [suggestion, setSuggestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -21,7 +22,7 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
     if (q.length < 3) { setError("Digite pelo menos 3 caracteres."); setOpen(true); return; }
     const abort = new AbortController(); controller.current = abort;
     const timer = setTimeout(() => abort.abort(), 16000);
-    setBusy(true); setError(""); setOpen(true);
+    setBusy(true); setError(""); setSuggestion(""); setOpen(true);
     if (!more) { setRows([]); setSince(null); setSearched(q); }
     try {
       const response = await request(`/api/ais-gfw?q=${encodeURIComponent(q)}${more && since ? `&since=${encodeURIComponent(since)}` : ""}`, { signal: abort.signal });
@@ -29,6 +30,7 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
       if (!response.ok) throw new Error(data.error || "Falha na pesquisa.");
       setRows(previous => more ? [...previous, ...data.vessels] : data.vessels);
       setSince(data.since || null);
+      setSuggestion(typeof data.suggestion === "string" ? data.suggestion : "");
     } catch (err) { setError(err instanceof Error && err.name !== "AbortError" ? err.message : "A pesquisa demorou para responder. Tente novamente."); }
     finally { clearTimeout(timer); controller.current = null; setBusy(false); }
   }
@@ -46,15 +48,16 @@ export default function GfwFreeSearch({ children, request, locate, locating }: P
       </form>
       {open && <section className={styles.results} aria-live="polite">
         <header><b>Pesquisa de embarcações</b><button type="button" onClick={() => setOpen(false)} aria-label="Fechar resultados">×</button></header>
-        <p>Cadastro e histórico de identidade. Esta pesquisa não fornece posição atual.</p>
+        <p>1. O Global Fishing Watch encontra a identidade correta pelo nome/MMSI/IMO. 2. Ao abrir, o painel tenta automaticamente as outras fontes AIS FREE para buscar a posição atual.</p>
         {error && <p role="alert">{error}</p>}
+        {!error && suggestion && <p>Talvez você quis dizer: <b>{suggestion}</b></p>}
         {!busy && !error && !rows.length && <p>Nenhum barco encontrado para “{searched}”. Tente o MMSI ou outro nome.</p>}
         {rows.map((row, i) => <article key={`${row.id}-${i}`}>
           <b>{row.name || "Embarcação sem nome"}</b>
           <span>MMSI {row.mmsi || "—"} · IMO {row.imo || "—"}</span>
           <span>Bandeira {row.flag || "—"} · Indicativo {row.callsign || "—"}</span>
           {row.recordTo && <small>Fim do período de identidade: {row.recordTo.slice(0, 10)} (não é posição)</small>}
-          <button type="button" disabled={!row.mmsi || locating} onClick={() => { locate(row); setTab("other"); }}>Consultar posição nas fontes FREE</button>
+          <button type="button" disabled={!row.mmsi || locating} onClick={() => { locate(row); setTab("other"); }}>{locating ? "CONSULTANDO POSIÇÃO…" : "ABRIR POSIÇÃO FREE"}</button>
         </article>)}
         {since && <button type="button" disabled={busy} onClick={() => void search(true)}>{busy ? "Carregando…" : "Carregar mais"}</button>}
         <footer>Fonte: <a href="https://globalfishingwatch.org/" target="_blank" rel="noopener noreferrer">Global Fishing Watch</a> · Sem cobrança de créditos</footer>

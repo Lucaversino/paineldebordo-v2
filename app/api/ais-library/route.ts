@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { aisSavedVessels, aisSearchHistory } from "../../../db/schema";
 import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const AREA50_TTL_MS = 8 * 60 * 60 * 1000;
 
 function text(value: unknown) {
   return value == null ? "" : String(value).trim();
@@ -107,18 +109,34 @@ export async function GET(request: NextRequest) {
   const db = getDb();
   await ensureTables(db);
 
-  const [saved, history] = await Promise.all([
+  const [savedRows, history] = await Promise.all([
     db.select().from(aisSavedVessels)
       .where(eq(aisSavedVessels.ownerId, user.id))
       .orderBy(desc(aisSavedVessels.updatedAt))
-      .limit(100),
+      .limit(150),
     db.select().from(aisSearchHistory)
       .where(eq(aisSearchHistory.ownerId, user.id))
       .orderBy(desc(aisSearchHistory.id))
       .limit(100),
   ]);
 
-  return NextResponse.json({ saved, history });
+  const now = Date.now();
+  const expiredAreaRows = savedRows.filter((row) => {
+    if (String(row.folder || "") !== "area50") return false;
+    const stamp = new Date(row.updatedAt || row.savedAt || "").getTime();
+    return Number.isFinite(stamp) && now - stamp >= AREA50_TTL_MS;
+  });
+
+  if (expiredAreaRows.length) {
+    const keys = expiredAreaRows.map((row) => row.vesselKey).filter(Boolean);
+    if (keys.length) {
+      await db.delete(aisSavedVessels).where(and(eq(aisSavedVessels.ownerId, user.id), inArray(aisSavedVessels.vesselKey, keys)));
+    }
+  }
+
+  const saved = savedRows.filter((row) => !expiredAreaRows.some((expired) => expired.vesselKey === row.vesselKey)).slice(0, 100);
+
+  return NextResponse.json({ saved, history, area50TtlHours: 8 });
 }
 
 export async function POST(request: NextRequest) {
@@ -171,6 +189,8 @@ export async function POST(request: NextRequest) {
     const rawVessels = Array.isArray(body?.vessels) ? body.vessels : [];
     const vessels = rawVessels.slice(0, 80);
     const now = new Date().toISOString();
+    const cutoff = new Date(Date.now() - AREA50_TTL_MS).toISOString();
+    await db.delete(aisSavedVessels).where(and(eq(aisSavedVessels.ownerId, user.id), eq(aisSavedVessels.folder, "area50"), sql`${aisSavedVessels.updatedAt} < ${cutoff}`));
     let savedCount = 0;
 
     for (const source of vessels) {
@@ -293,6 +313,13 @@ export async function DELETE(request: NextRequest) {
     const key = searchParams.get("key") || "";
     if (!key) return NextResponse.json({ error: "Barco não informado." }, { status: 400 });
     await db.delete(aisSavedVessels).where(and(eq(aisSavedVessels.ownerId, user.id), eq(aisSavedVessels.vesselKey, key)));
+    return NextResponse.json({ ok: true });
+  }
+
+  if (type === "saved-folder") {
+    const folder = text(searchParams.get("folder") || "");
+    if (!folder) return NextResponse.json({ error: "Pasta não informada." }, { status: 400 });
+    await db.delete(aisSavedVessels).where(and(eq(aisSavedVessels.ownerId, user.id), eq(aisSavedVessels.folder, folder)));
     return NextResponse.json({ ok: true });
   }
 

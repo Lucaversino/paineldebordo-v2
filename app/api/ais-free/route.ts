@@ -268,44 +268,96 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "position") {
-      const provider = text(searchParams.get("provider")).toLowerCase();
+      const requestedProvider = text(searchParams.get("provider")).toLowerCase();
       const id = text(searchParams.get("id")).replace(/\D/g, "");
       const name = text(searchParams.get("name"));
-      let vessel: any = null;
+      if (!id && !name) return NextResponse.json({ error: "Informe nome, MMSI ou IMO." }, { status: 400 });
 
-      if (provider === "shipfinder") {
-        if (!shipFinderKey) return NextResponse.json({ error: "ShipFinder Free não configurada." }, { status: 503 });
-        let mmsi = id.length === 9 ? id : "";
-        if (!mmsi && name) {
-          const search = await callShipFinder("/VesselSearch", new URLSearchParams({ keywords: name, max: "8" }), shipFinderKey);
-          const first = Array.isArray(search?.data) ? search.data[0] : null;
-          mmsi = text(first?.mmsi).replace(/\D/g, "");
+      const failures: string[] = [];
+      let vessel: any = null;
+      let usedProvider = "";
+      let providerCalls = 0;
+
+      const tryAprs = async () => {
+        if (!aprsKey || vessel) return;
+        providerCalls += 1;
+        try {
+          const target = id || name;
+          const data = await callAprsFi(target, aprsKey);
+          const candidates = aprsRows(data);
+          const normalizedName = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const entry = candidates.find((raw: any) => {
+            const rawMmsi = text(raw?.mmsi).replace(/\D/g, "");
+            if (id.length === 9 && rawMmsi === id) return true;
+            const rawName = text(raw?.showname || raw?.name).toLowerCase().replace(/[^a-z0-9]/g, "");
+            return Boolean(normalizedName && rawName === normalizedName);
+          }) || candidates[0];
+          vessel = entry ? aprsVessel(entry, name) : null;
+          if (vessel) usedProvider = "aprsfi";
+          else failures.push("APRS.fi sem posição");
+        } catch (error: any) {
+          failures.push(`APRS.fi: ${text(error?.message) || "falhou"}`);
         }
-        if (!mmsi) return NextResponse.json({ error: "MMSI não encontrado na fonte gratuita." }, { status: 404 });
-        const data = await callShipFinder("/VesselPositionSingle", new URLSearchParams({ mmsi }), shipFinderKey);
-        vessel = shipFinderVessel(data?.data, name);
+      };
+
+      const tryShipFinder = async () => {
+        if (!shipFinderKey || vessel) return;
+        providerCalls += 1;
+        try {
+          let mmsi = id.length === 9 ? id : "";
+          if (!mmsi && name) {
+            const search = await callShipFinder("/VesselSearch", new URLSearchParams({ keywords: name, max: "10" }), shipFinderKey);
+            const candidates = Array.isArray(search?.data) ? search.data : [];
+            const normalizedName = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const exact = candidates.find((raw: any) => text(raw?.ship_name || raw?.name).toLowerCase().replace(/[^a-z0-9]/g, "") === normalizedName);
+            const chosen = exact || candidates[0];
+            mmsi = text(chosen?.mmsi).replace(/\D/g, "");
+          }
+          if (!mmsi) {
+            failures.push("ShipFinder sem MMSI");
+            return;
+          }
+          const data = await callShipFinder("/VesselPositionSingle", new URLSearchParams({ mmsi }), shipFinderKey);
+          vessel = shipFinderVessel(data?.data, name);
+          if (vessel) usedProvider = "shipfinder";
+          else failures.push("ShipFinder sem posição");
+        } catch (error: any) {
+          failures.push(`ShipFinder: ${text(error?.message) || "falhou"}`);
+        }
+      };
+
+      if (requestedProvider === "shipfinder") {
+        await tryShipFinder();
+      } else if (requestedProvider === "aprsfi") {
+        await tryAprs();
       } else {
-        if (!aprsKey) return NextResponse.json({ error: "APRS.fi Free não configurado." }, { status: 503 });
-        const target = id || name;
-        if (!target) return NextResponse.json({ error: "Informe nome, MMSI ou IMO." }, { status: 400 });
-        const data = await callAprsFi(target, aprsKey);
-        const entry = aprsRows(data)[0];
-        vessel = entry ? aprsVessel(entry, name) : null;
+        // Fluxo GFW: o Global Fishing Watch resolve a identidade/MMSI.
+        // Depois tentamos automaticamente todas as fontes FREE de posição configuradas.
+        await tryAprs();
+        await tryShipFinder();
       }
 
-      if (!vessel) return NextResponse.json({ error: "Posição gratuita não encontrada." }, { status: 404 });
+      if (!vessel) {
+        const configured = Boolean(aprsKey || shipFinderKey);
+        return NextResponse.json({
+          error: configured
+            ? "Barco encontrado no cadastro, mas nenhuma fonte AIS FREE retornou posição atual agora."
+            : "Nenhuma API AIS Free está configurada.",
+          details: failures,
+        }, { status: configured ? 404 : 503 });
+      }
 
       void logAisUsage({
         userId: user.id,
         action: "free_position",
         vesselName: vessel.name || id || name,
-        providerCalls: 1,
+        providerCalls: Math.max(1, providerCalls),
         creditsCharged: 0,
         estimatedApiCostBrl: 0,
         status: "success",
       }).catch(() => null);
 
-      return NextResponse.json({ vessel, provider: provider || "aprsfi", creditCost: 0, free: true });
+      return NextResponse.json({ vessel, provider: usedProvider || requestedProvider || "free", creditCost: 0, free: true, tried: failures });
     }
 
     return NextResponse.json({ error: "Ação AIS Free inválida." }, { status: 400 });

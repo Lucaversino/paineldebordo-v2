@@ -188,7 +188,7 @@ export const helpLessons: HelpLesson[] = [
     "intro": "AIS mostra informações transmitidas por embarcações e recebidas pelas fontes disponíveis.",
     "steps": [
       "Abra AIS. Arraste o mapa e aproxime com dois dedos; no computador, use o mouse.",
-      "Na busca FREE, Global Fishing Watch é a primeira aba: pesquise nome, MMSI, IMO ou indicativo (mínimo 3 caracteres). Retorna identidade, não posição atual. Use Outras fontes para a pesquisa de posição gratuita.",
+      "Na busca FREE, Global Fishing Watch é a primeira aba: pesquise nome, MMSI, IMO ou indicativo (mínimo 3 caracteres). O painel prioriza o nome correto e, ao abrir o resultado, tenta automaticamente APRS.fi e ShipFinder para obter a posição atual sem créditos.",
       "Toque no barco para ler nome, posição e horário da informação.",
       "Use a busca PREMIUM separada quando precisar dessa consulta. Leia o custo antes de confirmar."
     ],
@@ -205,7 +205,7 @@ export const helpLessons: HelpLesson[] = [
       "Confira o saldo em Meus créditos.",
       "No AIS, abra a busca Premium para consultar uma embarcação ou 50 km para consultar uma área.",
       "Na busca por área, confira o centro escolhido no mapa e o custo informado.",
-      "Abra Barcos salvos, Resultados 50 km ou Histórico AIS para revisar consultas. Atualizar pode consumir novos créditos: confira antes."
+      "Abra Barcos salvos, Resultados 50 km ou Histórico AIS para revisar consultas. Resultados 50 km são temporários e apagam em 8 horas; use SALVAR para guardar um barco. Atualizar pode consumir novos créditos: confira antes."
     ],
     "tip": "O raio de 50 km pertence ao centro selecionado. Não presuma que ele acompanha o barco automaticamente.",
     "visual": ""
