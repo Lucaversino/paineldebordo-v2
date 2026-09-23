@@ -6345,3 +6345,136 @@ main.loginpage{
   .ais-v119-page .ais-v210-free-panel,
   .ais-v119-page .ais-v138-premium-panel{bottom:182px!important}
 }
+
+/* ===== V215 — CÁLCULO DE NAVEGAÇÃO NO DASHBOARD =====
+   Componente isolado: somente cálculo local no navegador.
+   Não usa API, banco de dados, autenticação, GPS, AIS ou dados da viagem. */
+.navigation-calculator{
+  margin:0 0 12px;
+  padding:12px 14px;
+  border:1px solid rgba(49,84,91,.9);
+  border-radius:12px;
+  background:linear-gradient(145deg,rgba(16,44,51,.96),rgba(10,34,40,.96));
+  box-shadow:0 8px 22px rgba(0,0,0,.08);
+}
+.navigation-calculator-head{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin-bottom:10px;
+}
+.navigation-calculator-icon{
+  width:32px;
+  height:32px;
+  flex:0 0 32px;
+  display:grid;
+  place-items:center;
+  border-radius:9px;
+  background:rgba(34,207,160,.12);
+  border:1px solid rgba(34,207,160,.28);
+  color:#2edcac;
+}
+.navigation-calculator-icon svg{width:17px;height:17px}
+.navigation-calculator-head div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.navigation-calculator-head small{
+  color:#2edcac;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.12em;
+}
+.navigation-calculator-head b{
+  color:var(--text);
+  font-size:12px;
+  font-weight:800;
+  line-height:1.2;
+}
+.navigation-calculator-fields{
+  display:grid;
+  grid-template-columns:1.18fr 1fr 1fr;
+  gap:8px;
+}
+.navigation-calculator-fields label{min-width:0;display:flex;flex-direction:column;gap:5px}
+.navigation-calculator-fields label>span{
+  color:var(--sub);
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.05em;
+}
+.navigation-calculator-fields input{
+  width:100%;
+  min-width:0;
+  height:38px;
+  box-sizing:border-box;
+  border:1px solid var(--line);
+  border-radius:9px;
+  outline:none;
+  background:rgba(5,27,32,.72);
+  color:var(--text);
+  padding:0 9px;
+  font:inherit;
+  font-size:13px;
+  font-weight:800;
+}
+.navigation-calculator-fields input:focus{
+  border-color:rgba(46,220,172,.72);
+  box-shadow:0 0 0 2px rgba(46,220,172,.08);
+}
+.navigation-calculator-distance{position:relative;min-width:0}
+.navigation-calculator-distance input{padding-right:34px}
+.navigation-calculator-distance em{
+  position:absolute;
+  right:9px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#75a6aa;
+  font-size:9px;
+  font-style:normal;
+  font-weight:900;
+  pointer-events:none;
+}
+.navigation-calculator-result{
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:end;
+  gap:12px;
+  margin-top:10px;
+  padding-top:9px;
+  border-top:1px solid rgba(49,84,91,.6);
+}
+.navigation-calculator-result>div{display:flex;flex-direction:column;gap:2px}
+.navigation-calculator-result small{
+  color:var(--sub);
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.09em;
+}
+.navigation-calculator-result span{color:#a9c2c5;font-size:11px;font-weight:800}
+.navigation-calculator-speed{text-align:right;align-items:flex-end}
+.navigation-calculator-speed strong{
+  color:#e9f6f4;
+  font-size:19px;
+  line-height:1;
+  font-weight:950;
+  white-space:nowrap;
+}
+.navigation-calculator-result.has-result .navigation-calculator-speed strong{color:#2edcac}
+.navigation-calculator-speed em{font-size:10px;font-style:normal;font-weight:900;color:#8fb4b7}
+.app:not(.dark) .navigation-calculator{
+  background:linear-gradient(145deg,#f8fcfb,#eef7f5);
+  border-color:#c9dfdb;
+}
+.app:not(.dark) .navigation-calculator-fields input{background:#fff}
+
+@media(max-width:520px){
+  .navigation-calculator{padding:11px 10px;border-radius:11px}
+  .navigation-calculator-head{margin-bottom:9px}
+  .navigation-calculator-head b{font-size:11px}
+  .navigation-calculator-fields{gap:6px}
+  .navigation-calculator-fields input{height:36px;padding:0 7px;font-size:12px}
+  .navigation-calculator-distance input{padding-right:30px}
+  .navigation-calculator-distance em{right:7px;font-size:8px}
+  .navigation-calculator-result{gap:8px;margin-top:9px;padding-top:8px}
+  .navigation-calculator-result small{font-size:7px}
+  .navigation-calculator-result span{font-size:10px}
+  .navigation-calculator-speed strong{font-size:17px}
+}

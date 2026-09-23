@@ -30,6 +30,7 @@ import {
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
 import DailyDataUsage from "../components/DailyDataUsage";
+import NavigationCalculator from "../components/NavigationCalculator";
 import {
   OFFLINE_QUEUE_EVENT,
   cacheOfflineDashboard,
@@ -696,6 +697,7 @@ export default function Home() {
                     </span>
                   </button>
                 </div>
+                <NavigationCalculator />
                 <div className="category-actions">
                   <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
                   <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
