@@ -6271,3 +6271,77 @@ main.loginpage{
   }
   .ais-v119-page .ais-v212-map-save svg{width:10px;height:10px}
 }
+
+/* ===== V214 — AIS MOBILE CLEAN / SEM SOBREPOSIÇÃO =====
+   Ajuste exclusivamente visual do mapa AIS:
+   - abaixa e reduz BUSCAR FREE / NAVEGAR / BUSCA PREMIUM;
+   - mantém o editor de waypoint separado da pilha de ações;
+   - aproxima Créditos e GPS Atual do cabeçalho do mapa;
+   - amplia o editor de waypoint somente no desktop.
+   Não altera batimetria/metragem, AIS, GPS, waypoints, rotas, régua, XTE ou APIs. */
+
+@media (min-width: 781px) {
+  .ais-v119-page .ais-v143-waypoint-panel{
+    width:380px!important;
+    padding:14px!important;
+    gap:10px!important;
+  }
+  .ais-v119-page .ais-v146-waypoint-coords{gap:10px!important}
+  .ais-v119-page .ais-v146-waypoint-coords input,
+  .ais-v119-page .ais-v143-waypoint-panel>input{
+    height:46px!important;
+    font-size:14px!important;
+    padding:0 12px!important;
+  }
+  .ais-v119-page .ais-v143-waypoint-icons button{height:40px!important}
+  .ais-v119-page .ais-v143-waypoint-actions button,
+  .ais-v119-page .ais-v146-goto{height:40px!important}
+}
+
+@media (max-width: 780px) {
+  /* indicadores do topo mais próximos do cabeçalho */
+  .ais-v119-page .ais-v119-wallet{top:5px!important}
+  .ais-v119-page .ais-v143-gps-card{top:5px!important}
+
+  /* pilha central mais compacta e encostada no rodapé, sem cobrir o waypoint */
+  .ais-v119-page .ais-v138-premium-trigger,
+  .ais-v119-page .ais-v154-free-nav-trigger,
+  .ais-v119-page .ais-v210-free-trigger{
+    width:172px!important;
+    min-width:172px!important;
+    height:34px!important;
+    min-height:34px!important;
+    padding:0 10px!important;
+    border-radius:10px!important;
+    font-size:8.5px!important;
+  }
+  .ais-v119-page .ais-v138-premium-trigger svg,
+  .ais-v119-page .ais-v154-free-nav-trigger svg,
+  .ais-v119-page .ais-v210-free-trigger svg{
+    width:13px!important;
+    height:13px!important;
+  }
+  .ais-v119-page .ais-v138-premium-trigger em,
+  .ais-v119-page .ais-v154-free-nav-trigger em,
+  .ais-v119-page .ais-v210-free-trigger em{
+    padding:3px 5px!important;
+    font-size:6.5px!important;
+  }
+
+  .ais-v119-page .ais-v138-premium-trigger{bottom:56px!important}
+  .ais-v119-page .ais-v154-free-nav-trigger{bottom:96px!important}
+  .ais-v119-page .ais-v210-free-trigger{bottom:136px!important}
+
+  /* 14 px de respiro entre o topo do BUSCAR FREE e o card de waypoint */
+  .ais-v119-page .ais-v143-waypoint-panel{bottom:184px!important}
+  .ais-v119-page .ais-v210-free-panel,
+  .ais-v119-page .ais-v138-premium-panel{bottom:184px!important}
+}
+
+@media (max-width: 430px) {
+  .ais-v119-page .ais-v119-wallet{top:4px!important}
+  .ais-v119-page .ais-v143-gps-card{top:4px!important}
+  .ais-v119-page .ais-v143-waypoint-panel{bottom:182px!important}
+  .ais-v119-page .ais-v210-free-panel,
+  .ais-v119-page .ais-v138-premium-panel{bottom:182px!important}
+}
