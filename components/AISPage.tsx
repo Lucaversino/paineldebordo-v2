@@ -664,6 +664,7 @@ function bathymetryContourStyle(feature: any) {
   return style;
 }
 
+// V213 AIS LIGHT: sem polling de barcos; consulta sob demanda para navegação mais leve.
 export default function AISPage({ defaultLat, defaultLon }: Props) {
   const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
   const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
@@ -697,7 +698,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<OlMap | null>(null);
   const vesselSourceRef = useRef<VectorSource | null>(null);
-  const freeVesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
   const probeSourceRef = useRef<VectorSource | null>(null);
   const waypointSourceRef = useRef<VectorSource | null>(null);
@@ -716,7 +716,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const mapVesselRegistryRef = useRef<Map<string, Vessel>>(new Map());
   const vesselFeatureRegistryRef = useRef<Map<string, Feature>>(new Map());
   const vesselStyleBucketRef = useRef<number | null>(null);
-  const vesselIconPathCacheRef = useRef<Map<string, string>>(new Map());
   const trackedRef = useRef<Vessel | null>(null);
   const searchModeRef = useRef<SearchMode>("vessel");
   const areaRadiusRef = useRef<50>(50);
@@ -739,8 +738,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   // V197: follow é automático ao iniciar, mas o usuário pode arrastar o mapa livremente.
   // O botão GPS religa o acompanhamento do barco.
   const navigationFollowEnabledRef = useRef(true);
-  const freeLayerTimerRef = useRef<number | null>(null);
-  const freeLayerRequestRef = useRef({ key: "", at: 0, seq: 0 });
   // V139: trava síncrona para impedir clique duplo antes do React atualizar o estado loading.
   // FREE e PREMIUM mantêm travas independentes e nunca compartilham o mesmo fluxo.
   const freeSearchInFlightRef = useRef(false);
@@ -767,8 +764,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   const [mobileAreaAdvanced, setMobileAreaAdvanced] = useState(false);
   const [areaVessels, setAreaVessels] = useState<Vessel[]>([]);
   const [areaCost, setAreaCost] = useState<number | null>(null);
-  const [freeMapVesselCount, setFreeMapVesselCount] = useState(0);
-  const [freeMapStatus, setFreeMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [cardAnchor, setCardAnchor] = useState<{ left: number; top: number } | null>(null);
   const [cardPulse, setCardPulse] = useState(0);
   const [creditMenuOpen, setCreditMenuOpen] = useState(false);
@@ -1046,32 +1041,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     });
   }
 
-  function buildFreeVesselStyle(vessel: Vessel, currentZoom: number) {
-    const angle = Number.isFinite(vessel.heading) && Number(vessel.heading) < 511
-      ? Number(vessel.heading)
-      : Number(vessel.cog || 0);
-    return new Style({
-      image: new RegularShape({
-        points: 3,
-        radius: currentZoom >= 11 ? 9 : 7,
-        angle: 0,
-        rotation: (angle * Math.PI) / 180,
-        rotateWithView: true,
-        fill: new Fill({ color: "#2f8cff" }),
-        stroke: new Stroke({ color: "#043039", width: 1.8 }),
-      }),
-      text: currentZoom >= 10
-        ? new Text({
-            text: (vessel.name || vessel.mmsi).slice(0, 22),
-            offsetY: 16,
-            font: "800 9px system-ui",
-            fill: new Fill({ color: "#ecfffb" }),
-            stroke: new Stroke({ color: "#05242b", width: 3 }),
-          })
-        : undefined,
-    });
-  }
-
   function normalizedVesselIds(vessel: Vessel) {
     return {
       mmsi: String(vessel?.mmsi || "").replace(/\D/g, ""),
@@ -1271,113 +1240,20 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     return unique;
   }
 
-  function drawFreeMapVessels(vessels: Vessel[]) {
-    upsertMapVessels(dedupeVessels(vessels));
-  }
-
-  async function loadFreeMapLayer(force = false, targetCenter?: { lat: number; lon: number } | null) {
-    const map = mapRef.current;
-    if (!map) return;
-    const mapCenter = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
-    const lat = targetCenter?.lat ?? mapCenter[1];
-    const lon = targetCenter?.lon ?? mapCenter[0];
-    const currentZoom = Math.max(3, Math.min(18, map.getView().getZoom() || 10));
-    const zoomBucket = Math.round(currentZoom);
-    const key = `${(Math.round(lat * 4) / 4).toFixed(2)}:${(Math.round(lon * 4) / 4).toFixed(2)}:z${zoomBucket}`;
-    const now = Date.now();
-    if (!force && freeLayerRequestRef.current.key === key && now - freeLayerRequestRef.current.at < 40_000) return;
-
-    freeLayerRequestRef.current.key = key;
-    freeLayerRequestRef.current.at = now;
-    const seq = ++freeLayerRequestRef.current.seq;
-    setFreeMapStatus("loading");
-
-    try {
-      const response = await aisFetch(`/api/ais-map?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=${encodeURIComponent(zoomBucket)}&refresh=${force ? "1" : "0"}`);
-      const data = await response.json();
-      if (seq !== freeLayerRequestRef.current.seq) return;
-      if (!response.ok) {
-        setFreeMapStatus("error");
-        return;
-      }
-
-      const rows: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
-        mmsi: String(raw?.mmsi || ""),
-        imo: String(raw?.imo || ""),
-        name: String(raw?.name || raw?.mmsi || "Embarcação"),
-        lat: Number(raw?.lat),
-        lon: Number(raw?.lon),
-        sog: raw?.sog == null ? null : Number(raw.sog),
-        cog: raw?.cog == null ? null : Number(raw.cog),
-        heading: raw?.heading == null ? null : Number(raw.heading),
-        vesselType: String(raw?.vesselType || raw?.shipType || ""),
-        navStatusText: String(raw?.navStatusText || ""),
-        dataSource: String(raw?.dataSource || data?.source || "AIS"),
-        positionReceived: String(raw?.positionReceived || raw?.updateTime || data?.updatedAt || ""),
-        updateTime: String(raw?.updateTime || raw?.positionReceived || data?.updatedAt || ""),
-        receivedAt: Number(raw?.receivedAt) || Date.now(),
-      })).filter((v: Vessel) => Number.isFinite(v.lat) && Number.isFinite(v.lon) && Boolean(v.mmsi));
-
-      const uniqueRows = dedupeVessels(rows);
-      setFreeMapVesselCount(uniqueRows.length);
-      setFreeMapStatus("ready");
-      drawFreeMapVessels(uniqueRows);
-      if (uniqueRows.length) setShowEmptyHint(false);
-    } catch {
-      if (seq === freeLayerRequestRef.current.seq) setFreeMapStatus("error");
-    }
-  }
-
-  async function loadMarinesiaFreeLayerSilently() {
-    const map = mapRef.current;
-    if (!map) return;
-    const mapCenter = toLonLat(map.getView().getCenter() || fromLonLat([fallbackLon, fallbackLat]));
-    const lat = mapCenter[1];
-    const lon = mapCenter[0];
-
-    try {
-      const response = await aisFetch(
-        `/api/ais?action=area&latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&radius=50&provider=marinesia`
-      );
-      const data: any = await response.json().catch(() => ({}));
-      if (!response.ok) return;
-
-      const receivedAt = Date.now();
-      const rows: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
-        mmsi: String(raw?.mmsi || ""),
-        imo: String(raw?.imo || ""),
-        name: String(raw?.name || raw?.mmsi || raw?.imo || "Embarcação"),
-        lat: Number(raw?.lat),
-        lon: Number(raw?.lon),
-        sog: raw?.sog == null ? null : Number(raw.sog),
-        cog: raw?.cog == null ? null : Number(raw.cog),
-        heading: raw?.heading == null ? null : Number(raw.heading),
-        vesselType: String(raw?.vesselType || raw?.shipType || ""),
-        navStatusText: String(raw?.navStatusText || ""),
-        dataSource: String(raw?.dataSource || data?.provider || "Marinesia AIS"),
-        positionReceived: String(raw?.positionReceived || raw?.updateTime || data?.updatedAt || ""),
-        updateTime: String(raw?.updateTime || raw?.positionReceived || data?.updatedAt || ""),
-        receivedAt: Number(raw?.receivedAt) || receivedAt,
-      })).filter((vessel: Vessel) =>
-        Number.isFinite(vessel.lat) && Number.isFinite(vessel.lon) && Boolean(vessel.mmsi || vessel.imo)
-      );
-
-      if (rows.length) {
-        upsertMapVessels(dedupeVessels(rows));
-        setShowEmptyHint(false);
-      }
-    } catch {
-      // Atualização FREE automática é silenciosa para não interromper a navegação.
-    }
-  }
-
-  function scheduleFreeMapLayer(force = false) {
-    if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
-    freeLayerTimerRef.current = window.setTimeout(() => loadFreeMapLayer(force), force ? 120 : 650);
-  }
-
   function drawVessel(vessel: Vessel) {
     upsertMapVessels([vessel]);
+  }
+
+  // V213 AIS LIGHT: mantém somente os barcos que o usuário pediu explicitamente.
+  // O mapa não acumula resultados antigos e fica limpo durante a navegação.
+  function clearAisVesselsFromMap(clearAreaState = true) {
+    vesselSourceRef.current?.clear();
+    vesselFeatureRegistryRef.current.clear();
+    mapVesselRegistryRef.current.clear();
+    trackedRef.current = null;
+    setTracked(null);
+    setCardAnchor(null);
+    if (clearAreaState) setAreaVessels([]);
   }
 
   function centerOn(lat: number, lon: number, targetZoom = 11, mark = false) {
@@ -1410,6 +1286,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function drawAreaVessels(vessels: Vessel[]) {
+    clearAisVesselsFromMap(false);
     upsertMapVessels(dedupeVessels(vessels));
   }
 
@@ -1720,35 +1597,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   // V202: barcos escolhidos pelo Super Admin ficam persistidos no servidor e
   // aparecem para todos os usuários sem executar busca regional no cliente.
-  async function loadAdminFreeVessels() {
-    try {
-      const response = await aisFetch("/api/admin-free-vessels");
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return;
-      const receivedAt = Date.now();
-      const vessels: Vessel[] = (Array.isArray(data?.vessels) ? data.vessels : []).map((raw: any) => ({
-        mmsi: String(raw?.mmsi || ""),
-        imo: String(raw?.imo || ""),
-        name: String(raw?.name || raw?.mmsi || raw?.imo || "Embarcação FREE"),
-        lat: Number(raw?.latitude),
-        lon: Number(raw?.longitude),
-        sog: raw?.sog == null ? null : Number(raw.sog),
-        cog: raw?.cog == null ? null : Number(raw.cog),
-        heading: raw?.heading == null ? null : Number(raw.heading),
-        callsign: String(raw?.callsign || ""),
-        vesselType: String(raw?.vesselType || "Embarcação AIS"),
-        navStatusText: String(raw?.navStatus || ""),
-        dataSource: String(raw?.dataSource || "AIS FREE · ADMIN GLOBAL"),
-        positionReceived: String(raw?.positionReceived || raw?.updatedAt || ""),
-        updateTime: String(raw?.positionReceived || raw?.updatedAt || ""),
-        receivedAt: raw?.positionReceived ? (Date.parse(String(raw.positionReceived)) || receivedAt) : receivedAt,
-      })).filter((vessel: Vessel) => Number.isFinite(vessel.lat) && Number.isFinite(vessel.lon) && Boolean(vessel.mmsi || vessel.imo || vessel.name));
-      if (vessels.length) upsertMapVessels(dedupeVessels(vessels));
-    } catch {
-      // Lista global FREE é complementar e nunca bloqueia o AIS principal.
-    }
-  }
-
   function waypointEditorCoords() {
     if (!waypointLatDigits && !waypointLonDigits) return mapProbe;
     const lat = coordinateDigitsToDecimal(waypointLatDigits, true);
@@ -2073,6 +1921,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
 
     if (navigationTargetRef.current) stopWaypointNavigation();
+    clearAisVesselsFromMap();
 
     navigationSourceRef.current?.clear();
     navigationTargetRef.current = null;
@@ -2108,6 +1957,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       setWaypointCoordError("Salve ou selecione um waypoint válido antes de navegar.");
       return;
     }
+
+    clearAisVesselsFromMap();
 
     const target: MapWaypoint = {
       ...saved,
@@ -2345,9 +2196,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   async function openAreaVessel(vessel: Vessel) {
+    drawAreaVessels(areaVessels);
     trackedRef.current = vessel;
     setTracked(vessel);
-    drawAreaVessels(areaVessels);
     centerOn(vessel.lat, vessel.lon, 12);
     window.setTimeout(() => anchorCardForVessel(vessel), 240);
     setStatus("ready");
@@ -2530,12 +2381,39 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   async function recordHistory(vessel: Vessel, creditsUsed = 0) {
     try {
-      await aisFetch("/api/ais-library", {
+      const response = await aisFetch("/api/ais-library", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "history", vessel, creditsUsed }),
       });
-      await loadAisLibrary();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+
+      // V213 AIS LIGHT: evita um GET completo da biblioteca após cada pesquisa.
+      // O POST já devolve o registro criado e o servidor já atualiza a posição do barco salvo.
+      if (data?.history) {
+        const row = data.history as AisHistoryItem;
+        setHistoryItems((current) => [row, ...current.filter((item) => item.id !== row.id)].slice(0, 100));
+      }
+
+      const key = vesselKeyFrom(vessel);
+      if (key) {
+        const now = new Date().toISOString();
+        setSavedVessels((current) => current.map((item) => item.vesselKey === key ? {
+          ...item,
+          lastLatitude: vessel.lat,
+          lastLongitude: vessel.lon,
+          lastSog: vessel.sog ?? null,
+          lastCog: vessel.cog ?? null,
+          lastHeading: vessel.heading ?? null,
+          lastDestination: vessel.destination || null,
+          lastStatus: vessel.navStatusText || null,
+          lastDataSource: vessel.dataSource || null,
+          lastPositionReceived: vessel.positionReceived || null,
+          lastUpdateTime: vessel.updateTime || null,
+          updatedAt: now,
+        } : item));
+      }
     } catch {
       // O histórico não pode impedir a exibição da posição já obtida.
     }
@@ -2562,6 +2440,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function showVesselFromLibrary(vessel: Vessel, message: string) {
+    clearAisVesselsFromMap();
     trackedRef.current = vessel;
     setTracked(vessel);
     drawVessel(vessel);
@@ -2583,8 +2462,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
   }
 
-  // V140: toda embarcação salva com posição válida volta automaticamente para o mapa.
-  // Inclui barcos salvos individualmente e resultados persistidos da busca Premium de 50 km.
+  // Converte um item salvo em embarcação apenas quando o usuário decide abri-lo/atualizá-lo.
+  // V213 AIS LIGHT: barcos salvos não são mais desenhados automaticamente no mapa.
   function savedItemToVessel(item: SavedVessel): Vessel | null {
     const lat = Number(item.lastLatitude);
     const lon = Number(item.lastLongitude);
@@ -2708,6 +2587,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   async function applyLocatedVessel(vessel: Vessel, creditsUsed: number, message: string) {
+    clearAisVesselsFromMap();
     trackedRef.current = vessel;
     setTracked(vessel);
     drawVessel(vessel);
@@ -2717,13 +2597,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     setLastFetch(Date.now());
     setStatus("ready");
     setStatusMessage(message);
-    // V212: histórico é automático; salvar um barco novo passa a ser uma escolha explícita do usuário.
+    // V212/V213: histórico é automático. O próprio endpoint do histórico atualiza no servidor
+    // a última posição caso o barco já esteja salvo, sem uma segunda chamada de rede.
     await recordHistory(vessel, creditsUsed);
-    // Se ele já estava salvo, atualiza silenciosamente a posição/dados armazenados sem criar um novo salvo.
-    const locatedKey = vesselKeyFrom(vessel);
-    if (locatedKey && savedKeys.has(locatedKey)) {
-      await saveVessel(vessel, defaultSavedVesselFolder(vessel), true);
-    }
   }
 
   async function searchFreeVessel() {
@@ -3081,14 +2957,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       updateWhileAnimating: false,
       updateWhileInteracting: false,
     });
-    const freeVesselSource = new VectorSource();
-    const freeVesselLayer = new VectorLayer({
-      source: freeVesselSource,
-      declutter: true,
-      renderBuffer: 36,
-      updateWhileAnimating: false,
-      updateWhileInteracting: false,
-    });
     const areaSource = new VectorSource();
     const areaLayer = new VectorLayer({ source: areaSource });
     const positionSource = new VectorSource();
@@ -3118,7 +2986,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     street.setZIndex(0);
     dhn.setZIndex(5);
     areaLayer.setZIndex(10);
-    freeVesselLayer.setZIndex(20);
     vesselLayer.setZIndex(30);
     positionLayer.setZIndex(70);
     probeLayer.setZIndex(45);
@@ -3133,7 +3000,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const map = new OlMap({
       target: hostRef.current,
       controls: [],
-      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, officialAreaLayer, freeVesselLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer, officialAreaDraftLayer],
+      layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, officialAreaLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer, officialAreaDraftLayer],
       view,
     });
 
@@ -3159,7 +3026,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     mapRef.current = map;
     vesselSourceRef.current = vesselSource;
-    freeVesselSourceRef.current = freeVesselSource;
     vesselFeatureRegistryRef.current.clear();
     vesselStyleBucketRef.current = vesselStyleBucket(view.getZoom() || 10);
     positionSourceRef.current = positionSource;
@@ -3202,7 +3068,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       });
       const selected = trackedRef.current;
       if (selected) anchorCardForVessel(selected);
-      scheduleFreeMapLayer(false);
     };
     map.on("moveend", updateCenter);
     const selectMapFeature = (event: any) => {
@@ -3229,7 +3094,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
       const vessel = map.forEachFeatureAtPixel(
         event.pixel,
-        (feature: any) => (feature.get("freeVessel") || feature.get("vessel") || null) as Vessel | null,
+        (feature: any) => (feature.get("vessel") || null) as Vessel | null,
         { hitTolerance: 10 },
       );
       if (vessel) {
@@ -3291,7 +3156,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
     map.on("pointerdrag", pauseNavigationFollowOnDrag);
     map.on("singleclick", selectMapFeature);
-    scheduleFreeMapLayer(true);
     const ro = new ResizeObserver(() => map.updateSize());
     ro.observe(hostRef.current);
 
@@ -3303,13 +3167,12 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       areaTranslate.un("translateend", handleAreaTranslateEnd);
       map.removeInteraction(areaTranslate);
       if(routeTranslateRef.current) map.removeInteraction(routeTranslateRef.current);
-      if (freeLayerTimerRef.current) window.clearTimeout(freeLayerTimerRef.current);
       if (gpsAnimationFrameRef.current != null) window.cancelAnimationFrame(gpsAnimationFrameRef.current);
       gpsAnimationFrameRef.current = null;
       gpsFeatureRef.current = null;
       vesselFeatureRegistryRef.current.clear();
+      mapVesselRegistryRef.current.clear();
       vesselStyleBucketRef.current = null;
-      vesselIconPathCacheRef.current.clear();
       map.setTarget(undefined);
       mapRef.current = null;
     };
@@ -3437,26 +3300,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [dhnOpacity]);
 
   useEffect(() => {
-    const refreshFreeSources = () => {
-      // V166: uma única rota FREE. AISStream é principal e os demais provedores
-      // são fallbacks no servidor; evita chamadas paralelas que causavam HTTP 429.
-      void loadFreeMapLayer(true);
-    };
-    const warmup = window.setTimeout(refreshFreeSources, 1200);
-    const timer = window.setInterval(refreshFreeSources, 60_000);
-    return () => {
-      window.clearTimeout(warmup);
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
     refreshCredits();
     loadAisLibrary();
     loadWaypoints();
     loadOfficialWaypoints();
     loadOfficialAreas();
-    loadAdminFreeVessels();
     loadRoutes();
   }, []);
 
@@ -3477,19 +3325,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }, [officialAreaDraftPoints, officialAreaColor, officialAreaTransparency]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { void loadOfficialWaypoints(); void loadOfficialAreas(); void loadAdminFreeVessels(); }, 120_000);
+    const timer = window.setInterval(() => { void loadOfficialWaypoints(); void loadOfficialAreas(); }, 120_000);
     return () => window.clearInterval(timer);
   }, []);
 
   useEffect(()=>{ drawRouteDraft(routePoints); },[routePoints]);
-
-  // V140: mantém no mapa todos os barcos persistidos na biblioteca do usuário.
-  useEffect(() => {
-    const persisted = savedVessels
-      .map(savedItemToVessel)
-      .filter((vessel): vessel is Vessel => Boolean(vessel));
-    if (persisted.length) upsertMapVessels(persisted);
-  }, [savedVessels]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -3998,8 +3838,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
         )}
 
-        {/* V209: barra técnica de fontes/refresh removida do mapa público para liberar área útil.
-            Batimetria, cartas e atualizações automáticas continuam ativas e inalteradas. */}
+        {/* V213 AIS LIGHT: sem camada/polling automático de embarcações.
+            Batimetria, cartas, GPS e ferramentas de navegação permanecem ativos. */}
 
         <div className={`ais-v147-orientation ${orientationMenuOpen ? "open" : ""}`}>
           <button
@@ -4477,8 +4317,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               ×
             </button>
             <Radio />
-            <b>{freeMapVesselCount ? "Toque em um barco no mapa" : "Nenhum barco selecionado"}</b>
-            <span>{freeMapVesselCount ? "A camada AIS automática não consome créditos. A pesquisa manual continua separada." : "Procure o nome acima. Ao escolher a embarcação, a posição aparece aqui."}</span>
+            <b>AIS LIGHT · mapa limpo</b>
+            <span>Os barcos só são carregados quando você usa BUSCAR FREE, BUSCA PREMIUM, Histórico ou Barcos salvos.</span>
           </div>
         )}
 
