@@ -2230,7 +2230,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
-  function openCreditPack(amount: 5 | 10) {
+  function openCreditPack(amount: 2 | 6 | 8 | 10) {
     if (typeof window === "undefined") return;
     window.location.assign(`/?view=credits&package=${amount}`);
   }
@@ -3645,8 +3645,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
           <div className="ais-credit-buy">
             <span>COMPRAR CRÉDITOS</span>
-            <button type="button" onClick={() => openCreditPack(5)}>+ R$ 5</button>
-            <button type="button" onClick={() => openCreditPack(10)}>+ R$ 10</button>
+            <button type="button" onClick={() => openCreditPack(2)}>2 CR</button>
+            <button type="button" onClick={() => openCreditPack(6)}>6 CR</button>
+            <button type="button" onClick={() => openCreditPack(8)}>8 CR</button>
+            <button type="button" onClick={() => openCreditPack(10)}>10 CR</button>
           </div>
         </div>
       </div>
@@ -3654,7 +3656,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       {credits != null && credits <= 0 && (
         <div className="ais-no-credit-warning" role="alert">
           <div><b>⚠ SEM CRÉDITOS</b><span>Compre créditos para continuar usando as consultas AIS.</span></div>
-          <div><button type="button" onClick={() => openCreditPack(5)}>COMPRAR R$ 5</button><button type="button" onClick={() => openCreditPack(10)}>COMPRAR R$ 10</button></div>
+          <div><button type="button" onClick={() => openCreditPack(2)}>2 CR</button><button type="button" onClick={() => openCreditPack(6)}>6 CR</button><button type="button" onClick={() => openCreditPack(8)}>8 CR</button><button type="button" onClick={() => openCreditPack(10)}>10 CR</button></div>
         </div>
       )}
 
@@ -3886,8 +3888,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           {creditMenuOpen && (
             <div className="ais-v119-wallet-menu">
               <span>ADICIONAR CRÉDITOS</span>
-              <button type="button" onClick={() => openCreditPack(5)}><b>+ R$ 5</b><small>comprar</small></button>
-              <button type="button" onClick={() => openCreditPack(10)}><b>+ R$ 10</b><small>comprar</small></button>
+              <button type="button" onClick={() => openCreditPack(2)}><b>+ 2 CR</b><small>{formatBrl(2 * creditUnitPrice)}</small></button>
+              <button type="button" onClick={() => openCreditPack(6)}><b>+ 6 CR</b><small>{formatBrl(6 * creditUnitPrice)}</small></button>
+              <button type="button" onClick={() => openCreditPack(8)}><b>+ 8 CR</b><small>{formatBrl(8 * creditUnitPrice)}</small></button>
+              <button type="button" onClick={() => openCreditPack(10)}><b>+ 10 CR</b><small>{formatBrl(10 * creditUnitPrice)}</small></button>
             </div>
           )}
         </div>
