@@ -2407,6 +2407,22 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     }
   }
 
+  function defaultSavedVesselFolder(source: VesselMatch | Vessel) {
+    const dataSource = String((source as Vessel)?.dataSource || "").toLowerCase();
+    const provider = String((source as VesselMatch)?.freeProvider || "").toLowerCase();
+    if (dataSource.includes("shipfinder") || provider === "shipfinder") return "shipfinder";
+    if (
+      dataSource.includes("marinesia") ||
+      dataSource.includes("aprs") ||
+      dataSource.includes("ais free") ||
+      dataSource.includes("global fishing") ||
+      dataSource.includes("gfw") ||
+      provider === "aprsfi" ||
+      provider === "marinesia"
+    ) return "marinesia";
+    return "premium";
+  }
+
   async function saveVessel(source: VesselMatch | Vessel, folder?: string, silent = false) {
     const key = vesselKeyFrom(source);
     if (!key) {
@@ -2427,12 +2443,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         body: JSON.stringify({
           action: "save",
           vessel: source,
-          folder: folder || (() => {
-            const dataSource = String((source as Vessel)?.dataSource || "").toLowerCase();
-            if (dataSource.includes("marinesia")) return "marinesia";
-            if (dataSource.includes("shipfinder")) return "shipfinder";
-            return "premium";
-          })(),
+          folder: folder || defaultSavedVesselFolder(source),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -2696,19 +2707,23 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     };
   }
 
-  async function applyLocatedVessel(vessel: Vessel, creditsUsed: number, folder: string, message: string) {
+  async function applyLocatedVessel(vessel: Vessel, creditsUsed: number, message: string) {
     trackedRef.current = vessel;
     setTracked(vessel);
     drawVessel(vessel);
+    // V212: toda consulta individual leva o mapa diretamente para a posição retornada.
     centerOn(vessel.lat, vessel.lon, 12);
     window.setTimeout(() => anchorCardForVessel(vessel), 240);
     setLastFetch(Date.now());
     setStatus("ready");
     setStatusMessage(message);
-    await Promise.all([
-      recordHistory(vessel, creditsUsed),
-      saveVessel(vessel, folder, true),
-    ]);
+    // V212: histórico é automático; salvar um barco novo passa a ser uma escolha explícita do usuário.
+    await recordHistory(vessel, creditsUsed);
+    // Se ele já estava salvo, atualiza silenciosamente a posição/dados armazenados sem criar um novo salvo.
+    const locatedKey = vesselKeyFrom(vessel);
+    if (locatedKey && savedKeys.has(locatedKey)) {
+      await saveVessel(vessel, defaultSavedVesselFolder(vessel), true);
+    }
   }
 
   async function searchFreeVessel() {
@@ -2787,7 +2802,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       await applyLocatedVessel(
         vessel,
         0,
-        resolvedProvider === "shipfinder" ? "shipfinder" : "marinesia",
         `${vessel.name || "Embarcação"} localizada no AIS FREE · ${resolvedProvider === "shipfinder" ? "ShipFinder" : "APRS.fi"}`,
       );
       setFreeSearchResults([]);
@@ -2894,7 +2908,6 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       await applyLocatedVessel(
         vessel,
         charged,
-        "premium",
         `${vessel.name || "Embarcação"} localizada no AIS PREMIUM`,
       );
       setPremiumSearchResults([]);
@@ -4492,6 +4505,16 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
               <span><small>RUMO</small><b>{tracked.cog != null ? `${Math.round(tracked.cog)}º` : "—"}</b></span>
               <span><small>FONTE</small><b>{trackedSource?.short || "AIS"}</b></span>
             </div>
+            <button
+              type="button"
+              className={`ais-v212-map-save ${trackedKey && savedKeys.has(trackedKey) ? "saved" : ""}`}
+              disabled={!trackedKey || savingKeys.has(trackedKey) || savedKeys.has(trackedKey)}
+              onClick={() => { if (trackedKey && !savedKeys.has(trackedKey)) void saveVessel(tracked); }}
+              title={trackedKey && savedKeys.has(trackedKey) ? "Barco já está salvo" : "Salvar barco"}
+            >
+              <Bookmark />
+              <span>{trackedKey && savingKeys.has(trackedKey) ? "SALVANDO..." : trackedKey && savedKeys.has(trackedKey) ? "BARCO SALVO ✓" : "SALVAR BARCO"}</span>
+            </button>
           </div>
         )}
 

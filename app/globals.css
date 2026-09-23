@@ -6229,3 +6229,45 @@ main.loginpage{
   .ais-v119-page .ais-v210-free-panel,
   .ais-v119-page .ais-v138-premium-panel{bottom:196px!important}
 }
+
+
+/* ===== V212 — BUSCA AIS: CENTRALIZAR + HISTÓRICO + SALVAR MANUAL =====
+   Toda consulta FREE/PREMIUM centraliza no barco e registra histórico automaticamente.
+   O barco só entra em "Barcos salvos" quando o usuário toca em SALVAR BARCO. */
+.ais-v119-page .ais-v212-map-save{
+  width:100%;
+  min-height:30px;
+  border:1px solid rgba(78,222,187,.42);
+  border-radius:8px;
+  background:#0d4b3f;
+  color:#eafff8;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  font-size:8px;
+  font-weight:950;
+  letter-spacing:.04em;
+  cursor:pointer;
+}
+.ais-v119-page .ais-v212-map-save svg{width:13px;height:13px}
+.ais-v119-page .ais-v119-map-card.premium .ais-v212-map-save{
+  border-color:rgba(224,182,84,.48);
+  background:#4a3917;
+  color:#ffe7a5;
+}
+.ais-v119-page .ais-v212-map-save.saved{
+  background:#10332d;
+  border-color:rgba(88,204,174,.28);
+  color:#8ee8d2;
+}
+.ais-v119-page .ais-v212-map-save:disabled{cursor:default;opacity:.82}
+@media(max-width:760px){
+  .ais-v119-page .ais-v212-map-save{
+    min-height:24px;
+    border-radius:6px;
+    gap:4px;
+    font-size:6px;
+  }
+  .ais-v119-page .ais-v212-map-save svg{width:10px;height:10px}
+}
