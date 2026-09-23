@@ -697,11 +697,6 @@ export default function Home() {
                     </span>
                   </button>
                 </div>
-                <NavigationCalculator />
-                <div className="category-actions">
-                  <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
-                  <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
-                </div>
                 <div className="dashboard-set-tools">
                   <button type="button" disabled={!data.sets.length} onClick={openSetEditor}>
                     <Pencil /> Editar largada
@@ -710,6 +705,11 @@ export default function Home() {
                     <List /> Lista de Largadas
                   </button>
                 </div>
+                <div className="category-actions">
+                  <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
+                  <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
+                </div>
+                <NavigationCalculator />
                 <div className="dashboard-current-location">
                   <button type="button" onClick={() => {
                     try { sessionStorage.setItem("painel-auto-current-forecast", "1"); } catch {}
