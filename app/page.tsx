@@ -697,17 +697,19 @@ export default function Home() {
                     </span>
                   </button>
                 </div>
-                <div className="dashboard-set-tools">
-                  <button type="button" disabled={!data.sets.length} onClick={openSetEditor}>
-                    <Pencil /> Editar largada
-                  </button>
-                  <button type="button" className="set-list-link" onClick={() => setView("Largadas")}>
-                    <List /> Lista de Largadas
-                  </button>
-                </div>
-                <div className="category-actions">
-                  <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
-                  <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
+                <div className="dashboard-action-tools">
+                  <div className="dashboard-set-tools">
+                    <button type="button" disabled={!data.sets.length} onClick={openSetEditor}>
+                      <Pencil /> Editar largada
+                    </button>
+                    <button type="button" className="set-list-link" onClick={() => setView("Largadas")}>
+                      <List /> Lista de Largadas
+                    </button>
+                  </div>
+                  <div className="category-actions">
+                    <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
+                    <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
+                  </div>
                 </div>
                 <NavigationCalculator />
                 <div className="dashboard-current-location">

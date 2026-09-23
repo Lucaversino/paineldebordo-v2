@@ -6478,3 +6478,35 @@ main.loginpage{
   .navigation-calculator-result span{font-size:10px}
   .navigation-calculator-speed strong{font-size:17px}
 }
+
+
+/* V218 — ações do dashboard alinhadas abaixo de Nova Largada / Registrar Captura */
+.dashboard-action-tools{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:start;
+  gap:12px;
+  margin:-2px 0 12px;
+}
+.dashboard-action-tools .dashboard-set-tools{
+  margin:0!important;
+}
+.dashboard-action-tools .category-actions{
+  margin:0!important;
+  align-self:start;
+  justify-content:flex-end;
+}
+@media(max-width:700px){
+  .dashboard-action-tools{
+    grid-template-columns:1fr;
+    gap:10px;
+    margin:0 0 14px;
+  }
+  .dashboard-action-tools .dashboard-set-tools{
+    margin:0!important;
+  }
+  .dashboard-action-tools .category-actions{
+    margin:0!important;
+    width:100%;
+  }
+}
