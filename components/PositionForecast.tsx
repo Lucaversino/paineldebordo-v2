@@ -303,7 +303,7 @@ export default function PositionForecast() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/position-forecast?lat=${latitude}&lon=${longitude}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const response = await fetch(`/api/position-forecast?lat=${latitude}&lon=${longitude}`, { cache: "no-store", signal: AbortSignal.timeout(22000) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
@@ -326,7 +326,7 @@ export default function PositionForecast() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/position-forecast?lat=${lat}&lon=${lon}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const response = await fetch(`/api/position-forecast?lat=${lat}&lon=${lon}`, { cache: "no-store", signal: AbortSignal.timeout(22000) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
@@ -353,7 +353,7 @@ export default function PositionForecast() {
       const nextLon = decimalToDigits(Number(position.lon));
       setLatDigits(nextLat);
       setLonDigits(nextLon);
-      const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const forecastResponse = await fetch(`/api/position-forecast?lat=${Number(position.lat)}&lon=${Number(position.lon)}`, { cache: "no-store", signal: AbortSignal.timeout(22000) });
       const forecastJson = await forecastResponse.json().catch(() => ({}));
       if (!forecastResponse.ok) throw new Error(forecastJson.error || "Falha na consulta.");
       setData(forecastJson);

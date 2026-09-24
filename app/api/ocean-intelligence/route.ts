@@ -124,7 +124,7 @@ async function fetchOpenMeteo(lat: number, lon: number) {
 }
 
 async function fetchChlorophyll(lat: number, lon: number) {
-  const row = await fetchNoaaChlorophyllPoint(lat, lon, { timeoutMs: 6500 });
+  const row = await fetchNoaaChlorophyllPoint(lat, lon, { timeoutMs: 4500 });
   return row.mgM3 != null
     ? { mgM3: row.mgM3, time: row.time, source: row.source || "NOAA CoastWatch / VIIRS" }
     : null;

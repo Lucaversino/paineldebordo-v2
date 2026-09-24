@@ -218,7 +218,7 @@ async function fetchWeeklyChlorophyllForecast(lat: number, lon: number, requestU
         accept: "application/json",
         "x-panel-copernicus": internalToken,
       },
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(5500),
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`Copernicus Marine ${response.status}`);
@@ -316,7 +316,7 @@ export async function GET(request: Request) {
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
-      fetchNoaaChlorophyllGrid(grid, { timeoutMs: 6500 }),
+      fetchNoaaChlorophyllGrid(grid, { timeoutMs: 4500 }),
       fetchWeeklyChlorophyllForecast(lat, lon, request.url),
       fetchGeographicContext(lat, lon),
       fetchBathymetry(lat, lon),
@@ -329,7 +329,7 @@ export async function GET(request: Request) {
       : grid.map((point) => ({ ...point, speedKmh: null, directionDeg: null, direction: "—", gustKmh: null }));
     const chlorophyllGrid = chlorophyllResult.status === "fulfilled"
       ? chlorophyllResult.value
-      : grid.map((point) => ({ ...point, mgM3: null, time: null }));
+      : grid.map((point) => ({ ...point, mgM3: null, time: null, source: null, dataset: null }));
     const weeklyChlorophyll = weeklyChlorophyllResult.status === "fulfilled"
       ? weeklyChlorophyllResult.value
       : { configured: false, source: "Copernicus Marine (temporariamente indisponível)", values: [] };

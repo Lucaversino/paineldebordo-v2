@@ -138,10 +138,14 @@ export async function fetchNoaaChlorophyllPoint(
   lon: number,
   options: { timeoutMs?: number } = {},
 ): Promise<NoaaChlorophyllPoint> {
-  const timeoutMs = options.timeoutMs ?? 6500;
-  for (const dataset of CURRENT_DATASETS) {
-    const row = await fetchDatasetPoint(dataset, lat, lon, "last", timeoutMs);
-    if (row) return row;
+  // As fontes são consultadas em paralelo. Assim uma fonte lenta/fora do ar não
+  // segura a previsão inteira por vários timeouts consecutivos.
+  const timeoutMs = options.timeoutMs ?? 4500;
+  const attempts = await Promise.all(
+    CURRENT_DATASETS.map((dataset) => fetchDatasetPoint(dataset, lat, lon, "last", timeoutMs)),
+  );
+  for (const row of attempts) {
+    if (row?.mgM3 != null) return row;
   }
   return { lat, lon, mgM3: null, time: null, source: null, dataset: null };
 }
@@ -164,7 +168,9 @@ function erddapGridUrl(dataset: string, points: Array<{ lat: number; lon: number
   const maxLat = Math.min(89.95, Math.max(...lats) + 0.05);
   const minLon = Math.max(-179.95, Math.min(...lons) - 0.05);
   const maxLon = Math.min(179.95, Math.max(...lons) + 0.05);
-  return `${ERDDAP}/${dataset}.csv?chlor_a[(last)][(0.0)][(${minLat.toFixed(5)}):1:(${maxLat.toFixed(5)})][(${minLon.toFixed(5)}):1:(${maxLon.toFixed(5)})]`;
+  // Nos datasets VIIRS do CoastWatch o eixo de latitude é decrescente (N -> S).
+  // Em consultas griddap por faixa, portanto, latitude precisa ir de maxLat para minLat.
+  return `${ERDDAP}/${dataset}.csv?chlor_a[(last)][(0.0)][(${maxLat.toFixed(5)}):1:(${minLat.toFixed(5)})][(${minLon.toFixed(5)}):1:(${maxLon.toFixed(5)})]`;
 }
 
 async function fetchDatasetGrid(
@@ -238,15 +244,18 @@ export async function fetchNoaaChlorophyllGrid<T extends { lat: number; lon: num
   points: T[],
   options: { timeoutMs?: number } = {},
 ): Promise<Array<T & NoaaChlorophyllPoint>> {
-  const timeoutMs = options.timeoutMs ?? 7500;
+  const timeoutMs = options.timeoutMs ?? 4500;
   if (!points.length) return [];
 
-  const resolved: Array<(T & NoaaChlorophyllPoint) | null> = points.map(() => null);
+  // Importante: não fazer fallback sequencial aqui. A tela de previsão tem prazo
+  // próprio e a clorofila é uma fonte opcional; vento/mar nunca podem parar por ela.
+  const datasetRows = await Promise.all(
+    CURRENT_DATASETS.map((dataset) => fetchDatasetGrid(dataset, points, timeoutMs)),
+  );
 
-  // Uma única consulta por dataset cobre a área toda. Se houver buracos (nuvem,
-  // atraso ou manutenção), somente os pontos faltantes seguem para a próxima fonte.
-  for (const dataset of CURRENT_DATASETS) {
-    const rows = await fetchDatasetGrid(dataset, points, timeoutMs);
+  const resolved: Array<(T & NoaaChlorophyllPoint) | null> = points.map(() => null);
+  // Mantém a prioridade definida em CURRENT_DATASETS: NRT gap-filled primeiro.
+  for (const rows of datasetRows) {
     if (!rows.length) continue;
     for (let i = 0; i < points.length; i++) {
       if (resolved[i]?.mgM3 != null) continue;
@@ -262,7 +271,6 @@ export async function fetchNoaaChlorophyllGrid<T extends { lat: number; lon: num
         dataset: sample.dataset,
       };
     }
-    if (resolved.every((row) => row?.mgM3 != null)) break;
   }
 
   return resolved.map((row, index) => row || {
@@ -282,12 +290,14 @@ export async function fetchNoaaHistoricalChlorophyll(
   isoDate: string,
   options: { timeoutMs?: number } = {},
 ): Promise<NoaaChlorophyllPoint> {
-  const timeoutMs = options.timeoutMs ?? 6500;
+  const timeoutMs = options.timeoutMs ?? 4000;
   const date = String(isoDate).slice(0, 10);
   const timeExpression = `${date}T12:00:00Z`;
-  for (const dataset of HISTORICAL_DATASETS) {
-    const row = await fetchDatasetPoint(dataset, lat, lon, timeExpression, timeoutMs);
-    if (row) return row;
+  const attempts = await Promise.all(
+    HISTORICAL_DATASETS.map((dataset) => fetchDatasetPoint(dataset, lat, lon, timeExpression, timeoutMs)),
+  );
+  for (const row of attempts) {
+    if (row?.mgM3 != null) return row;
   }
   return { lat, lon, mgM3: null, time: null, source: null, dataset: null };
 }

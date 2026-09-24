@@ -164,7 +164,7 @@ async function fetchMarine(lat: number, lon: number, referenceTime: string) {
 }
 
 async function fetchHistoricalChlorophyll(lat: number, lon: number, referenceTime: string) {
-  const row = await fetchNoaaHistoricalChlorophyll(lat, lon, referenceTime, { timeoutMs: 6500 });
+  const row = await fetchNoaaHistoricalChlorophyll(lat, lon, referenceTime, { timeoutMs: 4000 });
   return { mgM3: row.mgM3, time: row.time, source: row.source };
 }
 
