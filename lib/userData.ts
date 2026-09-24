@@ -1,4 +1,4 @@
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { boats, species, trips } from "../db/schema";
 
 const claimedOwners = new Set<string>();
@@ -25,4 +25,26 @@ export async function claimLegacyData(db: any, ownerId: string) {
   await db.update(species).set({ ownerId }).where(isNull(species.ownerId));
   await db.update(trips).set({ ownerId }).where(isNull(trips.ownerId));
   claimedOwners.add(ownerId);
+}
+
+
+export async function ensureDefaultSpecies(db: any, ownerId: string) {
+  const [existing] = await db
+    .select({ id: species.id, active: species.active })
+    .from(species)
+    .where(and(eq(species.ownerId, ownerId), sql`lower(trim(${species.commonName})) = 'corvina'`))
+    .limit(1);
+
+  if (existing) {
+    if (!existing.active) await db.update(species).set({ active: true, commonName: "Corvina", code: "CORVINA" }).where(eq(species.id, existing.id));
+    return existing.id;
+  }
+
+  const [created] = await db.insert(species).values({
+    ownerId,
+    commonName: "Corvina",
+    code: "CORVINA",
+    active: true,
+  }).returning({ id: species.id });
+  return created.id;
 }

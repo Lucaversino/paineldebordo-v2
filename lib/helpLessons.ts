@@ -5,14 +5,14 @@ export const helpLessons: HelpLesson[] = [
     "title": "Comece por aqui",
     "category": "Começar",
     "target": "Embarcações",
-    "intro": "O painel é o caderno da pescaria: primeiro o barco, depois a viagem e, dentro dela, cada largada.",
+    "intro": "No primeiro acesso, o painel guia você: primeiro o barco, depois a primeira viagem e, dentro dela, cada largada.",
     "steps": [
-      "Abra Embarcações e toque em Nova embarcação. Preencha os dados e salve.",
-      "Abra Viagem atual e toque em Nova viagem. Escolha o barco, informe saída, porto e meta em kg.",
-      "Deixe a viagem como Em andamento. Volte ao Dashboard para registrar o trabalho.",
-      "Depois de salvar, confira se o nome do barco e da viagem estão certos."
+      "Cadastre sua embarcação. O código é automático: 01, 02, 03 e assim por diante.",
+      "Depois de salvar o barco, toque em COMECE SUA VIAGEM! para voltar ao Dashboard.",
+      "No Dashboard, toque no botão CRIAR VIAGEM que fica em destaque. A Corvina já está cadastrada automaticamente.",
+      "Se a espécie principal for outra, digite a nova espécie no próprio formulário da viagem. Depois de salvar, o tutorial inicial é concluído."
     ],
-    "tip": "Exemplo: a viagem é a pasta grande; as largadas são as folhas dentro dela. Cada viagem guarda suas próprias capturas.",
+    "tip": "Ficou com dúvida? Volte à página Ajuda. Os usuários que já possuem viagem cadastrada continuam entrando normalmente no painel.",
     "visual": "viagem"
   },
   {

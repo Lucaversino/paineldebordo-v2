@@ -8,7 +8,7 @@ import {
 } from "../../../db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
-import { claimLegacyData } from "../../../lib/userData";
+import { claimLegacyData, ensureDefaultSpecies } from "../../../lib/userData";
 import { captureEnvironmentalSnapshot } from "../../../lib/environmentalSnapshots";
 
 function coordinate(value: unknown, latitude: boolean) {
@@ -19,20 +19,6 @@ function coordinate(value: unknown, latitude: boolean) {
   const minutes = Number(`${compact[2]}.${compact[3]}`);
   if (degrees > (latitude ? 90 : 180) || minutes >= 60) return null;
   return -(degrees + minutes / 60);
-}
-
-async function ensureDefaultSpecies(db: ReturnType<typeof getDb>, ownerId: string) {
-  const [existing] = await db.select({ id: species.id }).from(species)
-    .where(and(eq(species.ownerId, ownerId), sql`lower(${species.commonName}) = 'corvina'`))
-    .limit(1);
-  if (existing) return existing.id;
-  const [created] = await db.insert(species).values({
-    ownerId,
-    commonName: "Corvina",
-    code: "CORVINA",
-    active: true,
-  }).returning({ id: species.id });
-  return created.id;
 }
 
 function discardConditionFromNotes(value: unknown) {
@@ -148,12 +134,19 @@ export async function POST(r: Request) {
     db = getDb();
   await claimLegacyData(db, user.id);
   if (b.type === "boat") {
-    if (!b.name?.trim() || !b.registration?.trim())
+    if (!b.name?.trim())
       return Response.json(
-        { error: "Nome e matrícula são obrigatórios." },
+        { error: "Informe o nome da embarcação." },
         { status: 400 },
       );
-    const normalizedRegistration = b.registration.trim();
+
+    const registrations = await db.select({ registration: boats.registration }).from(boats).where(eq(boats.ownerId, user.id));
+    const highestNumericRegistration = registrations.reduce((highest, item) => {
+      const value = String(item.registration || "").trim();
+      return /^\d+$/.test(value) ? Math.max(highest, Number(value)) : highest;
+    }, 0);
+    const automaticRegistration = String(highestNumericRegistration + 1).padStart(2, "0");
+    const normalizedRegistration = String(b.registration || automaticRegistration).trim();
     const [duplicate] = await db.select({ id: boats.id, active: boats.active }).from(boats)
       .where(and(eq(boats.ownerId, user.id), eq(boats.registration, normalizedRegistration))).limit(1);
     if (duplicate?.active)
@@ -189,17 +182,31 @@ export async function POST(r: Request) {
     );
   }
   if (b.type === "species") {
-    if (!b.name?.trim())
+    const commonName = String(b.name || "").trim();
+    if (!commonName)
       return Response.json({ error: "Nome obrigatório." }, { status: 400 });
+    const [duplicate] = await db.select({ id: species.id, active: species.active, commonName: species.commonName }).from(species)
+      .where(and(eq(species.ownerId, user.id), sql`lower(trim(${species.commonName})) = lower(trim(${commonName}))`)).limit(1);
+    if (duplicate?.active)
+      return Response.json({ error: `A espécie “${duplicate.commonName}” já está cadastrada. Selecione-a na lista.` }, { status: 409 });
+    if (duplicate && !duplicate.active) {
+      const [restored] = await db.update(species).set({
+        commonName,
+        scientificName: b.scientificName || null,
+        code: b.code || null,
+        active: true,
+      }).where(and(eq(species.id, duplicate.id), eq(species.ownerId, user.id))).returning();
+      return Response.json(restored);
+    }
     return Response.json(
       (
         await db
           .insert(species)
           .values({
             ownerId: user.id,
-            commonName: b.name.trim(),
-            scientificName: b.scientificName,
-            code: b.code,
+            commonName,
+            scientificName: b.scientificName || null,
+            code: b.code || null,
             active: true,
           })
           .returning()
@@ -226,15 +233,32 @@ export async function POST(r: Request) {
         { error: "O retorno previsto deve ser posterior à data de saída." },
         { status: 400 },
       );
-    const speciesId = Number(b.speciesId);
+    const requestedSpeciesId = Number(b.speciesId || 0);
+    const requestedSpeciesName = String(b.speciesName || "").trim();
+    if (requestedSpeciesId && requestedSpeciesName)
+      return Response.json({ error: "Selecione uma espécie cadastrada OU informe uma nova espécie." }, { status: 400 });
+
+    let speciesId = requestedSpeciesId;
+    if (requestedSpeciesName) {
+      const [duplicateSpecies] = await db.select({ id: species.id, active: species.active }).from(species)
+        .where(and(eq(species.ownerId, user.id), sql`lower(trim(${species.commonName})) = lower(trim(${requestedSpeciesName}))`)).limit(1);
+      if (duplicateSpecies?.active) {
+        speciesId = duplicateSpecies.id;
+      } else if (duplicateSpecies) {
+        await db.update(species).set({ active: true, commonName: requestedSpeciesName }).where(eq(species.id, duplicateSpecies.id));
+        speciesId = duplicateSpecies.id;
+      } else {
+        const [createdSpecies] = await db.insert(species).values({ ownerId: user.id, commonName: requestedSpeciesName, active: true }).returning({ id: species.id });
+        speciesId = createdSpecies.id;
+      }
+    }
     if (!Number.isSafeInteger(speciesId) || speciesId <= 0)
-      return Response.json({ error: "Selecione a espécie principal da viagem." }, { status: 400 });
+      return Response.json({ error: "Selecione a espécie principal ou cadastre uma nova espécie." }, { status: 400 });
+
     const [ownedBoat] = await db.select({ id: boats.id }).from(boats)
       .where(and(eq(boats.id, Number(b.boatId)), eq(boats.ownerId, user.id), eq(boats.active, true))).limit(1);
-    const [ownedSpecies] = b.speciesId
-      ? await db.select({ id: species.id }).from(species)
-          .where(and(eq(species.id, speciesId), eq(species.ownerId, user.id), eq(species.active, true))).limit(1)
-      : [{ id: speciesId }];
+    const [ownedSpecies] = await db.select({ id: species.id }).from(species)
+      .where(and(eq(species.id, speciesId), eq(species.ownerId, user.id), eq(species.active, true))).limit(1);
     if (!ownedBoat)
       return Response.json({ error: "Selecione uma embarcação ativa da sua conta." }, { status: 400 });
     if (!ownedSpecies)

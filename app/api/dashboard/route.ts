@@ -9,7 +9,7 @@ import {
 } from "../../../db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
-import { claimLegacyData } from "../../../lib/userData";
+import { claimLegacyData, ensureDefaultSpecies } from "../../../lib/userData";
 import { captureEnvironmentalSnapshot } from "../../../lib/environmentalSnapshots";
 
 export const runtime = "nodejs";
@@ -72,6 +72,22 @@ export async function GET() {
   const user = auth.user!;
   const db = getDb();
   await claimLegacyData(db, user.id);
+  await ensureDefaultSpecies(db, user.id);
+
+  const [[boatSummary], [tripSummary], initialSpeciesOptions] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(boats).where(and(eq(boats.ownerId, user.id), eq(boats.active, true))),
+    db.select({ count: sql<number>`count(*)` }).from(trips).where(and(eq(trips.ownerId, user.id), sql`${trips.deletedAt} is null`)),
+    db.select({ id: species.id, name: species.commonName }).from(species)
+      .where(and(eq(species.ownerId, user.id), eq(species.active, true))).orderBy(asc(species.commonName)),
+  ]);
+  const onboarding = {
+    boatCount: Number(boatSummary?.count || 0),
+    tripCount: Number(tripSummary?.count || 0),
+    needsBoat: Number(boatSummary?.count || 0) === 0,
+    needsTrip: Number(tripSummary?.count || 0) === 0,
+    completed: Number(tripSummary?.count || 0) > 0,
+  };
+
   const [trip] = await db
     .select({
       id: trips.id,
@@ -88,7 +104,7 @@ export async function GET() {
     .innerJoin(boats, eq(trips.boatId, boats.id))
     .where(and(eq(trips.status, "IN_PROGRESS"), eq(trips.ownerId, user.id)))
     .limit(1);
-  if (!trip) return Response.json({ trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] });
+  if (!trip) return Response.json({ trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: initialSpeciesOptions, onboarding });
   const [totalsRows, sets, daily, speciesOptions] = await Promise.all([
     db
       .select({
@@ -142,6 +158,7 @@ export async function GET() {
     sets,
     daily,
     speciesOptions,
+    onboarding,
   };
   return Response.json(payload);
 }

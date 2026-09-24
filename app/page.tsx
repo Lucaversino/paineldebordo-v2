@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Anchor,
@@ -58,7 +58,7 @@ const fmt = (n: number, d = 0) =>
     minimumFractionDigits: d,
     maximumFractionDigits: d,
   }).format(n || 0);
-const blank = { trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [] };
+const blank = { trip: null, total: 0, corvinaTotal: 0, mixtureTotal: 0, discardTotal: 0, setCount: 0, sets: [], daily: [], speciesOptions: [], onboarding: { boatCount: 0, tripCount: 0, needsBoat: false, needsTrip: false, completed: true } };
 
 function calendarDayStamp(value: string | Date) {
   const date = value instanceof Date ? value : new Date(value);
@@ -96,7 +96,10 @@ export default function Home() {
     [billing, setBilling] = useState<any>(null),
     [offlinePending, setOfflinePending] = useState(0),
     [offlineSyncing, setOfflineSyncing] = useState(false),
-    [gpsPermissionMessage, setGpsPermissionMessage] = useState("");
+    [gpsPermissionMessage, setGpsPermissionMessage] = useState(""),
+    [operationsIntent, setOperationsIntent] = useState<"boat" | "trip" | null>(null),
+    [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false);
+  const onboardingRedirected = useRef(false);
   const primeOfflineManage = async () => {
     if (!navigator.onLine) return;
     try {
@@ -119,6 +122,11 @@ export default function Home() {
       setData(j);
       setSetId(String(j.sets?.at(-1)?.id || ""));
       setOffline(false);
+      if (j.onboarding?.needsBoat && !onboardingRedirected.current) {
+        onboardingRedirected.current = true;
+        setOperationsIntent("boat");
+        setView("Embarcações");
+      }
       void primeOfflineManage();
     } catch (error) {
       const cached = getOfflineDashboard();
@@ -550,6 +558,12 @@ export default function Home() {
           <section className="content">
             {gpsPermissionMessage && <div className="gps-dashboard-message">{gpsPermissionMessage}</div>}
             <div className="dashboard-help-row"><button type="button" className="dashboard-help-link" onClick={() => setView("Ajuda")}><CircleHelp size={18} /> Ajuda · aprenda a usar</button></div>
+            {onboardingCompleteMessage && (
+              <div className="onboarding-complete-banner">
+                <div><b>🎣 Bem-vindo ao Painel de Bordo!</b><span>Sua primeira viagem foi criada. Agora você já pode registrar largadas, capturas e acompanhar toda a pescaria.</span><small>Qualquer dúvida, entre na página Ajuda.</small></div>
+                <div><button type="button" onClick={() => setView("Ajuda")}><CircleHelp /> ABRIR AJUDA</button><button type="button" className="onboarding-dismiss" onClick={() => setOnboardingCompleteMessage(false)} aria-label="Fechar mensagem"><X /></button></div>
+              </div>
+            )}
             <DailyDataUsage />
             {loading ? (
               <div className="emptydash">
@@ -565,27 +579,45 @@ export default function Home() {
                 <div><button className="primary" onClick={() => { setLoading(true); load(); }}><RefreshCw /> Tentar novamente</button></div>
               </div>
             ) : !t ? (
-              <div className="emptydash">
-                <ShipWheel />
-                <small>PAINEL PRONTO PARA COMEÇAR</small>
-                <h2>Nenhuma viagem em andamento</h2>
-                <p>
-                  Cadastre sua embarcação e crie uma nova viagem. Ao selecionar
-                  o status <b>Em andamento</b>, este dashboard será preenchido e
-                  sincronizado automaticamente.
-                </p>
-                <div>
-                  <button onClick={() => setView("Embarcações")}>
-                    <Anchor /> Cadastrar embarcação
-                  </button>
-                  <button
-                    className="primary"
-                    onClick={() => setView("Viagem atual")}
-                  >
-                    <Plus /> Criar nova viagem
-                  </button>
+              data.onboarding?.needsBoat ? (
+                <div className="emptydash onboarding-dashboard-card">
+                  <ShipWheel />
+                  <small>PASSO 1 DE 2 · PRIMEIRO ACESSO</small>
+                  <h2>Bem-vindo ao Painel de Bordo!</h2>
+                  <p>Vamos começar cadastrando sua embarcação. O código será criado automaticamente e a espécie Corvina já está cadastrada para você.</p>
+                  <div>
+                    <button className="primary onboarding-create-trip pulse-soft" onClick={() => { setOperationsIntent("boat"); setView("Embarcações"); }}>
+                      <Anchor /> CADASTRAR EMBARCAÇÃO
+                    </button>
+                  </div>
+                  <p className="onboarding-help-text">Qualquer dúvida, entre na página Ajuda.</p>
                 </div>
-              </div>
+              ) : data.onboarding?.needsTrip ? (
+                <div className="emptydash onboarding-dashboard-card step-two">
+                  <ShipWheel />
+                  <small>PASSO 2 DE 2 · TUTORIAL ANIMADO</small>
+                  <h2>Embarcação pronta. Agora crie sua primeira viagem!</h2>
+                  <p>A Corvina já está disponível como espécie principal. Se for pescar outra espécie, você pode cadastrá-la dentro do próprio formulário da viagem.</p>
+                  <div className="onboarding-arrow-hint"><span>↓</span> Toque no botão abaixo</div>
+                  <div>
+                    <button className="primary onboarding-create-trip heartbeat" onClick={() => { setOperationsIntent("trip"); setView("Viagem atual"); }}>
+                      <Plus /> CRIAR VIAGEM!
+                    </button>
+                  </div>
+                  <p className="onboarding-help-text">Qualquer dúvida, entre na página Ajuda.</p>
+                </div>
+              ) : (
+                <div className="emptydash">
+                  <ShipWheel />
+                  <small>PAINEL PRONTO PARA COMEÇAR</small>
+                  <h2>Nenhuma viagem em andamento</h2>
+                  <p>Crie uma nova viagem e selecione o status <b>Em andamento</b> para preencher este dashboard automaticamente.</p>
+                  <div>
+                    <button onClick={() => setView("Embarcações")}><Anchor /> Embarcações</button>
+                    <button className="primary" onClick={() => { setOperationsIntent("trip"); setView("Viagem atual"); }}><Plus /> Criar nova viagem</button>
+                  </div>
+                </div>
+              )
             ) : (
               <>
                 <div className="triphead">
@@ -761,7 +793,16 @@ export default function Home() {
         ) : (
           <Operations
             view={view}
+            initialForm={operationsIntent}
+            onInitialFormConsumed={() => setOperationsIntent(null)}
+            onboardingActive={Boolean(data.onboarding && !data.onboarding.completed)}
+            onStartJourney={() => {
+              setView("Dashboard");
+              setLoading(true);
+              void load();
+            }}
             onDashboard={() => {
+              if (data.onboarding?.needsTrip) setOnboardingCompleteMessage(true);
               setView("Dashboard");
               setLoading(true);
               void load();

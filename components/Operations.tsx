@@ -45,7 +45,14 @@ function TripDateInput({ name, value, required = false, label }: { name: string;
     </span>
   );
 }
-type Props = { view: string; onDashboard: () => void };
+type Props = {
+  view: string;
+  onDashboard: () => void;
+  initialForm?: "boat" | "trip" | null;
+  onInitialFormConsumed?: () => void;
+  onStartJourney?: () => void;
+  onboardingActive?: boolean;
+};
 type Store = {
   boats: any[];
   species: any[];
@@ -75,7 +82,7 @@ const dmm = (value: number | null, latitude: boolean) => {
   const direction = latitude ? (value < 0 ? "S" : "N") : value < 0 ? "W" : "E";
   return `${String(degrees).padStart(3, "0")}º${minutes} ${direction}`;
 };
-export default function Operations({ view, onDashboard }: Props) {
+export default function Operations({ view, onDashboard, initialForm = null, onInitialFormConsumed, onStartJourney, onboardingActive = false }: Props) {
   const [s, setS] = useState(empty),
     [loading, setLoading] = useState(true),
     [form, setForm] = useState<any>(null),
@@ -100,6 +107,8 @@ export default function Operations({ view, onDashboard }: Props) {
     [weatherSet, setWeatherSet] = useState<{ set: any; trip: any } | null>(null),
     [envSyncing, setEnvSyncing] = useState(false),
     [envSyncMsg, setEnvSyncMsg] = useState(""),
+    [tripSpeciesId, setTripSpeciesId] = useState(""),
+    [tripSpeciesName, setTripSpeciesName] = useState(""),
     [msg, setMsg] = useState("");
   const load = () => {
     setLoading(true);
@@ -117,6 +126,22 @@ export default function Operations({ view, onDashboard }: Props) {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
+  function openNewForm(type: "boat" | "species" | "trip") {
+    setMsg("");
+    if (type === "trip") {
+      const corvina = s.species.find((item) => String(item.commonName || "").trim().toLowerCase() === "corvina");
+      setTripSpeciesId(corvina ? String(corvina.id) : "");
+      setTripSpeciesName("");
+    }
+    setForm(type);
+  }
+  useEffect(() => {
+    if (loading || !initialForm) return;
+    openNewForm(initialForm);
+    onInitialFormConsumed?.();
+    // O intent é consumido uma única vez pelo componente pai.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, initialForm]);
   useEffect(() => {
     const synced = () => load();
     window.addEventListener(OFFLINE_SYNC_EVENT, synced);
@@ -170,19 +195,21 @@ export default function Operations({ view, onDashboard }: Props) {
       const o = Object.fromEntries(new FormData(e.currentTarget));
       if (type === "boat") {
         const name = String(o.name || "").trim();
-        const registration = String(o.registration || "").trim();
-        if (!name || !registration) {
-          setMsg("Informe o nome e a matrícula da embarcação.");
+        if (!name) {
+          setMsg("Informe o nome da embarcação.");
           return;
         }
         o.name = name;
-        o.registration = registration;
         o.capacity = String(o.capacity || "").replace(",", ".");
       }
       if (type === "trip") {
-        const required = ["name", "boatId", "departureDate", "expectedReturnDate", "departurePort", "returnPort", "captain", "target", "speciesId"];
+        const required = ["name", "boatId", "departureDate", "expectedReturnDate", "departurePort", "returnPort", "captain", "target"];
         if (required.some((field) => !String(o[field] || "").trim())) {
           setMsg("Preencha todos os campos obrigatórios da viagem.");
+          return;
+        }
+        if (!String(o.speciesId || "").trim() && !String(o.speciesName || "").trim()) {
+          setMsg("Selecione a espécie principal ou cadastre uma nova espécie.");
           return;
         }
         if (new Date(String(o.expectedReturnDate)) <= new Date(String(o.departureDate))) {
@@ -533,17 +560,17 @@ export default function Operations({ view, onDashboard }: Props) {
           <h2>{titles[view] || view}</h2>
         </div>
         {view === "Embarcações" && (
-          <button onClick={() => setForm("boat")}>
+          <button onClick={() => openNewForm("boat")}>
             <Plus /> Nova embarcação
           </button>
         )}
         {view === "Espécies" && (
-          <button onClick={() => setForm("species")}>
+          <button onClick={() => openNewForm("species")}>
             <Plus /> Nova espécie
           </button>
         )}
         {["Histórico", "Viagem atual"].includes(view) && (
-          <button onClick={() => setForm("trip")}>
+          <button onClick={() => openNewForm("trip")}>
             <Plus /> Nova viagem
           </button>
         )}
@@ -759,6 +786,24 @@ export default function Operations({ view, onDashboard }: Props) {
             </tbody>
           </table>
         </div>
+      )}
+      {view === "Embarcações" && onboardingActive && s.trips.length === 0 && (
+        <section className={`onboarding-card ${s.boats.length ? "complete" : "active"}`}>
+          <div className="onboarding-step">PASSO 1 DE 2</div>
+          <div className="onboarding-card-copy">
+            <ShipWheel />
+            <div>
+              <h3>{s.boats.length ? "Embarcação cadastrada!" : "Bem-vindo ao Painel de Bordo!"}</h3>
+              <p>{s.boats.length ? "Tudo certo com o barco. Agora vamos para o Dashboard criar sua primeira viagem." : "Primeiro cadastre sua embarcação. O código será criado automaticamente e a Corvina já está disponível para sua conta."}</p>
+            </div>
+          </div>
+          {s.boats.length ? (
+            <button type="button" className="onboarding-big-button" onClick={onStartJourney}><ShipWheel /> COMECE SUA VIAGEM!</button>
+          ) : (
+            <button type="button" className="onboarding-big-button pulse-soft" onClick={() => openNewForm("boat")}><Plus /> CADASTRAR MINHA EMBARCAÇÃO</button>
+          )}
+          <small>Qualquer dúvida, abra a página Ajuda no menu.</small>
+        </section>
       )}
       {view === "Embarcações" && (
         <div className="gridcards">
@@ -1375,16 +1420,23 @@ export default function Operations({ view, onDashboard }: Props) {
                   ? "Espécie"
                   : "Viagem"}
             </h2>
+            {onboardingActive && s.trips.length === 0 && (form === "boat" || form === "trip") && (
+              <div className="onboarding-modal-tip">
+                <b>{form === "boat" ? "PASSO 1 DE 2 · CADASTRE O BARCO" : "PASSO 2 DE 2 · CRIE A PRIMEIRA VIAGEM"}</b>
+                <span>{form === "boat" ? "Preencha os dados abaixo. O código da embarcação é automático." : "A Corvina já está selecionada. Se a espécie principal for outra, digite o nome no campo de nova espécie."}</span>
+              </div>
+            )}
             {form === "boat" && (
               <>
                 <label>
                   Nome
                   <input name="name" required autoComplete="organization" enterKeyHint="next" />
                 </label>
-                <label>
-                  Matrícula
-                  <input name="registration" required autoCapitalize="characters" enterKeyHint="next" />
-                </label>
+                <div className="automatic-registration">
+                  <span>CÓDIGO DA EMBARCAÇÃO</span>
+                  <strong>{String(s.boats.reduce((highest, boat) => { const value = String(boat.registration || "").trim(); return /^\d+$/.test(value) ? Math.max(highest, Number(value)) : highest; }, 0) + 1).padStart(2, "0")}</strong>
+                  <small>Gerado automaticamente ao salvar.</small>
+                </div>
                 <label>
                   Proprietário
                   <input name="owner" />
@@ -1472,8 +1524,8 @@ export default function Operations({ view, onDashboard }: Props) {
                   Espécie principal
                   <select
                     name="speciesId"
-                    required
-                    defaultValue=""
+                    value={tripSpeciesId}
+                    onChange={(event) => { setTripSpeciesId(event.currentTarget.value); if (event.currentTarget.value) setTripSpeciesName(""); }}
                   >
                     <option value="">Selecione a espécie principal</option>
                     {s.species.map((x) => (
@@ -1482,7 +1534,21 @@ export default function Operations({ view, onDashboard }: Props) {
                       </option>
                     ))}
                   </select>
+                  <small className="field-hint">Corvina já fica cadastrada automaticamente para todos os usuários.</small>
                 </label>
+                <div className="trip-new-species">
+                  <div className="or-divider"><span>OU</span></div>
+                  <label>
+                    Cadastrar outra espécie nesta viagem
+                    <input
+                      name="speciesName"
+                      value={tripSpeciesName}
+                      onChange={(event) => { setTripSpeciesName(event.currentTarget.value); if (event.currentTarget.value.trim()) setTripSpeciesId(""); }}
+                      placeholder="Ex.: Pescada, Anchova, Linguado"
+                    />
+                    <small className="field-hint">Você não precisa sair deste formulário. A nova espécie será salva junto com a viagem.</small>
+                  </label>
+                </div>
                 <label>
                   Tipo de pesca
                   <input name="fishingType" defaultValue="Rede de emalhe" required />
@@ -1498,7 +1564,7 @@ export default function Operations({ view, onDashboard }: Props) {
             )}
             {msg && <p className="error form-error" role="alert">{msg}</p>}
             <button type="submit" className="save mobile-save" disabled={saving}>
-              {saving ? "SALVANDO..." : form === "boat" ? "SALVAR EMBARCAÇÃO" : "SALVAR"}
+              {saving ? "SALVANDO..." : form === "boat" ? "SALVAR EMBARCAÇÃO" : form === "trip" ? "CRIAR VIAGEM" : "SALVAR"}
             </button>
           </form>
         </div>
