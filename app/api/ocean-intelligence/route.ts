@@ -2,6 +2,7 @@ import { getDb } from "../../../db";
 import { catches, fishingSets, trips } from "../../../db/schema";
 import { asc, eq } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
+import { fetchNoaaChlorophyllPoint } from "../../../lib/noaaChlorophyll";
 
 const RAD = Math.PI / 180;
 const DAY_MS = 86400000;
@@ -123,18 +124,10 @@ async function fetchOpenMeteo(lat: number, lon: number) {
 }
 
 async function fetchChlorophyll(lat: number, lon: number) {
-  const endpoint = `https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNnoaaSNPPnoaa20chlaGapfilledDaily.csv?chlor_a[(last)][(0.0)][(${lat})][(${lon})]`;
-  try {
-    const r = await fetch(endpoint, { headers: { accept: "text/csv" }, signal: AbortSignal.timeout(6000) });
-    if (!r.ok) return null;
-    const text = await r.text();
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 3) return null;
-    const cells = lines[2].split(",");
-    const value = Number(cells.at(-1));
-    const time = cells[0]?.replace(/"/g, "");
-    return Number.isFinite(value) ? { mgM3: value, time, source: "NOAA/NESDIS VIIRS (gap-filled daily)" } : null;
-  } catch { return null; }
+  const row = await fetchNoaaChlorophyllPoint(lat, lon, { timeoutMs: 6500 });
+  return row.mgM3 != null
+    ? { mgM3: row.mgM3, time: row.time, source: row.source || "NOAA CoastWatch / VIIRS" }
+    : null;
 }
 
 function bucketAnalysis(rows: any[]) {

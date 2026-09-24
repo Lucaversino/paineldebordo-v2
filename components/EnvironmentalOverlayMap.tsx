@@ -239,6 +239,12 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
         <button type="button" onClick={() => changeZoom(-1)} title="Diminuir zoom"><Minus /></button>
         <button type="button" onClick={centerPosition} title="Centralizar"><Crosshair /></button>
       </div>
+      {mode === "chlorophyll" && numbers.length === 0 && (
+        <div className="environment-map-empty">
+          <b>SEM LEITURA DE SATÉLITE</b>
+          <span>O painel tentou as fontes VIIRS disponíveis. Consulte novamente em alguns instantes.</span>
+        </div>
+      )}
       <div className={`environment-map-badge ${mode === "wind" ? "wind-current-badge" : ""}`}>
         {mode === "wind" ? (
           <>

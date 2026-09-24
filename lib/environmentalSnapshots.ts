@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
+import { fetchNoaaHistoricalChlorophyll } from "./noaaChlorophyll";
 
 const TZ = "America/Sao_Paulo";
 const UTC_OFFSET = "-03:00";
@@ -163,28 +164,8 @@ async function fetchMarine(lat: number, lon: number, referenceTime: string) {
 }
 
 async function fetchHistoricalChlorophyll(lat: number, lon: number, referenceTime: string) {
-  const date = dayOf(referenceTime);
-  const stamp = `${date}T12:00:00Z`;
-  const endpoint = `https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNSQchlaDaily.csv?chlor_a[(${stamp})][(0.0)][(${lat.toFixed(5)})][(${lon.toFixed(5)})]`;
-  try {
-    const response = await fetch(endpoint, {
-      headers: { accept: "text/csv" },
-      signal: AbortSignal.timeout(3000),
-      cache: "no-store",
-    });
-    if (!response.ok) return { mgM3: null, time: null };
-    const text = await response.text();
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 3) return { mgM3: null, time: null };
-    const cells = lines[2].split(",");
-    const value = Number(cells.at(-1));
-    return {
-      mgM3: Number.isFinite(value) ? value : null,
-      time: cells[0]?.replace(/"/g, "") || stamp,
-    };
-  } catch {
-    return { mgM3: null, time: null };
-  }
+  const row = await fetchNoaaHistoricalChlorophyll(lat, lon, referenceTime, { timeoutMs: 6500 });
+  return { mgM3: row.mgM3, time: row.time, source: row.source };
 }
 
 function compactDayForecast(weather: any, marine: any) {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
+import { fetchNoaaChlorophyllGrid } from "../../../lib/noaaChlorophyll";
 
 export const maxDuration = 60;
 
@@ -257,29 +258,6 @@ function maximum(values: Array<number | null | undefined>) {
   return rows.length ? Math.max(...rows) : null;
 }
 
-async function fetchChlorophyllPoint(lat: number, lon: number) {
-  // Produto diário gap-filled do NOAA CoastWatch. Útil para visualização espacial,
-  // mas continua sendo observação satelital/modelada e não um sensor local em tempo real.
-  const endpoint = `https://coastwatch.pfeg.noaa.gov/erddap/griddap/nesdisVHNnoaaSNPPnoaa20chlaGapfilledDaily.csv?chlor_a[(last)][(0.0)][(${lat.toFixed(5)})][(${lon.toFixed(5)})]`;
-  try {
-    const response = await fetch(endpoint, {
-      headers: { accept: "text/csv" },
-      signal: AbortSignal.timeout(2800),
-      cache: "no-store",
-    });
-    if (!response.ok) return { lat, lon, mgM3: null, time: null };
-    const text = await response.text();
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 3) return { lat, lon, mgM3: null, time: null };
-    const cells = lines[2].split(",");
-    const value = Number(cells.at(-1));
-    const time = cells[0]?.replace(/"/g, "") || null;
-    return { lat, lon, mgM3: Number.isFinite(value) ? value : null, time };
-  } catch {
-    return { lat, lon, mgM3: null, time: null };
-  }
-}
-
 function buildGrid(lat: number, lon: number) {
   const step = 0.18; // ~20 km de latitude; visualização simples da área ao redor.
   const points: { lat: number; lon: number; row: number; col: number }[] = [];
@@ -338,7 +316,7 @@ export async function GET(request: Request) {
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
-      Promise.all(grid.map((point) => fetchChlorophyllPoint(point.lat, point.lon))),
+      fetchNoaaChlorophyllGrid(grid, { timeoutMs: 6500 }),
       fetchWeeklyChlorophyllForecast(lat, lon, request.url),
       fetchGeographicContext(lat, lon),
       fetchBathymetry(lat, lon),
@@ -395,7 +373,7 @@ export async function GET(request: Request) {
     // Copernicus Marine fica reservado para a PREVISÃO diária/semanal.
     const currentChlorophyllMgM3 = centralChl?.mgM3 ?? null;
     const currentChlorophyllSource = centralChl?.mgM3 != null
-      ? "NOAA CoastWatch / VIIRS · satélite"
+      ? (centralChl?.source || "NOAA CoastWatch / VIIRS · satélite")
       : null;
     const currentChlorophyllTime = centralChl?.time ?? null;
 
@@ -483,7 +461,9 @@ export async function GET(request: Request) {
       sources: {
         weather: weather ? "Open-Meteo Forecast" : "Open-Meteo Forecast (temporariamente indisponível)",
         marine: marine ? "Open-Meteo Marine" : "Open-Meteo Marine (temporariamente indisponível)",
-        chlorophyll: chlorophyllResult.status === "fulfilled" ? "NOAA CoastWatch / VIIRS gap-filled daily" : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
+        chlorophyll: chlorophyllGrid.some((item: any) => item?.mgM3 != null)
+          ? (centralChl?.source || chlorophyllGrid.find((item: any) => item?.source)?.source || "NOAA CoastWatch / VIIRS")
+          : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
         chlorophyllForecast: weeklyChlorophyll?.source || "Copernicus Marine (temporariamente indisponível)",
         geography: geography ? "OpenStreetMap / Nominatim" : "Referência geográfica indisponível",
         bathymetry: bathymetry ? "GEBCO_2026 / Ocean Data Bank" : "Batimetria temporariamente indisponível",
