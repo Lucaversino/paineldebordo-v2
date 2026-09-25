@@ -1,4 +1,4 @@
-const CACHE = "painel-bordo-v222-previsao-clorofila";
+const CACHE = "painel-bordo-v223-clorofila-satelite";
 const OFFLINE = "/offline";
 const ASSETS = [
   OFFLINE,

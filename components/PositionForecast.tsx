@@ -608,7 +608,7 @@ export default function PositionForecast() {
             <article><Waves /><small>MAR / ONDA</small><strong>{fmt(data.current.waveHeightM)} m</strong><b>{data.current.waveDirection}</b><span>Período {fmt(data.current.wavePeriodS)} s · swell {fmt(data.current.swellHeightM)} m</span></article>
             <article><Navigation /><small>CORRENTE DE MARÉ</small><strong>{fmt(toMph(data.current.currentKmh), 2)} mph</strong><b>{data.current.currentDirection || "—"} · {fmt(data.current.currentDirectionDeg, 0)}°</b><span>milhas por hora · modelo oceânico</span></article>
             <article><Thermometer /><small>TEMPERATURA DO MAR</small><strong>{fmt(data.current.seaTemperatureC)} °C</strong><b>Superfície</b><span>Temperatura superficial modelada</span></article>
-            <article><Droplets /><small>CLOROFILA-A ATUAL</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>{data.current.chlorophyllSource?.includes("VIIRS") ? "VIIRS · SATÉLITE" : "Sem leitura de satélite"}</b><span>{data.current.chlorophyllTime ? `Observado: ${String(data.current.chlorophyllTime).slice(0, 10)}` : "Sem observação válida"}</span>{data.current.chlorophyllSource && <em title={data.current.chlorophyllSource}>{data.current.chlorophyllSource}</em>}</article>
+            <article><Droplets /><small>CLOROFILA-A ATUAL</small><strong>{fmt(data.current.chlorophyllMgM3, 2)} mg/m³</strong><b>{data.current.chlorophyllSource?.includes("Ocean Colour") ? "SATÉLITE · NRT" : data.current.chlorophyllSource?.includes("VIIRS") ? "VIIRS · SATÉLITE" : "Sem leitura de satélite"}</b><span>{data.current.chlorophyllTime ? `Observado: ${String(data.current.chlorophyllTime).slice(0, 10)}` : "Sem observação válida"}</span>{data.current.chlorophyllSource && <em title={data.current.chlorophyllSource}>{data.current.chlorophyllSource}</em>}</article>
           </div>
 
 
@@ -624,7 +624,7 @@ export default function PositionForecast() {
                   <div><Wind /><span><small>VENTO MÉDIO</small><b>{fmt(item.windSpeedKmh, 0)} km/h</b><em>{item.windDirection || "—"} · raj. {fmt(item.gustKmh, 0)}</em></span></div>
                   <div><Waves /><span><small>ONDA MÁX.</small><b>{fmt(item.waveHeightM)} m</b><em>{item.waveDirection || "—"}</em></span></div>
                   <div><Droplets /><span><small>CLOROFILA-A</small><b>{fmt(item.chlorophyllMgM3, 2)} mg/m³</b><em>{item.chlorophyllModel || "Sem previsão disponível"}</em></span></div>
-                  <div><Thermometer /><span><small>TEMP. MAR</small><b>{fmt(item.seaTemperatureC)} °C</b><em>superfície</em></span></div>
+                  <div><Thermometer /><span><small>TEMP. ÁGUA</small><b>{fmt(item.seaTemperatureC)} °C</b><em>superfície do mar</em></span></div>
                 </div>
               ))}
             </div>

@@ -4,6 +4,10 @@
     "api/copernicus-chlorophyll.py": {
       "maxDuration": 60,
       "excludeFiles": "{node_modules/**,.next/**,public/**,app/**,components/**,lib/**,tools/**,electron/**,*.md}"
+    },
+    "api/copernicus-satellite-chlorophyll.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{node_modules/**,.next/**,public/**,app/**,components/**,lib/**,tools/**,electron/**,*.md}"
     }
   },
   "crons": [

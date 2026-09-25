@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
-import { fetchNoaaChlorophyllGrid } from "../../../lib/noaaChlorophyll";
+import { fetchNoaaChlorophyllGrid, fetchNoaaChlorophyllPoint } from "../../../lib/noaaChlorophyll";
 
 export const maxDuration = 60;
 
@@ -194,6 +194,33 @@ async function fetchWindGrid(points: { lat: number; lon: number }[]) {
 }
 
 
+async function fetchCurrentSatelliteChlorophyll(lat: number, lon: number, requestUrl: string) {
+  const username = String(process.env.COPERNICUSMARINE_SERVICE_USERNAME || "").trim();
+  const password = String(process.env.COPERNICUSMARINE_SERVICE_PASSWORD || "").trim();
+  if (!username || !password) return null;
+
+  try {
+    const endpoint = new URL("/api/copernicus-satellite-chlorophyll", requestUrl);
+    endpoint.search = new URLSearchParams({ lat: String(lat), lon: String(lon) }).toString();
+    const internalToken = createHash("sha256")
+      .update(`${username}:${password}:painel-de-bordo-copernicus`)
+      .digest("hex");
+    const response = await fetch(endpoint, {
+      headers: {
+        accept: "application/json",
+        "x-panel-copernicus": internalToken,
+      },
+      signal: AbortSignal.timeout(9000),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Copernicus Satellite ${response.status}`);
+    return response.json();
+  } catch (error) {
+    console.warn("Copernicus Marine satellite chlorophyll unavailable", error);
+    return null;
+  }
+}
+
 async function fetchWeeklyChlorophyllForecast(lat: number, lon: number, requestUrl: string) {
   const username = String(process.env.COPERNICUSMARINE_SERVICE_USERNAME || "").trim();
   const password = String(process.env.COPERNICUSMARINE_SERVICE_PASSWORD || "").trim();
@@ -312,11 +339,16 @@ export async function GET(request: Request) {
     // Fontes externas podem ficar lentas no mar. Nenhuma fonte opcional deve
     // travar a página inteira: retornamos os dados disponíveis e marcamos
     // valores ausentes como null.
-    const [weatherResult, marineResult, windResult, chlorophyllResult, weeklyChlorophyllResult, geographyResult, bathymetryResult] = await Promise.allSettled([
+    const [weatherResult, marineResult, windResult, chlorophyllResult, currentChlorophyllResult, satelliteChlorophyllResult, weeklyChlorophyllResult, geographyResult, bathymetryResult] = await Promise.allSettled([
       fetchCentralWeather(lat, lon),
       fetchMarine(lat, lon),
       fetchWindGrid(grid),
       fetchNoaaChlorophyllGrid(grid, { timeoutMs: 4500 }),
+      // NOAA/VIIRS fica como fallback do sistema atual por satélite.
+      fetchNoaaChlorophyllPoint(lat, lon, { timeoutMs: 6500 }),
+      // V223: fonte principal da clorofila ATUAL. É observação Ocean Colour
+      // NRT por satélite e NÃO interfere na previsão Copernicus NEMO abaixo.
+      fetchCurrentSatelliteChlorophyll(lat, lon, request.url),
       fetchWeeklyChlorophyllForecast(lat, lon, request.url),
       fetchGeographicContext(lat, lon),
       fetchBathymetry(lat, lon),
@@ -327,9 +359,29 @@ export async function GET(request: Request) {
     const windGrid = windResult.status === "fulfilled"
       ? windResult.value
       : grid.map((point) => ({ ...point, speedKmh: null, directionDeg: null, direction: "—", gustKmh: null }));
-    const chlorophyllGrid = chlorophyllResult.status === "fulfilled"
+    const noaaChlorophyllGrid = chlorophyllResult.status === "fulfilled"
       ? chlorophyllResult.value
       : grid.map((point) => ({ ...point, mgM3: null, time: null, source: null, dataset: null }));
+    const currentChlorophyll = currentChlorophyllResult.status === "fulfilled"
+      ? currentChlorophyllResult.value
+      : null;
+    const satelliteChlorophyll = satelliteChlorophyllResult.status === "fulfilled"
+      ? satelliteChlorophyllResult.value
+      : null;
+    const satelliteGrid = Array.isArray(satelliteChlorophyll?.grid) ? satelliteChlorophyll.grid : [];
+    const chlorophyllGrid = grid.map((point, index) => {
+      const satellite = satelliteGrid.find((item: any) => item?.row === point.row && item?.col === point.col);
+      if (Number.isFinite(Number(satellite?.mgM3))) {
+        return {
+          ...point,
+          mgM3: Number(satellite.mgM3),
+          time: satellite?.time || null,
+          source: satellite?.source || satelliteChlorophyll?.source || "Copernicus Marine Ocean Colour · SATÉLITE NRT",
+          dataset: satellite?.dataset || satelliteChlorophyll?.dataset || null,
+        };
+      }
+      return noaaChlorophyllGrid[index] || { ...point, mgM3: null, time: null, source: null, dataset: null };
+    });
     const weeklyChlorophyll = weeklyChlorophyllResult.status === "fulfilled"
       ? weeklyChlorophyllResult.value
       : { configured: false, source: "Copernicus Marine (temporariamente indisponível)", values: [] };
@@ -369,13 +421,18 @@ export async function GET(request: Request) {
     };
 
     const centralChl = chlorophyllGrid.find((p, i) => grid[i]?.row === 1 && grid[i]?.col === 1) || null;
-    // V176: leitura ATUAL volta a ser observação por satélite NOAA CoastWatch / VIIRS.
-    // Copernicus Marine fica reservado para a PREVISÃO diária/semanal.
-    const currentChlorophyllMgM3 = centralChl?.mgM3 ?? null;
-    const currentChlorophyllSource = centralChl?.mgM3 != null
-      ? (centralChl?.source || "NOAA CoastWatch / VIIRS · satélite")
+    // V223: leitura ATUAL continua 100% por satélite, mas usa primeiro o
+    // Copernicus Marine Ocean Colour NRT (observação multissensor). NOAA/VIIRS
+    // permanece como fallback. A previsão NEMO/PISCES não foi alterada.
+    const copernicusCurrent = satelliteChlorophyll?.current;
+    const currentSatellite = copernicusCurrent?.mgM3 != null
+      ? copernicusCurrent
+      : (currentChlorophyll?.mgM3 != null ? currentChlorophyll : centralChl);
+    const currentChlorophyllMgM3 = currentSatellite?.mgM3 ?? null;
+    const currentChlorophyllSource = currentSatellite?.mgM3 != null
+      ? (currentSatellite?.source || "NOAA CoastWatch / VIIRS · satélite")
       : null;
-    const currentChlorophyllTime = centralChl?.time ?? null;
+    const currentChlorophyllTime = currentSatellite?.time ?? null;
 
     const weeklyForecast = Array.from({ length: 7 }, (_, dayIndex) => {
       const date = dateKeyInTimeZone(dayIndex);
@@ -461,9 +518,9 @@ export async function GET(request: Request) {
       sources: {
         weather: weather ? "Open-Meteo Forecast" : "Open-Meteo Forecast (temporariamente indisponível)",
         marine: marine ? "Open-Meteo Marine" : "Open-Meteo Marine (temporariamente indisponível)",
-        chlorophyll: chlorophyllGrid.some((item: any) => item?.mgM3 != null)
-          ? (centralChl?.source || chlorophyllGrid.find((item: any) => item?.source)?.source || "NOAA CoastWatch / VIIRS")
-          : "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
+        chlorophyll: currentChlorophyllSource
+          || chlorophyllGrid.find((item: any) => item?.source)?.source
+          || "NOAA CoastWatch / VIIRS (temporariamente indisponível)",
         chlorophyllForecast: weeklyChlorophyll?.source || "Copernicus Marine (temporariamente indisponível)",
         geography: geography ? "OpenStreetMap / Nominatim" : "Referência geográfica indisponível",
         bathymetry: bathymetry ? "GEBCO_2026 / Ocean Data Bank" : "Batimetria temporariamente indisponível",

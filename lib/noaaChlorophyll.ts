@@ -85,10 +85,18 @@ function validChlorophyll(value: unknown) {
   return Number.isFinite(n) && n >= 0.001 && n <= 1000 ? n : null;
 }
 
+function erddapTimeConstraint(timeExpression: string) {
+  // Para a leitura atual usamos índices relativos do ERDDAP (last-6:last),
+  // que permitem recuperar a observação válida mais recente mesmo se a célula
+  // do último dia estiver vazia por nuvem ou atraso do processamento.
+  if (/^last(?:-\d+)?(?::\d+:last)?$/.test(timeExpression)) return `[${timeExpression}]`;
+  return `[(${timeExpression})]`;
+}
+
 function erddapPointUrl(dataset: string, lat: number, lon: number, timeExpression: string) {
   const la = Math.max(-89.95, Math.min(89.95, lat));
   const lo = Math.max(-179.95, Math.min(179.95, lon));
-  return `${ERDDAP}/${dataset}.csv?chlor_a[(${timeExpression})][(0.0)][(${la.toFixed(5)})][(${lo.toFixed(5)})]`;
+  return `${ERDDAP}/${dataset}.csv?chlor_a${erddapTimeConstraint(timeExpression)}[(0.0)][(${la.toFixed(5)})][(${lo.toFixed(5)})]`;
 }
 
 async function fetchDatasetPoint(
@@ -114,20 +122,30 @@ async function fetchDatasetPoint(
     // ERDDAP .csv normalmente retorna: cabeçalho, unidades e dados.
     if (lines.length < 3) return null;
     const headers = parseCsvLine(lines[0]).map((item) => item.replace(/^"|"$/g, ""));
-    const cells = parseCsvLine(lines[2]);
     const valueIndex = headers.findIndex((item) => item === "chlor_a");
     const timeIndex = headers.findIndex((item) => item === "time");
-    const value = validChlorophyll(cells[valueIndex >= 0 ? valueIndex : cells.length - 1]);
-    if (value == null) return null;
 
-    return {
-      lat,
-      lon,
-      mgM3: value,
-      time: (cells[timeIndex >= 0 ? timeIndex : 0] || "").replace(/^"|"$/g, "") || null,
-      source: dataset.label,
-      dataset: dataset.id,
-    };
+    let latest: NoaaChlorophyllPoint | null = null;
+    let latestTime = Number.NEGATIVE_INFINITY;
+    for (const line of lines.slice(2)) {
+      const cells = parseCsvLine(line);
+      const value = validChlorophyll(cells[valueIndex >= 0 ? valueIndex : cells.length - 1]);
+      if (value == null) continue;
+      const rawTime = (cells[timeIndex >= 0 ? timeIndex : 0] || "").replace(/^"|"$/g, "") || null;
+      const parsedTime = rawTime ? Date.parse(rawTime) : Number.NaN;
+      const rank = Number.isFinite(parsedTime) ? parsedTime : latestTime + 1;
+      if (latest && rank < latestTime) continue;
+      latestTime = rank;
+      latest = {
+        lat,
+        lon,
+        mgM3: value,
+        time: rawTime,
+        source: dataset.label,
+        dataset: dataset.id,
+      };
+    }
+    return latest;
   } catch {
     return null;
   }
@@ -138,16 +156,23 @@ export async function fetchNoaaChlorophyllPoint(
   lon: number,
   options: { timeoutMs?: number } = {},
 ): Promise<NoaaChlorophyllPoint> {
-  // As fontes são consultadas em paralelo. Assim uma fonte lenta/fora do ar não
-  // segura a previsão inteira por vários timeouts consecutivos.
-  const timeoutMs = options.timeoutMs ?? 4500;
+  // V223: consulta uma janela curta das 7 observações mais recentes. Em dados
+  // ópticos de satélite, a célula do último dia pode estar vazia por nuvens;
+  // usar somente "last" fazia o card atual ficar sem leitura mesmo havendo uma
+  // observação válida de poucos dias atrás.
+  const timeoutMs = options.timeoutMs ?? 5500;
   const attempts = await Promise.all(
-    CURRENT_DATASETS.map((dataset) => fetchDatasetPoint(dataset, lat, lon, "last", timeoutMs)),
+    CURRENT_DATASETS.map((dataset) => fetchDatasetPoint(dataset, lat, lon, "last-6:1:last", timeoutMs)),
   );
-  for (const row of attempts) {
-    if (row?.mgM3 != null) return row;
-  }
-  return { lat, lon, mgM3: null, time: null, source: null, dataset: null };
+  const valid = attempts.filter((row): row is NoaaChlorophyllPoint => row?.mgM3 != null);
+  valid.sort((a, b) => {
+    const taParsed = a.time ? Date.parse(a.time) : Number.NaN;
+    const tbParsed = b.time ? Date.parse(b.time) : Number.NaN;
+    const ta = Number.isFinite(taParsed) ? taParsed : Number.NEGATIVE_INFINITY;
+    const tb = Number.isFinite(tbParsed) ? tbParsed : Number.NEGATIVE_INFINITY;
+    return tb - ta;
+  });
+  return valid[0] || { lat, lon, mgM3: null, time: null, source: null, dataset: null };
 }
 
 type DatasetGridRow = {
@@ -170,7 +195,9 @@ function erddapGridUrl(dataset: string, points: Array<{ lat: number; lon: number
   const maxLon = Math.min(179.95, Math.max(...lons) + 0.05);
   // Nos datasets VIIRS do CoastWatch o eixo de latitude é decrescente (N -> S).
   // Em consultas griddap por faixa, portanto, latitude precisa ir de maxLat para minLat.
-  return `${ERDDAP}/${dataset}.csv?chlor_a[(last)][(0.0)][(${maxLat.toFixed(5)}):1:(${minLat.toFixed(5)})][(${minLon.toFixed(5)}):1:(${maxLon.toFixed(5)})]`;
+  // V223: inclui as 3 observações mais recentes. Isso mantém o mapa atual
+  // disponível quando o último mosaico ainda tem células vazias por nuvens.
+  return `${ERDDAP}/${dataset}.csv?chlor_a[last-2:1:last][(0.0)][(${maxLat.toFixed(5)}):1:(${minLat.toFixed(5)})][(${minLon.toFixed(5)}):1:(${maxLon.toFixed(5)})]`;
 }
 
 async function fetchDatasetGrid(
@@ -224,20 +251,25 @@ async function fetchDatasetGrid(
 function nearestGridSample(point: { lat: number; lon: number }, rows: DatasetGridRow[]) {
   let best: DatasetGridRow | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
+  let bestTime = Number.NEGATIVE_INFINITY;
   for (const row of rows) {
     const latScale = 111.32;
     const lonScale = 111.32 * Math.cos((point.lat * Math.PI) / 180);
     const dy = (row.lat - point.lat) * latScale;
     const dx = (row.lon - point.lon) * lonScale;
     const distanceKm = Math.hypot(dx, dy);
-    if (distanceKm < bestDistance) {
+    if (distanceKm > 18) continue;
+    const parsedTime = row.time ? Date.parse(row.time) : Number.NaN;
+    const rowTime = Number.isFinite(parsedTime) ? parsedTime : Number.NEGATIVE_INFINITY;
+    if (rowTime > bestTime || (rowTime === bestTime && distanceKm < bestDistance)) {
+      bestTime = rowTime;
       bestDistance = distanceKm;
       best = row;
     }
   }
-  // A grade pedida cobre cerca de 40 km. Não atribuímos uma amostra distante
-  // caso a fonte tenha devolvido apenas uma célula isolada.
-  return best && bestDistance <= 18 ? best : null;
+  // Só usamos amostras próximas da célula solicitada; dentro desse raio,
+  // a observação mais recente tem prioridade e a distância desempata.
+  return best;
 }
 
 export async function fetchNoaaChlorophyllGrid<T extends { lat: number; lon: number }>(
@@ -254,23 +286,29 @@ export async function fetchNoaaChlorophyllGrid<T extends { lat: number; lon: num
   );
 
   const resolved: Array<(T & NoaaChlorophyllPoint) | null> = points.map(() => null);
-  // Mantém a prioridade definida em CURRENT_DATASETS: NRT gap-filled primeiro.
-  for (const rows of datasetRows) {
-    if (!rows.length) continue;
-    for (let i = 0; i < points.length; i++) {
-      if (resolved[i]?.mgM3 != null) continue;
-      const sample = nearestGridSample(points[i], rows);
-      if (!sample) continue;
-      resolved[i] = {
-        ...points[i],
-        lat: points[i].lat,
-        lon: points[i].lon,
-        mgM3: sample.mgM3,
-        time: sample.time,
-        source: sample.source,
-        dataset: sample.dataset,
-      };
-    }
+  for (let i = 0; i < points.length; i++) {
+    const candidates = datasetRows
+      .map((rows, priority) => ({ sample: nearestGridSample(points[i], rows), priority }))
+      .filter((item): item is { sample: DatasetGridRow; priority: number } => item.sample != null);
+    candidates.sort((a, b) => {
+      const taParsed = a.sample.time ? Date.parse(a.sample.time) : Number.NaN;
+      const tbParsed = b.sample.time ? Date.parse(b.sample.time) : Number.NaN;
+      const ta = Number.isFinite(taParsed) ? taParsed : Number.NEGATIVE_INFINITY;
+      const tb = Number.isFinite(tbParsed) ? tbParsed : Number.NEGATIVE_INFINITY;
+      if (ta !== tb) return tb - ta;
+      return a.priority - b.priority;
+    });
+    const sample = candidates[0]?.sample;
+    if (!sample) continue;
+    resolved[i] = {
+      ...points[i],
+      lat: points[i].lat,
+      lon: points[i].lon,
+      mgM3: sample.mgM3,
+      time: sample.time,
+      source: sample.source,
+      dataset: sample.dataset,
+    };
   }
 
   return resolved.map((row, index) => row || {
