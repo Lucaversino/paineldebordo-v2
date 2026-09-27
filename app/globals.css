@@ -891,6 +891,58 @@ td small {
   flex-direction: column;
 }
 .species-card { display: flex; flex-direction: column; }
+.species-3d {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #07171b;
+}
+.species-3d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #0d272d;
+  border-bottom: 1px solid var(--line);
+}
+.species-3d-head span {
+  color: #53dfb8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.species-3d-head small {
+  float: none;
+  color: var(--sub);
+  font-size: 10px;
+  text-align: right;
+}
+.species-3d-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: #02090b;
+}
+.species-3d-frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.gridcards .species-3d-credit {
+  margin: 0;
+  padding: 8px 10px 10px;
+  color: var(--sub);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.species-3d-credit a {
+  color: #53dfb8;
+  font-weight: 700;
+  text-decoration: none;
+}
+.species-3d-credit a:hover { text-decoration: underline; }
 .species-actions {
   display: flex;
   gap: 8px;

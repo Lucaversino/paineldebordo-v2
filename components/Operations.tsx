@@ -82,6 +82,56 @@ const dmm = (value: number | null, latitude: boolean) => {
   const direction = latitude ? (value < 0 ? "S" : "N") : value < 0 ? "W" : "E";
   return `${String(degrees).padStart(3, "0")}º${minutes} ${direction}`;
 };
+const normalizeSpeciesName = (value: unknown) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const species3DModels: Record<string, { title: string; embedUrl: string; modelUrl: string; author: string; authorUrl: string }> = {
+  corvina: {
+    title: "Corvina 3D",
+    embedUrl: "https://sketchfab.com/models/e7ff058322774f5f9c6f64bb24c15cc0/embed",
+    modelUrl: "https://sketchfab.com/3d-models/corvina-e7ff058322774f5f9c6f64bb24c15cc0",
+    author: "josluat91",
+    authorUrl: "https://sketchfab.com/josluat91",
+  },
+  "cacao aniquim": {
+    title: "Cação Aniquim 3D",
+    embedUrl: "https://sketchfab.com/models/cc6682a8244041e89c3791315ed31d92/embed",
+    modelUrl: "https://sketchfab.com/3d-models/great-white-shark-carcharodon-carcharias-cc6682a8244041e89c3791315ed31d92",
+    author: "rstr_tv",
+    authorUrl: "https://sketchfab.com/rstr_tv",
+  },
+};
+
+function Species3DViewer({ commonName }: { commonName: unknown }) {
+  const model = species3DModels[normalizeSpeciesName(commonName)];
+  if (!model) return null;
+
+  return (
+    <div className="species-3d">
+      <div className="species-3d-head">
+        <span>MODELO 3D</span>
+        <small>Arraste para girar • role para aproximar</small>
+      </div>
+      <div className="species-3d-frame">
+        <iframe
+          title={model.title}
+          src={model.embedUrl}
+          loading="lazy"
+          allow="autoplay; fullscreen; xr-spatial-tracking"
+          allowFullScreen
+        />
+      </div>
+      <p className="species-3d-credit">
+        <a href={model.modelUrl} target="_blank" rel="nofollow noreferrer">{model.title.replace(" 3D", "")}</a> por{` `}
+        <a href={model.authorUrl} target="_blank" rel="nofollow noreferrer">{model.author}</a> no Sketchfab
+      </p>
+    </div>
+  );
+}
 export default function Operations({ view, onDashboard, initialForm = null, onInitialFormConsumed, onStartJourney, onboardingActive = false }: Props) {
   const [s, setS] = useState(empty),
     [loading, setLoading] = useState(true),
@@ -835,6 +885,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
               <h3>{x.commonName}</h3>
               <p>{x.scientificName || "Nome científico não informado"}</p>
               <b>{x.code || "Sem código"}</b>
+              <Species3DViewer commonName={x.commonName} />
               <div className="species-actions">
                 <button type="button" className="editbtn" onClick={() => setEditingSpecies(x)}><Pencil /> Editar</button>
                 <button type="button" className="deletebtn" onClick={() => remove("species", x.id)}><Trash2 /> Excluir</button>
