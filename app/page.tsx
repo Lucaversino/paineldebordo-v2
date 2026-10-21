@@ -336,6 +336,7 @@ export default function Home() {
             fishingDate: formData?.get("fishingDate"),
             startTime: formData?.get("startTime"),
             endTime: formData?.get("endTime"),
+            endNextDay: formData?.get("endNextDay") === "on",
             depthMeters: Number(formData?.get("depthMeters")),
             startLatitude: formData?.get("startLatitude"),
             startLongitude: formData?.get("startLongitude"),
@@ -894,6 +895,11 @@ export default function Home() {
                   <label>Horário inicial<input name="startTime" type="time" required /></label>
                   <label>Horário final<input name="endTime" type="time" required /></label>
                 </div>
+                <label className="overnight-set-option" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, fontWeight: 600 }}>
+                  <input type="checkbox" name="endNextDay" style={{ width: 18, height: 18, flexShrink: 0 }} />
+                  Termina no dia seguinte (após a meia-noite)
+                </label>
+                <small style={{ display: "block", marginBottom: 10, opacity: 0.8 }}>Exemplo: dia 19 às 17:00 até dia 20 às 01:30. Marque a opção acima.</small>
                 <label>Profundidade em metros<input name="depthMeters" type="number" min="0" step="0.1" inputMode="decimal" required /></label>
                 <fieldset className="coords"><legend>Posição inicial — digite somente os números</legend><div className="twocol"><label>Latitude <small>Sul (S)</small><CoordinateInput name="startLatitude" direction="S" /></label><label>Longitude <small>Oeste (W)</small><CoordinateInput name="startLongitude" direction="W" /></label></div></fieldset>
                 <fieldset className="coords"><legend>Posição final — digite somente os números</legend><div className="twocol"><label>Latitude <small>Sul (S)</small><CoordinateInput name="endLatitude" direction="S" /></label><label>Longitude <small>Oeste (W)</small><CoordinateInput name="endLongitude" direction="W" /></label></div></fieldset>

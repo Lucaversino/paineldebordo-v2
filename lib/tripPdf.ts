@@ -5,6 +5,7 @@ import { tripReportData, formatCoordinate } from "./tripReports";
 const kg = (value: number) => `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value) || 0)} kg`;
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString("pt-BR") : "Não informada";
 const time = (value?: string | null) => value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-";
+const endTimeWithDay = (start?: string | null, end?: string | null) => !end ? "-" : `${time(end)}${start && date(start) !== date(end) ? ` (${date(end)})` : ""}`;
 const discardCondition = (item: any) => {
   const direct = String(item?.discardCondition || "").toUpperCase();
   if (direct === "VIVO" || direct === "MORTO") return direct;
@@ -111,14 +112,14 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
         return `${kg(sumType(type))}${names.length ? `\n${names.join(", ")}` : ""}`;
       };
       return [
-      String(item.setNumber).padStart(2, "0"), date(item.startedAt), time(item.startedAt), time(item.finishedAt),
+      String(item.setNumber).padStart(2, "0"), date(item.startedAt), time(item.startedAt), endTimeWithDay(item.startedAt, item.finishedAt),
       item.depthMeters ?? "-", `${coord(item.startLatitude, true)}\n${coord(item.startLongitude, false)}`,
       `${coord(item.endLatitude, true)}\n${coord(item.endLongitude, false)}`, categoryCell("PRIMARY"), categoryCell("MIXTURE"), categoryCell("DISCARD"),
     ];}),
     styles: { font: "helvetica", fontSize: 8, cellPadding: 3.2, textColor: [28, 53, 59], lineColor: [221, 232, 234], lineWidth: 0.15 },
     headStyles: { fillColor: [5, 54, 62], textColor: [255, 255, 255], fontStyle: "bold", halign: "left" },
     alternateRowStyles: { fillColor: [244, 249, 249] },
-    columnStyles: { 0: { cellWidth: 11 }, 1: { cellWidth: 22 }, 2: { cellWidth: 16 }, 3: { cellWidth: 16 }, 4: { cellWidth: 14 }, 5: { cellWidth: 45 }, 6: { cellWidth: 45 }, 7: { cellWidth: 25, fontStyle: "bold" }, 8: { cellWidth: 25 }, 9: { cellWidth: 25 } },
+    columnStyles: { 0: { cellWidth: 11 }, 1: { cellWidth: 22 }, 2: { cellWidth: 16 }, 3: { cellWidth: 26 }, 4: { cellWidth: 14 }, 5: { cellWidth: 45 }, 6: { cellWidth: 45 }, 7: { cellWidth: 25, fontStyle: "bold" }, 8: { cellWidth: 25 }, 9: { cellWidth: 25 } },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 9) {
         data.cell.styles.textColor = [180, 45, 52];

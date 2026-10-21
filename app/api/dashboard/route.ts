@@ -1,3 +1,4 @@
+import { fishingSetDateTimes } from "@/lib/setDates";
 import { getDb } from "../../../db";
 import { after } from "next/server";
 import {
@@ -259,8 +260,9 @@ export async function POST(req: Request) {
     const startLongitude = parseDmm(body.startLongitude, false);
     const endLatitude = parseDmm(body.endLatitude, true);
     const endLongitude = parseDmm(body.endLongitude, false);
-    const startedAt = `${body.fishingDate}T${body.startTime}:00`;
-    const finishedAt = `${body.fishingDate}T${body.endTime}:00`;
+    const setDates = fishingSetDateTimes(body.fishingDate, body.startTime, body.endTime, body.endNextDay === true);
+    const startedAt = setDates?.startedAt || "";
+    const finishedAt = setDates?.finishedAt || "";
     if (
       !body.tripId ||
       !body.speciesId ||
@@ -284,9 +286,9 @@ export async function POST(req: Request) {
       .where(and(eq(species.id, body.speciesId), eq(species.ownerId, user.id))).limit(1);
     if (!ownedSpecies)
       return Response.json({ error: "Espécie não pertence a esta conta." }, { status: 403 });
-    if (new Date(finishedAt) < new Date(startedAt))
+    if (!setDates)
       return Response.json(
-        { error: "O horário final não pode ser anterior ao inicial." },
+        { error: "Datas e horários inválidos. Para encerrar após 00:00, marque 'Termina no dia seguinte'." },
         { status: 400 },
       );
     const requestedExtras = [

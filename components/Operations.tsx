@@ -733,7 +733,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                                 <td><b>#{String(x.setNumber).padStart(2, "0")}</b></td>
                                 <td>{new Date(x.startedAt).toLocaleDateString("pt-BR")}</td>
                                 <td>{new Date(x.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                                <td>{x.finishedAt ? new Date(x.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                <td>{x.finishedAt ? <>{new Date(x.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}{new Date(x.finishedAt).toLocaleDateString("pt-BR") !== new Date(x.startedAt).toLocaleDateString("pt-BR") && <small style={{ display: "block" }}>Dia {new Date(x.finishedAt).toLocaleDateString("pt-BR")}</small>}</> : "—"}</td>
                                 <td>{x.depthMeters != null ? `${f(x.depthMeters)} m` : "—"}</td>
                                 <td>
                                   <small>Lat. {dmm(x.startLatitude, true)}</small>

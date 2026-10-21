@@ -1,3 +1,4 @@
+import { fishingSetDateTimes } from "./setDates";
 type OfflineQueueItem = {
   id: string;
   url: string;
@@ -99,12 +100,14 @@ export function applyOfflineDashboardMutation(current: any, body: any, forcedLoc
     const discard = Number(body.discardWeightKg || 0);
     const existing = Array.isArray(next.sets) ? next.sets : [];
     const setNumber = existing.reduce((max: number, item: any) => Math.max(max, Number(item.setNumber || 0)), 0) + 1;
-    const startedAt = `${body.fishingDate}T${body.startTime}:00`;
+    const setDates = fishingSetDateTimes(body.fishingDate, body.startTime, body.endTime, body.endNextDay === true);
+    if (!setDates) return next;
+    const { startedAt, finishedAt } = setDates;
     next.sets = [...existing, {
       id: setId,
       setNumber,
       startedAt,
-      finishedAt: `${body.fishingDate}T${body.endTime}:00`,
+      finishedAt,
       depthMeters: Number(body.depthMeters || 0),
       startLatitude: compactCoordinate(body.startLatitude),
       startLongitude: compactCoordinate(body.startLongitude),
@@ -155,8 +158,9 @@ function patchManageMutation(body: any, localSetId?: number) {
     const discard = Number(body.discardWeightKg || 0);
     const sameTrip = (next.sets || []).filter((item: any) => Number(item.tripId) === Number(body.tripId));
     const setNumber = sameTrip.reduce((max: number, item: any) => Math.max(max, Number(item.setNumber || 0)), 0) + 1;
-    const startedAt = `${body.fishingDate}T${body.startTime}:00`;
-    const finishedAt = `${body.fishingDate}T${body.endTime}:00`;
+    const setDates = fishingSetDateTimes(body.fishingDate, body.startTime, body.endTime, body.endNextDay === true);
+    if (!setDates) return next;
+    const { startedAt, finishedAt } = setDates;
     next.sets = [{
       id,
       tripId: Number(body.tripId),
