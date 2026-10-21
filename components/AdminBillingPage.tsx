@@ -26,6 +26,9 @@ function shortDate(value: string) {
 export default function AdminBillingPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [data, setData] = useState<any>(null);
+  const [positionEnabled, setPositionEnabled] = useState(false);
+  const [positionSaving, setPositionSaving] = useState(false);
+  const [positionError, setPositionError] = useState("");
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState("");
@@ -67,6 +70,17 @@ export default function AdminBillingPage() {
     return makeRequest(token);
   };
 
+  useEffect(() => {
+    void adminFetch("/api/position-feature").then(r=>r.ok?r.json():null).then(v=>setPositionEnabled(v?.enabled===true)).catch(()=>setPositionError("Não foi possível carregar o estado da página Posição."));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const togglePosition = async () => {
+    setPositionSaving(true); setPositionError("");
+    try { const response = await adminFetch("/api/position-feature", {method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:!positionEnabled})});
+      const json=await response.json(); if(!response.ok) throw new Error(json.error || "Não foi possível atualizar.");
+      setPositionEnabled(json.enabled); setSuccess("Página Posição " + (json.enabled ? "ativada" : "desativada") + ".");
+    } catch(e) {setPositionError(e instanceof Error?e.message:"Erro ao salvar.");} finally {setPositionSaving(false);}
+  };
   const loadUsers = async () => {
     setUsersLoading(true);
     setUsersError("");
@@ -366,6 +380,7 @@ export default function AdminBillingPage() {
     </section>
 
 
+    <section className="admin-settings-form position-admin-card"><h3>Nova página · Posição</h3><p>Ative ou desative a aba Posição para os usuários. Desativada por padrão, com controle exclusivo do administrador.</p><button className={`admin-fish-toggle ${positionEnabled ? "on" : "off"}`} type="button" onClick={()=>void togglePosition()} disabled={positionSaving}>{positionSaving ? <LoaderCircle className="spin" /> : positionEnabled ? <Power /> : <PowerOff />}{positionEnabled ? "PÁGINA ATIVADA" : "PÁGINA DESATIVADA"}</button>{positionError&&<p className="error">{positionError}</p>}</section>
     <AdminFreeVessels />
     <AdminOfficialWaypoints />
     <AdminOfficialAreas />

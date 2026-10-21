@@ -26,6 +26,7 @@ import {
   X,
   LogOut,
   LocateFixed,
+  MapPinned,
 } from "lucide-react";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
@@ -51,6 +52,7 @@ const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loa
 const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
 const FishingIntelligence = dynamic(() => import("../components/FishingIntelligence"), { ssr: false, loading: ModuleLoading });
 const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
+const PositionPage = dynamic(() => import("../components/PositionPage"), { ssr: false, loading: ModuleLoading });
 const AdminBillingPage = dynamic(() => import("../components/AdminBillingPage"), { ssr: false, loading: ModuleLoading });
 const DashboardProductionChart = dynamic(() => import("../components/DashboardProductionChart"), { ssr: false });
 const fmt = (n: number, d = 0) =>
@@ -94,6 +96,7 @@ export default function Home() {
     [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(""),
     [billing, setBilling] = useState<any>(null),
+    [positionEnabled, setPositionEnabled] = useState(false),
     [offlinePending, setOfflinePending] = useState(0),
     [offlineSyncing, setOfflineSyncing] = useState(false),
     [gpsPermissionMessage, setGpsPermissionMessage] = useState(""),
@@ -438,12 +441,17 @@ export default function Home() {
       setBusy(false);
     }
   }
+  useEffect(() => {
+    if (!billing) return;
+    fetch("/api/position-feature", {cache:"no-store"}).then(r=>r.ok?r.json():null).then(v=>setPositionEnabled(v?.enabled===true)).catch(()=>setPositionEnabled(false));
+  }, [billing, view]);
   const nav = [
       [Gauge, "Dashboard"],
       [CircleHelp, "Ajuda"],
       [Wind, "Ventos e Mar"],
       [Ship, "AIS"],
       [WalletCards, "Meus créditos"],
+      ...(positionEnabled ? [[MapPinned, "Posição"]] as const : []),
       [Radio, "Viagem atual"],
       [Waves, "Largadas"],
       [Fish, "Capturas"],
@@ -787,6 +795,8 @@ export default function Home() {
           />
         ) : view === "Inteligência da Pesca" ? (
           <FishingIntelligence />
+        ) : view === "Posição" ? (
+          positionEnabled ? <PositionPage /> : <section className="content"><p>Módulo Posição desativado pelo administrador.</p></section>
         ) : view === "Meus créditos" ? (
           <CreditsPage />
         ) : view === "Admin — AIS, IA e Créditos" ? (
