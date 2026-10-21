@@ -6987,3 +6987,25 @@ form.modal::-webkit-scrollbar-thumb {
     box-shadow: 0 -8px 24px rgba(4, 18, 22, 0.65), 0 18px 32px rgba(32, 199, 158, 0.18);
   }
 }
+
+
+/* V227 — correção de legibilidade nos dropdowns nativos */
+.modal select option,
+.modal select optgroup,
+.form select option,
+.form select optgroup,
+.settings select option,
+.settings select optgroup,
+select option,
+select optgroup {
+  color: #0a2328;
+  background: #f4f7f7;
+}
+
+.modal select option:checked,
+.form select option:checked,
+.settings select option:checked,
+select option:checked {
+  color: #ffffff;
+  background: #1f66d1;
+}
