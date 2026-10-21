@@ -6586,3 +6586,404 @@ main.loginpage{
 /* V221 - diagnóstico da clorofila por satélite */
 .environment-map-empty{position:absolute;z-index:9;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100% - 90px));padding:14px 16px;border-radius:14px;background:#04191eee;border:1px solid #3c6972;box-shadow:0 14px 35px #001015aa;text-align:center;color:#d9eef1;display:grid;gap:5px;pointer-events:none}.environment-map-empty b{font-size:12px;letter-spacing:.08em;color:#a6f4d8}.environment-map-empty span{font-size:10px;line-height:1.45;color:#98bbc2}.position-current-grid article>em{display:block;margin-top:5px;font-size:8px;line-height:1.3;font-style:normal;color:#6f9ca5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 @media(max-width:760px){.environment-map-empty{width:min(300px,calc(100% - 72px));padding:12px}.environment-map-empty b{font-size:11px}}
+
+
+/* V226 — revisão visual global dos formulários */
+.overlay {
+  backdrop-filter: blur(10px);
+}
+
+.overlay .modal,
+.modal.form,
+form.modal {
+  width: min(840px, 100%);
+  max-height: min(92vh, 980px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(55, 120, 126, 0.88);
+  background:
+    radial-gradient(circle at top right, rgba(43, 212, 170, 0.10), transparent 26%),
+    linear-gradient(180deg, rgba(13, 39, 47, 0.98), rgba(8, 27, 33, 0.98));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 165, 165, 0.7) rgba(7, 26, 30, 0.9);
+}
+
+.overlay .modal::-webkit-scrollbar,
+.modal.form::-webkit-scrollbar,
+form.modal::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.overlay .modal::-webkit-scrollbar-thumb,
+.modal.form::-webkit-scrollbar-thumb,
+form.modal::-webkit-scrollbar-thumb {
+  background: rgba(91, 170, 170, 0.75);
+  border-radius: 999px;
+  border: 2px solid rgba(7, 26, 30, 0.9);
+}
+
+.modalx {
+  right: 14px;
+  top: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #95b7bc;
+  background: rgba(9, 30, 36, 0.85);
+  border: 1px solid rgba(54, 99, 108, 0.95);
+  cursor: pointer;
+  transition: transform .16s ease, border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+.modalx:hover {
+  transform: translateY(-1px);
+  border-color: #45d9b4;
+  color: #e9fffa;
+  background: rgba(12, 40, 47, 0.95);
+}
+
+.modal > small {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #4be0b8;
+  letter-spacing: .18em;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.modal h2 {
+  margin: 0 0 8px;
+  padding-right: 44px;
+  font-size: clamp(24px, 2vw, 30px);
+  line-height: 1.15;
+}
+
+.modal p {
+  margin: 0 0 16px;
+  color: #8aacb1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form,
+.modal.form {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.modal label,
+.form label {
+  display: grid;
+  gap: 8px;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #afc7cb;
+  font-weight: 700;
+}
+
+.modal input,
+.modal select,
+.modal textarea,
+.form input,
+.form select,
+.form textarea {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 0;
+  padding: 14px 15px;
+  border-radius: 12px;
+  border: 1px solid #2b5058;
+  background: linear-gradient(180deg, rgba(7, 27, 31, 0.97), rgba(5, 21, 25, 0.97));
+  color: #f2fffd;
+  font-size: 15px;
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.modal input::placeholder,
+.modal textarea::placeholder,
+.form input::placeholder,
+.form textarea::placeholder {
+  color: #6d9197;
+}
+
+.modal input:hover,
+.modal select:hover,
+.modal textarea:hover,
+.form input:hover,
+.form select:hover,
+.form textarea:hover {
+  border-color: #38727c;
+}
+
+.modal input:focus,
+.modal select:focus,
+.modal textarea:focus,
+.form input:focus,
+.form select:focus,
+.form textarea:focus {
+  border-color: #38dbb4;
+  box-shadow: 0 0 0 3px rgba(56, 219, 180, 0.14);
+  background: linear-gradient(180deg, rgba(9, 33, 38, 1), rgba(6, 23, 28, 1));
+}
+
+.modal input[type="checkbox"],
+.modal input[type="radio"],
+.form input[type="checkbox"],
+.form input[type="radio"] {
+  width: 18px !important;
+  min-height: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: #37d9b1;
+  box-shadow: none;
+}
+
+.twocol,
+.inline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.inline {
+  grid-template-columns: minmax(0, 1fr) 140px;
+}
+
+.weight {
+  min-height: 56px;
+  margin-top: 0;
+  border: 1px solid #2b5058;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(7, 27, 31, 0.97), rgba(5, 21, 25, 0.97));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.weight:focus-within {
+  border-color: #38dbb4;
+  box-shadow: 0 0 0 3px rgba(56, 219, 180, 0.14);
+}
+
+.weight input {
+  min-height: 54px;
+  padding: 12px 15px;
+  font-size: clamp(20px, 2.6vw, 26px);
+  font-weight: 800;
+  letter-spacing: .01em;
+  background: transparent !important;
+}
+
+.weight span {
+  padding: 0 16px;
+  color: #81a4a9;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modal fieldset,
+.form fieldset,
+.coords,
+.catch-fields,
+.discard-condition {
+  margin: 0;
+  border-radius: 16px;
+}
+
+.coords,
+.catch-fields,
+.modal fieldset,
+.form fieldset {
+  padding: 14px;
+  border: 1px solid rgba(45, 91, 99, 0.95);
+  background: rgba(6, 28, 34, 0.58);
+}
+
+.coords legend,
+.catch-fields legend,
+.modal fieldset legend,
+.form fieldset legend {
+  padding: 0 8px;
+  color: #49dcb6;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+
+.coords label small,
+.modal label > small,
+.field-hint,
+.modal small.field-hint {
+  float: none;
+  display: block;
+  color: #7da0a4 !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.coords input {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+
+.newset {
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(50, 100, 106, 0.95);
+  background: linear-gradient(140deg, rgba(8, 35, 41, 0.98), rgba(7, 28, 34, 0.92));
+  gap: 7px;
+}
+
+.newset b {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.newset span {
+  color: #86a6ab;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.overnight-set-option {
+  margin-top: -4px !important;
+  padding: 14px 16px;
+  border: 1px solid rgba(49, 106, 100, 0.9);
+  border-radius: 14px;
+  background: rgba(10, 43, 38, 0.7);
+  color: #d7f7f1 !important;
+}
+
+.category-entry {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px 0;
+}
+
+.discard-condition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 146, 146, .28);
+  background: rgba(56, 26, 31, 0.22);
+}
+
+.discard-condition label {
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0 !important;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(14, 41, 44, 0.95);
+}
+
+.save {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #33d9b2, #20c79e);
+  color: #032821;
+  padding: 15px 18px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  box-shadow: 0 18px 32px rgba(32, 199, 158, 0.18);
+  cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+}
+
+.save:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+  box-shadow: 0 20px 34px rgba(32, 199, 158, 0.24);
+}
+
+.save:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.error {
+  margin-top: -2px;
+  padding: 12px 14px;
+  border: 1px solid rgba(196, 92, 92, 0.45);
+  border-radius: 12px;
+  background: rgba(74, 24, 28, 0.4);
+  color: #ffb5b5;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .overlay {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .overlay .modal,
+  .modal.form,
+  form.modal {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 22px 16px 16px;
+    border-radius: 20px 20px 14px 14px;
+  }
+
+  .modal h2 {
+    padding-right: 36px;
+    font-size: 24px;
+  }
+
+  .modal label,
+  .form label {
+    font-size: 13px;
+  }
+
+  .modal input,
+  .modal select,
+  .modal textarea,
+  .form input,
+  .form select,
+  .form textarea {
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  .twocol,
+  .inline,
+  .category-entry,
+  .catch-fields .twocol {
+    grid-template-columns: 1fr;
+  }
+
+  .weight input {
+    font-size: 22px;
+  }
+
+  .save {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    margin-top: 8px;
+    box-shadow: 0 -8px 24px rgba(4, 18, 22, 0.65), 0 18px 32px rgba(32, 199, 158, 0.18);
+  }
+}
