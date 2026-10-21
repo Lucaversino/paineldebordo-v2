@@ -7026,3 +7026,17 @@ select option:checked {
 .position-generate:hover:not(:disabled){filter:brightness(1.09)}
 .position-generate:disabled{opacity:.45;cursor:not-allowed}
 .position-row-actions button:disabled,.position-buttons button:disabled{opacity:.4;cursor:not-allowed}
+
+
+/* V231 — turma leste/oeste com chefe central */
+.position-chief-card{padding:12px;border:1px solid #31555c;border-radius:12px;background:#082129}
+.position-side-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.position-side-card{display:grid;gap:10px;padding:14px;border:1px solid #2c535c;border-radius:14px;background:#0a2027;min-width:0}
+.position-side-card h3{margin:0;color:#effcf8;font-size:15px}
+.position-side-card .position-name-list{max-height:320px}
+.position-name-list.side-list label{grid-template-columns:72px minmax(0,1fr)}
+@media(max-width:900px){.position-side-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.position-name-list.side-list label{grid-template-columns:78px minmax(0,1fr)}}
+
+/* V232 — rumo não editável calculado pelas pontas */
+.position-panel input[readonly]{cursor:default;color:#48e2c2;background:#0c2b30;border-color:#32796b;font-weight:900}.position-panel input[readonly]:focus{box-shadow:none}
