@@ -7040,3 +7040,27 @@ select option:checked {
 
 /* V232 — rumo não editável calculado pelas pontas */
 .position-panel input[readonly]{cursor:default;color:#48e2c2;background:#0c2b30;border-color:#32796b;font-weight:900}.position-panel input[readonly]:focus{box-shadow:none}
+
+
+/* V235 — destaque da posição central */
+.position-table-wrap tr.position-central-row td{
+  background: linear-gradient(180deg, rgba(130,18,24,.95), rgba(88,10,18,.95));
+  color:#fff4f4;
+  border-bottom-color: rgba(255,140,140,.45);
+  border-top:1px solid rgba(255,140,140,.45);
+}
+.position-table-wrap tr.position-central-row td strong{
+  color:#ffffff;
+}
+.position-table-wrap tr.position-central-row td:first-child{
+  box-shadow: inset 4px 0 0 #ff7a7a;
+}
+.position-table-wrap tr.position-central-row .position-row-actions button{
+  background:#5d1018;
+  border-color:#d96a77;
+  color:#fff2f2;
+}
+.position-table-wrap tr.position-central-row .position-row-actions button:hover{
+  background:#7b1420;
+  border-color:#ff9aa4;
+}

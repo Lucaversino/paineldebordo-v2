@@ -367,7 +367,7 @@ Conferir na carta náutica antes de usar.`;
             </thead>
             <tbody>
               {result.boats.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} className={b.slot === 0 ? "position-central-row" : undefined}>
                   <td><strong>{b.name}</strong></td>
                   <td>{sideLabel(b.slot, gapValue)}</td>
                   <td>{formatPoint(b.start)}</td>
