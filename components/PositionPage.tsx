@@ -223,7 +223,7 @@ Conferir na carta náutica antes de usar.`;
     pdf.setFontSize(16);
     pdf.text(result.title.slice(0, 65), 12, 16);
     pdf.setFontSize(9);
-    pdf.text(`Rumo verdadeiro ${result.actualBearing.toFixed(2)}° | Rumo magnetico ${result.magneticBearing.toFixed(2)}° M | Variacao ${result.declination.toFixed(2)}° | ${WMM_MODEL} ${result.magneticDate}`, 12, 24);
+    pdf.text(`Rumo magnetico ${result.magneticBearing.toFixed(2)}° M | Variacao ${result.declination.toFixed(2)}° | ${WMM_MODEL} ${result.magneticDate}`, 12, 24);
     let y = 36;
     pdf.setFont("helvetica", "bold");
     pdf.text("Mestre", 12, y);
@@ -259,7 +259,7 @@ Conferir na carta náutica antes de usar.`;
         <Compass size={34} />
       </header>
 
-      <div className="position-warning">Ferramenta de planejamento, não de navegação ou prevenção de colisão. Confira datum WGS84, rumo verdadeiro, comprimento da rede, corrente, profundidade e afastamentos na carta náutica antes de distribuir posições.</div>
+      <div className="position-warning">Ferramenta de planejamento, não de navegação ou prevenção de colisão. Confira datum WGS84, rumo indicado, comprimento da rede, corrente, profundidade e afastamentos na carta náutica antes de distribuir posições.</div>
 
       <div className="position-layout">
         <div className="position-panel">
@@ -278,18 +278,17 @@ Conferir na carta náutica antes de usar.`;
             </fieldset>
           </div>
           <div className="position-duo">
-            <label>Rumo verdadeiro calculado automaticamente (°)<input type="text" readOnly aria-readonly="true" value={draft.error ? "—" : `${draft.actualBearing.toFixed(2)}°`} title="Derivado das pontas inicial e final; não pode ser editado" /><small className="position-muted">Determinado pelas coordenadas WGS84. Altere as pontas para mudar o rumo.</small></label>
+            <label>Rumo magnético calculado automaticamente (°M)<input type="text" readOnly aria-readonly="true" value={draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`} title="Calculado automaticamente a partir das pontas e da declinação magnética" /><small className="position-muted">Atualiza conforme as pontas e a data escolhida.</small></label>
             <label>Espaçamento por barco (MN)<input type="number" min="0.01" max="20" step="0.01" value={gap} onChange={(e) => setGap(e.target.value)} /></label>
           </div>
           <div className="position-duo">
             <label>Data da variação magnética<input type="date" min="2025-01-01" max="2029-12-31" value={magneticDate} onChange={(e) => setMagneticDate(e.target.value)} /></label>
             <label>Declinação magnética · WMM2025<input type="text" readOnly value={draft.error ? "—" : `${Math.abs(draft.declination).toFixed(2)}° ${draft.declination < 0 ? "Oeste (W)" : "Leste (E)"}`} /></label>
           </div>
-          <p className="position-muted">Modelo {WMM_MODEL} para a posição média da rede e a data escolhida. Rumo magnético = rumo verdadeiro − declinação. A geração das coordenadas continua usando o rumo verdadeiro.</p>
+          <p className="position-muted">Modelo {WMM_MODEL} para a posição média da rede e a data escolhida.</p>
           <div className="position-quick"><span>Espaçamento rápido:</span>{[0.2, 0.25, 0.3].map((x) => <button key={x} className={Number(gap) === x ? "active" : ""} type="button" onClick={() => setGap(String(x))}>{x.toLocaleString("pt-BR")} MN</button>)}</div>
           <div className="position-metrics">
             <span>Rede entre pontas <strong>{draft.netLength.toFixed(2)} MN</strong></span>
-            <span>Rumo verdadeiro (T) <strong>{draft.error ? "—" : `${draft.actualBearing.toFixed(2)}° T`}</strong></span>
             <span>Rumo magnético (M) <strong>{draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`}</strong></span>
           </div>
           
