@@ -101,6 +101,8 @@ export default function PositionPage() {
 
   const fleetNames = useMemo(() => buildFleetOrder(westNames, chiefName, eastNames), [westNames, chiefName, eastNames]);
   const totalBoats = westNames.length + eastNames.length + 1;
+  const normalizedChiefName = chiefName.trim().toLocaleLowerCase();
+  const isChiefBoat = (name: string) => name.trim().toLocaleLowerCase() === normalizedChiefName;
 
   const draft = useMemo(() => {
     try {
@@ -367,7 +369,7 @@ Conferir na carta náutica antes de usar.`;
             </thead>
             <tbody>
               {result.boats.map((b) => (
-                <tr key={b.id} className={b.slot === 0 ? "position-central-row" : undefined}>
+                <tr key={b.id} className={isChiefBoat(b.name) ? "position-central-row" : undefined}>
                   <td><strong>{b.name}</strong></td>
                   <td>{sideLabel(b.slot, gapValue)}</td>
                   <td>{formatPoint(b.start)}</td>
