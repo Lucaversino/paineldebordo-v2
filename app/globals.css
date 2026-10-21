@@ -7020,3 +7020,9 @@ select option:checked {
 @media(max-width:600px){.position-page{padding:13px;gap:12px}.position-panel{padding:15px;border-radius:14px}.position-coords,.position-duo{grid-template-columns:1fr}.position-name-list label{grid-template-columns:82px minmax(0,1fr)}.position-buttons{display:grid;grid-template-columns:1fr 1fr;width:100%}.position-buttons button:last-child{grid-column:1/-1}.position-table-wrap{margin:0 -8px}.position-head svg{display:none}}
 
 .position-row-actions{display:flex;gap:6px}
+
+/* V230 — geração explícita das posições */
+.position-generate{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;margin-top:16px;padding:12px 18px;border:1px solid #52e2c1;border-radius:12px;background:#23cfa8;color:#06292c;font-size:14px;font-weight:900;cursor:pointer;transition:filter .2s ease}
+.position-generate:hover:not(:disabled){filter:brightness(1.09)}
+.position-generate:disabled{opacity:.45;cursor:not-allowed}
+.position-row-actions button:disabled,.position-buttons button:disabled{opacity:.4;cursor:not-allowed}
