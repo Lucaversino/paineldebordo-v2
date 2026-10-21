@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, FileDown, Save, Share2, Trash2, Compass } from "lucide-react";
 import { bearing, distance, formatPoint, makeFleet, parsePosition, type BoatPosition } from "../lib/positionGeometry";
 import { formatCoordinateInput } from "../lib/marineCoordinate";
+import { magneticDeclination, WMM_MODEL } from "../lib/wmm2025";
 
 type SavedGroup = {
   id: string;
@@ -81,6 +82,7 @@ export default function PositionPage() {
   const [endLon, setEndLon] = useState("51°1165");
   
   const [gap, setGap] = useState("0.25");
+  const [magneticDate, setMagneticDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [chiefName, setChiefName] = useState(initialChiefName);
   const [eastNames, setEastNames] = useState(initialEastNames);
   const [westNames, setWestNames] = useState(initialWestNames);
@@ -107,18 +109,24 @@ export default function PositionPage() {
       const actualBearing = bearing(a, b);
       const netLength = distance(a, b);
       if (netLength < 0.01) throw new Error("A ponta inicial e final não podem ser iguais.");
+      const ref = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+      const declination = magneticDeclination(ref.lat, ref.lon, new Date(`${magneticDate}T12:00:00Z`));
+      const magneticBearing = (actualBearing - declination + 360) % 360;
       const h = actualBearing;
       const g = Number(gap);
-      return { boats: makeFleet(a, b, h, g, fleetNames), actualBearing, netLength, error: "" };
+      return { boats: makeFleet(a, b, h, g, fleetNames), actualBearing, magneticBearing, declination, netLength, error: "" };
     } catch (e) {
-      return { boats: [] as BoatPosition[], actualBearing: 0, netLength: 0, error: e instanceof Error ? e.message : "Erro nos dados." };
+      return { boats: [] as BoatPosition[], actualBearing: 0, magneticBearing: 0, declination: 0, netLength: 0, error: e instanceof Error ? e.message : "Erro nos dados." };
     }
-  }, [startLat, startLon, endLat, endLon, gap, fleetNames]);
+  }, [startLat, startLon, endLat, endLon, gap, fleetNames, magneticDate]);
 
   const [generated, setGenerated] = useState<null | {
     signature: string;
     boats: BoatPosition[];
     actualBearing: number;
+    magneticBearing: number;
+    declination: number;
+    magneticDate: string;
     netLength: number;
     heading: string;
     gap: string;
@@ -126,9 +134,9 @@ export default function PositionPage() {
   }>(null);
 
   const heading = draft.error ? "" : String(draft.actualBearing);
-  const signature = JSON.stringify([title, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames]);
+  const signature = JSON.stringify([title, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames, magneticDate]);
   const isOutdated = !!generated && generated.signature !== signature;
-  const result = generated ? { ...generated, error: "" } : { boats: [] as BoatPosition[], actualBearing: 0, netLength: 0, error: "" };
+  const result = generated ? { ...generated, error: "" } : { boats: [] as BoatPosition[], actualBearing: 0, magneticBearing: 0, declination: 0, magneticDate, netLength: 0, error: "" };
   const gapValue = Number(result.gap || gap || 0);
 
   const generatePositions = () => {
@@ -136,7 +144,7 @@ export default function PositionPage() {
       setMessage(draft.error);
       return;
     }
-    setGenerated({ signature, boats: draft.boats, actualBearing: draft.actualBearing, netLength: draft.netLength, heading, gap, title });
+    setGenerated({ signature, boats: draft.boats, actualBearing: draft.actualBearing, magneticBearing: draft.magneticBearing, declination: draft.declination, magneticDate, netLength: draft.netLength, heading, gap, title });
     setMessage(`Posições geradas para ${draft.boats.length} embarcações. Confira os dados antes de compartilhar.`);
   };
 
@@ -215,7 +223,7 @@ Conferir na carta náutica antes de usar.`;
     pdf.setFontSize(16);
     pdf.text(result.title.slice(0, 65), 12, 16);
     pdf.setFontSize(9);
-    pdf.text(`Rumo de referência ${result.heading}° | Espaçamento ${result.gap} MN | Rede base ${result.netLength.toFixed(2)} MN | ${new Date().toLocaleString("pt-BR")}`, 12, 24);
+    pdf.text(`Rumo verdadeiro ${result.actualBearing.toFixed(2)}° | Rumo magnetico ${result.magneticBearing.toFixed(2)}° M | Variacao ${result.declination.toFixed(2)}° | ${WMM_MODEL} ${result.magneticDate}`, 12, 24);
     let y = 36;
     pdf.setFont("helvetica", "bold");
     pdf.text("Mestre", 12, y);
@@ -273,11 +281,16 @@ Conferir na carta náutica antes de usar.`;
             <label>Rumo verdadeiro calculado automaticamente (°)<input type="text" readOnly aria-readonly="true" value={draft.error ? "—" : `${draft.actualBearing.toFixed(2)}°`} title="Derivado das pontas inicial e final; não pode ser editado" /><small className="position-muted">Determinado pelas coordenadas WGS84. Altere as pontas para mudar o rumo.</small></label>
             <label>Espaçamento por barco (MN)<input type="number" min="0.01" max="20" step="0.01" value={gap} onChange={(e) => setGap(e.target.value)} /></label>
           </div>
+          <div className="position-duo">
+            <label>Data da variação magnética<input type="date" min="2025-01-01" max="2029-12-31" value={magneticDate} onChange={(e) => setMagneticDate(e.target.value)} /></label>
+            <label>Declinação magnética · WMM2025<input type="text" readOnly value={draft.error ? "—" : `${Math.abs(draft.declination).toFixed(2)}° ${draft.declination < 0 ? "Oeste (W)" : "Leste (E)"}`} /></label>
+          </div>
+          <p className="position-muted">Modelo {WMM_MODEL} para a posição média da rede e a data escolhida. Rumo magnético = rumo verdadeiro − declinação. A geração das coordenadas continua usando o rumo verdadeiro.</p>
           <div className="position-quick"><span>Espaçamento rápido:</span>{[0.2, 0.25, 0.3].map((x) => <button key={x} className={Number(gap) === x ? "active" : ""} type="button" onClick={() => setGap(String(x))}>{x.toLocaleString("pt-BR")} MN</button>)}</div>
           <div className="position-metrics">
             <span>Rede entre pontas <strong>{draft.netLength.toFixed(2)} MN</strong></span>
-            <span>Rumo calculado entre pontas <strong>{draft.error ? "—" : `${draft.actualBearing.toFixed(2)}°`}</strong></span>
-            <span>Rumo usado na geração <strong>{draft.error ? "—" : `${draft.actualBearing.toFixed(2)}°`}</strong></span>
+            <span>Rumo verdadeiro (T) <strong>{draft.error ? "—" : `${draft.actualBearing.toFixed(2)}° T`}</strong></span>
+            <span>Rumo magnético (M) <strong>{draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`}</strong></span>
           </div>
           
           {draft.error && <p className="position-alert">{draft.error}</p>}
