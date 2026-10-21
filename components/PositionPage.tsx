@@ -12,8 +12,7 @@ function escapeXml(s:string){return s.replace(/[<>&'"]/g,(c)=>({"<":"&lt;",">":"
 function gpxOf(boats:BoatPosition[],title:string){return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Painel de Bordo" xmlns="http://www.topografix.com/GPX/1/1">
 <metadata><name>${escapeXml(title)}</name></metadata>
-${boats.map((b,i)=>`<rte><name>${escapeXml(`${i+1} ${b.name}`)}</name><rtept lat="${b.start.lat.toFixed(8)}" lon="${b.start.lon.toFixed(8)}"><name>Inicio ${escapeXml(b.name)}</name></rtept><rtept lat="${b.end.lat.toFixed(8)}" lon="${b.end.lon.toFixed(8)}"><name>Final ${escapeXml(b.name)}</name></rtept></rte>`).join("
-")}
+${boats.map((b,i)=>`<rte><name>${escapeXml(`${i+1} ${b.name}`)}</name><rtept lat="${b.start.lat.toFixed(8)}" lon="${b.start.lon.toFixed(8)}"><name>Inicio ${escapeXml(b.name)}</name></rtept><rtept lat="${b.end.lat.toFixed(8)}" lon="${b.end.lon.toFixed(8)}"><name>Final ${escapeXml(b.name)}</name></rtept></rte>`).join("\n")}
 </gpx>`;}
 export default function PositionPage(){
  const [title,setTitle]=useState("Turma de pesca");const [startLat,setStartLat]=useState("32°1494"),[startLon,setStartLon]=useState("51°1813"),[endLat,setEndLat]=useState("32°0667"),[endLon,setEndLon]=useState("51°1165");
