@@ -88,6 +88,21 @@ const normalizeSpeciesName = (value: unknown) =>
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+const getCatchCategoryLabel = (catchType: string) =>
+  catchType === "MIXTURE" ? "Mistura" : catchType === "DISCARD" ? "Descarte" : "Corvina";
+const getCatchConditionLabel = (catchType: string, discardCondition?: string | null) =>
+  catchType === "DISCARD"
+    ? discardCondition === "VIVO"
+      ? "Vivo"
+      : discardCondition === "MORTO"
+        ? "Morto"
+        : "Não informado"
+    : "—";
+const buildSketchfabEmbedUrl = (url: string) => {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}autostart=1&transparent=1&ui_infos=0&ui_controls=0&ui_stop=0&ui_hint=0&ui_watermark=0&ui_watermark_link=0&dnt=1`;
+};
+const monthLabel = (date: Date) => date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }).replace(/^./, (letter) => letter.toUpperCase());
 
 const species3DModels: Record<string, { title: string; embedUrl: string; modelUrl: string; author: string; authorUrl: string }> = {
   corvina: {
@@ -111,24 +126,16 @@ function Species3DViewer({ commonName }: { commonName: unknown }) {
   if (!model) return null;
 
   return (
-    <div className="species-3d">
-      <div className="species-3d-head">
-        <span>MODELO 3D</span>
-        <small>Arraste para girar • role para aproximar</small>
-      </div>
-      <div className="species-3d-frame">
+    <div className="species-3d species-3d-clean">
+      <div className="species-3d-frame species-3d-frame-clean">
         <iframe
           title={model.title}
-          src={model.embedUrl}
+          src={buildSketchfabEmbedUrl(model.embedUrl)}
           loading="lazy"
           allow="autoplay; fullscreen; xr-spatial-tracking"
           allowFullScreen
         />
       </div>
-      <p className="species-3d-credit">
-        <a href={model.modelUrl} target="_blank" rel="nofollow noreferrer">{model.title.replace(" 3D", "")}</a> por{` `}
-        <a href={model.authorUrl} target="_blank" rel="nofollow noreferrer">{model.author}</a> no Sketchfab
-      </p>
     </div>
   );
 }
@@ -149,6 +156,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     [saving, setSaving] = useState(false),
     [selectedFinishedTripId, setSelectedFinishedTripId] = useState<number | null>(null),
     [openSetTripIds, setOpenSetTripIds] = useState<number[]>([]),
+    [openCatchTripIds, setOpenCatchTripIds] = useState<number[]>([]),
     [openCompareYears, setOpenCompareYears] = useState<number[]>([]),
     [compareTripId, setCompareTripId] = useState<number | null>(null),
     [annualYear, setAnnualYear] = useState<number | null>(null),
@@ -207,6 +215,12 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     const active = s.trips.find((trip) => trip.status === "IN_PROGRESS");
     if (!active) return;
     setOpenSetTripIds((currentIds) => currentIds.includes(Number(active.id)) ? currentIds : [Number(active.id), ...currentIds]);
+  }, [view, s.trips]);
+  useEffect(() => {
+    if (view !== "Capturas") return;
+    const active = s.trips.find((trip) => trip.status === "IN_PROGRESS");
+    if (!active) return;
+    setOpenCatchTripIds((currentIds) => currentIds.includes(Number(active.id)) ? currentIds : [Number(active.id), ...currentIds]);
   }, [view, s.trips]);
   async function syncEnvironmentalHistory() {
     if (envSyncing) return;
@@ -467,6 +481,47 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       ? ids.filter((id) => id !== Number(tripId))
       : [...ids, Number(tripId)]);
   };
+  const catchesWithContext = s.catches.map((item) => {
+    const relatedSet = s.sets.find((set) => Number(set.id) === Number(item.fishingSetId));
+    return { ...item, _set: relatedSet || null, _tripId: relatedSet ? Number(relatedSet.tripId) : null };
+  });
+  const catchTrips = s.trips
+    .filter((trip) => trip.status === "IN_PROGRESS" || trip.status === "FINISHED" || catchesWithContext.some((item) => Number(item._tripId) === Number(trip.id)))
+    .sort((a, b) => {
+      if (a.status === "IN_PROGRESS" && b.status !== "IN_PROGRESS") return -1;
+      if (b.status === "IN_PROGRESS" && a.status !== "IN_PROGRESS") return 1;
+      return Number(b.id) - Number(a.id);
+    });
+  const toggleCatchTripFolder = (tripId: number) => {
+    setOpenCatchTripIds((ids) => ids.includes(Number(tripId))
+      ? ids.filter((id) => id !== Number(tripId))
+      : [...ids, Number(tripId)]);
+  };
+  const currentMonthDate = new Date();
+  const monthlyCatchSummary = [
+    { key: "MAIN", title: "Corvina", accent: "main", items: catchesWithContext.filter((item) => item.catchType !== "MIXTURE" && item.catchType !== "DISCARD") },
+    { key: "MIXTURE", title: "Mistura", accent: "mix", items: catchesWithContext.filter((item) => item.catchType === "MIXTURE") },
+    { key: "DISCARD", title: "Descarte", accent: "discard", items: catchesWithContext.filter((item) => item.catchType === "DISCARD") },
+  ].map((group) => {
+    const monthlyItems = group.items.filter((item) => {
+      const date = new Date(item.caughtAt);
+      return date.getMonth() === currentMonthDate.getMonth() && date.getFullYear() === currentMonthDate.getFullYear();
+    });
+    const speciesMap = new Map<string, number>();
+    monthlyItems.forEach((item) => {
+      const name = String(item.species || "Não informada").trim() || "Não informada";
+      speciesMap.set(name, (speciesMap.get(name) || 0) + Number(item.weightKg || 0));
+    });
+    const species = Array.from(speciesMap.entries())
+      .map(([name, weightKg]) => ({ name, weightKg }))
+      .sort((a, b) => b.weightKg - a.weightKg || a.name.localeCompare(b.name));
+    return {
+      ...group,
+      count: monthlyItems.length,
+      totalKg: monthlyItems.reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
+      species,
+    };
+  });
   const finishedTripsByYear = s.trips
     .filter((trip) => trip.status === "FINISHED")
     .reduce<Record<number, any[]>>((groups, trip) => {
@@ -787,57 +842,158 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         </div>
       )}
       {view === "Capturas" && (
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Largada</th>
-                <th>Espécie</th>
-                <th>Categoria</th>
-                <th>Condição</th>
-                <th>Peso</th>
-                <th>Observação</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.catches.map((x) => (
-                <tr key={x.id}>
-                  <td>{new Date(x.caughtAt).toLocaleString("pt-BR")}</td>
-                  <td>
-                    #{s.sets.find((a) => a.id == x.fishingSetId)?.setNumber}
-                  </td>
-                  <td>{x.species}</td>
-                  <td>{x.catchType === "MIXTURE" ? "Mistura" : x.catchType === "DISCARD" ? "Descarte" : "Corvina"}</td>
-                  <td>{x.catchType === "DISCARD" ? (x.discardCondition === "VIVO" ? "Vivo" : x.discardCondition === "MORTO" ? "Morto" : "Não informado") : "—"}</td>
-                  <td>
-                    <b>{f(x.weightKg)} kg</b>
-                  </td>
-                  <td>{x.notes || "—"}</td>
-                  <td>
-                    <div className="rowactions">
-                      <button
-                        className="editbtn"
-                        onClick={() => setEditingCatch(x)}
-                      >
-                        <Pencil /> Editar
-                      </button>
-                      <button
-                        className="deletebtn"
-                        onClick={() => remove("catch", x.id)}
-                      >
-                        <Trash2 /> Excluir
-                      </button>
+        <div className="set-trip-folders capture-trip-folders">
+          <div className="set-trip-folders-intro">
+            <FolderOpen />
+            <div>
+              <small>CAPTURAS SEPARADAS POR VIAGEM</small>
+              <b>Cada viagem guarda suas capturas em uma pasta</b>
+              <span>Veja as capturas por viagem e acompanhe, neste mês, as espécies registradas em Corvina, Mistura e Descarte.</span>
+            </div>
+          </div>
+
+          <section className="capture-month-summary">
+            <div className="capture-month-summary-head">
+              <div>
+                <small>ESPÉCIES CAPTURADAS NESTE MÊS</small>
+                <b>{monthLabel(currentMonthDate)}</b>
+              </div>
+              <span>{monthlyCatchSummary.reduce((sum, group) => sum + group.totalKg, 0).toLocaleString("pt-BR")} kg registrados</span>
+            </div>
+            <div className="capture-month-grid">
+              {monthlyCatchSummary.map((group) => (
+                <article key={group.key} className={`capture-month-card ${group.accent}`}>
+                  <header>
+                    <small>{group.title.toUpperCase()}</small>
+                    <b>{f(group.totalKg)} kg</b>
+                    <span>{group.count} {group.count === 1 ? "lançamento" : "lançamentos"}</span>
+                  </header>
+                  {group.species.length ? (
+                    <div className="capture-month-species">
+                      {group.species.map((item) => (
+                        <div key={`${group.key}-${item.name}`} className="capture-month-species-row">
+                          <strong>{item.name}</strong>
+                          <em>{f(item.weightKg)} kg</em>
+                        </div>
+                      ))}
                     </div>
-                  </td>
-                </tr>
+                  ) : (
+                    <div className="capture-month-empty">Nenhuma captura nesta categoria durante este mês.</div>
+                  )}
+                </article>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </section>
+
+          {catchTrips.map((trip) => {
+            const tripCatches = catchesWithContext.filter((item) => Number(item._tripId) === Number(trip.id));
+            const isOpen = openCatchTripIds.includes(Number(trip.id));
+            const isCurrent = trip.status === "IN_PROGRESS";
+            const firstCatch = tripCatches.length
+              ? new Date(Math.min(...tripCatches.map((item) => new Date(item.caughtAt).getTime())))
+              : null;
+            const lastCatch = tripCatches.length
+              ? new Date(Math.max(...tripCatches.map((item) => new Date(item.caughtAt).getTime())))
+              : null;
+            const tripTotals = {
+              main: tripCatches.filter((item) => item.catchType !== "MIXTURE" && item.catchType !== "DISCARD").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
+              mix: tripCatches.filter((item) => item.catchType === "MIXTURE").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
+              discard: tripCatches.filter((item) => item.catchType === "DISCARD").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
+            };
+
+            return (
+              <section key={trip.id} className={`set-trip-folder ${isCurrent ? "current" : "finished"} ${isOpen ? "open" : ""}`}>
+                <button type="button" className="set-trip-folder-head" onClick={() => toggleCatchTripFolder(Number(trip.id))}>
+                  <span className="set-trip-folder-icon">{isOpen ? <FolderOpen /> : <Folder />}</span>
+                  <span className="set-trip-folder-copy">
+                    <small>{isCurrent ? "VIAGEM EM ANDAMENTO" : "VIAGEM FINALIZADA"}</small>
+                    <b>{trip.name}</b>
+                    <em>
+                      {tripCatches.length} {tripCatches.length === 1 ? "captura" : "capturas"}
+                      {firstCatch && lastCatch ? ` • ${firstCatch.toLocaleDateString("pt-BR")} → ${lastCatch.toLocaleDateString("pt-BR")}` : ""}
+                    </em>
+                  </span>
+                  <span className={`set-trip-folder-status ${isCurrent ? "current" : "finished"}`}>
+                    {isCurrent ? "EM ANDAMENTO" : "FINALIZADA"}
+                  </span>
+                  <span className="set-trip-folder-chevron">{isOpen ? <ChevronDown /> : <ChevronRight />}</span>
+                </button>
+
+                {isOpen && (
+                  <div className="set-trip-folder-body">
+                    {tripCatches.length ? (
+                      <>
+                        <div className="capture-trip-stats">
+                          <article>
+                            <small>CORVINA</small>
+                            <b>{f(tripTotals.main)} kg</b>
+                          </article>
+                          <article>
+                            <small>MISTURA</small>
+                            <b>{f(tripTotals.mix)} kg</b>
+                          </article>
+                          <article className="discard">
+                            <small>DESCARTE</small>
+                            <b>{f(tripTotals.discard)} kg</b>
+                          </article>
+                        </div>
+                        <div className="tablewrap set-trip-tablewrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Data</th>
+                                <th>Largada</th>
+                                <th>Espécie</th>
+                                <th>Categoria</th>
+                                <th>Condição</th>
+                                <th>Peso</th>
+                                <th>Observação</th>
+                                <th>Ações</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tripCatches
+                                .sort((a, b) => new Date(b.caughtAt).getTime() - new Date(a.caughtAt).getTime())
+                                .map((x) => (
+                                  <tr key={x.id}>
+                                    <td>{new Date(x.caughtAt).toLocaleString("pt-BR")}</td>
+                                    <td>#{x._set?.setNumber || "—"}</td>
+                                    <td>{x.species}</td>
+                                    <td><span className={`catch-category-pill ${x.catchType === "MIXTURE" ? "mix" : x.catchType === "DISCARD" ? "discard" : "main"}`}>{getCatchCategoryLabel(x.catchType)}</span></td>
+                                    <td>{getCatchConditionLabel(x.catchType, x.discardCondition)}</td>
+                                    <td><b>{f(x.weightKg)} kg</b></td>
+                                    <td>{x.notes || "—"}</td>
+                                    <td>
+                                      <div className="rowactions">
+                                        <button className="editbtn" onClick={() => setEditingCatch(x)}>
+                                          <Pencil /> Editar
+                                        </button>
+                                        <button className="deletebtn" onClick={() => remove("catch", x.id)}>
+                                          <Trash2 /> Excluir
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="set-trip-folder-empty">Nenhuma captura registrada nesta viagem.</div>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {!catchTrips.length && (
+            <div className="set-trip-folder-empty standalone">Nenhuma viagem com capturas encontrada.</div>
+          )}
         </div>
       )}
-      {view === "Embarcações" && onboardingActive && s.trips.length === 0 && (
+            {view === "Embarcações" && onboardingActive && s.trips.length === 0 && (
         <section className={`onboarding-card ${s.boats.length ? "complete" : "active"}`}>
           <div className="onboarding-step">PASSO 1 DE 2</div>
           <div className="onboarding-card-copy">

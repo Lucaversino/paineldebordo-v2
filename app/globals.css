@@ -7070,3 +7070,51 @@ select option:checked {
 .position-mode-controls label{display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:800;color:#d7f7ee}
 .position-mode-controls input[type=checkbox]{width:19px;min-width:19px;min-height:19px;height:19px;accent-color:#27d6ab}
 @media(max-width:600px){.position-mode-controls{display:grid;grid-template-columns:1fr}}
+
+
+.capture-month-summary{display:grid;gap:14px;padding:16px;border:1px solid #1f5158;border-radius:14px;background:#08242a}
+.capture-month-summary-head{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.capture-month-summary-head small{display:block;font-size:8px;font-weight:950;letter-spacing:.12em;color:#42ddb6}
+.capture-month-summary-head b{display:block;font-size:18px;color:#effffb}
+.capture-month-summary-head span{font-size:11px;color:#8eb3b8}
+.capture-month-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.capture-month-card{border:1px solid #244f57;border-radius:14px;background:#071f25;padding:14px;display:grid;gap:12px}
+.capture-month-card header{display:grid;gap:4px}
+.capture-month-card header small{font-size:8px;font-weight:950;letter-spacing:.12em;color:#77a8af}
+.capture-month-card header b{font-size:24px;color:#effffb}
+.capture-month-card header span{font-size:10px;color:#86aeb3}
+.capture-month-card.main header b{color:#53dfb8}.capture-month-card.mix header b{color:#8ce5ff}.capture-month-card.discard header b{color:#ffb3b3}
+.capture-month-species{display:grid;gap:8px}
+.capture-month-species-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#0d2e35;border:1px solid #1f4e56}
+.capture-month-species-row strong{font-size:12px;color:#f0fffb}.capture-month-species-row em{font-style:normal;font-size:11px;color:#8fe3ff;font-weight:700}
+.capture-month-empty{padding:14px;border-radius:10px;border:1px dashed #2c5257;color:#82a9ae;font-size:11px;text-align:center}
+.capture-trip-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 10px}
+.capture-trip-stats article{border:1px solid #214c54;border-radius:12px;background:#08242a;padding:12px;display:grid;gap:3px}
+.capture-trip-stats article small{font-size:8px;font-weight:950;letter-spacing:.12em;color:#76aab0}.capture-trip-stats article b{font-size:20px;color:#53dfb8}.capture-trip-stats article.discard b{color:#ffb3b3}
+.catch-category-pill{display:inline-flex;align-items:center;justify-content:center;min-width:78px;padding:6px 10px;border-radius:999px;border:1px solid #2e5c63;background:#11343a;color:#e9fffb;font-size:10px;font-weight:800;letter-spacing:.03em}
+.catch-category-pill.main{border-color:#2c7b68;background:#123a33;color:#75f0ca}.catch-category-pill.mix{border-color:#3b6d78;background:#14323a;color:#8de6ff}.catch-category-pill.discard{border-color:#7b4343;background:#361919;color:#ffbebe}
+.app:not(.dark) .capture-month-summary,.app:not(.dark) .capture-month-card,.app:not(.dark) .capture-trip-stats article{background:#fff;border-color:#c5d9d6}
+.app:not(.dark) .capture-month-card header b,.app:not(.dark) .capture-month-summary-head b{color:#173a41}
+@media(max-width:980px){.capture-month-grid,.capture-trip-stats{grid-template-columns:1fr}}
+@media(max-width:760px){.capture-month-summary{padding:12px}.capture-month-summary-head b{font-size:15px}.capture-month-card{padding:12px}.capture-month-card header b{font-size:20px}.capture-month-species-row strong{font-size:11px}.capture-month-species-row em{font-size:10px}}
+
+/* V242 — Capturas por viagem + 3D limpo de espécies */
+.species-3d.species-3d-clean{margin-top:18px;border:0;border-radius:0;overflow:visible;background:transparent}
+.species-3d-frame.species-3d-frame-clean{width:100%;aspect-ratio:16/10;background:transparent;border:0;border-radius:0;overflow:visible;filter:drop-shadow(0 12px 20px rgba(0,0,0,.22))}
+.species-3d-frame.species-3d-frame-clean iframe{background:transparent}
+.capture-month-summary{display:grid;gap:14px;padding:16px;border:1px solid #1f5158;border-radius:14px;background:#08242a}
+.capture-month-summary-head{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.capture-month-summary-head small{display:block;font-size:8px;font-weight:950;letter-spacing:.12em;color:#42ddb6}
+.capture-month-summary-head b{display:block;font-size:18px;color:#effffb}
+.capture-month-summary-head span{font-size:11px;color:#8eb3b8}
+.capture-month-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.capture-month-card{border:1px solid #244f57;border-radius:14px;background:#071f25;padding:14px;display:grid;gap:12px}
+.capture-month-card header{display:grid;gap:4px}.capture-month-card header small{font-size:8px;font-weight:950;letter-spacing:.12em;color:#77a8af}.capture-month-card header b{font-size:24px;color:#effffb}.capture-month-card header span{font-size:10px;color:#86aeb3}
+.capture-month-card.main header b{color:#53dfb8}.capture-month-card.mix header b{color:#8ce5ff}.capture-month-card.discard header b{color:#ffb3b3}
+.capture-month-species{display:grid;gap:8px}.capture-month-species-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;background:#0d2e35;border:1px solid #1f4e56}.capture-month-species-row strong{font-size:12px;color:#f0fffb}.capture-month-species-row em{font-style:normal;font-size:11px;color:#8fe3ff;font-weight:700}
+.capture-month-empty{padding:14px;border-radius:10px;border:1px dashed #2c5257;color:#82a9ae;font-size:11px;text-align:center}
+.capture-trip-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 10px}.capture-trip-stats article{border:1px solid #214c54;border-radius:12px;background:#08242a;padding:12px;display:grid;gap:3px}.capture-trip-stats article small{font-size:8px;font-weight:950;letter-spacing:.12em;color:#76aab0}.capture-trip-stats article b{font-size:20px;color:#53dfb8}.capture-trip-stats article.discard b{color:#ffb3b3}
+.catch-category-pill{display:inline-flex;align-items:center;justify-content:center;min-width:78px;padding:6px 10px;border-radius:999px;border:1px solid #2e5c63;background:#11343a;color:#e9fffb;font-size:10px;font-weight:800;letter-spacing:.03em}.catch-category-pill.main{border-color:#2c7b68;background:#123a33;color:#75f0ca}.catch-category-pill.mix{border-color:#3b6d78;background:#14323a;color:#8de6ff}.catch-category-pill.discard{border-color:#7b4343;background:#361919;color:#ffbebe}
+.app:not(.dark) .capture-month-summary,.app:not(.dark) .capture-month-card,.app:not(.dark) .capture-trip-stats article{background:#fff;border-color:#c5d9d6}.app:not(.dark) .capture-month-card header b,.app:not(.dark) .capture-month-summary-head b{color:#173a41}
+@media(max-width:980px){.capture-month-grid,.capture-trip-stats{grid-template-columns:1fr}}
+@media(max-width:760px){.capture-month-summary{padding:12px}.capture-month-summary-head b{font-size:15px}.capture-month-card{padding:12px}.capture-month-card header b{font-size:20px}.capture-month-species-row strong{font-size:11px}.capture-month-species-row em{font-size:10px}}
