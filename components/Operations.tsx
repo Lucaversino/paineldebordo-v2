@@ -497,31 +497,6 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       ? ids.filter((id) => id !== Number(tripId))
       : [...ids, Number(tripId)]);
   };
-  const currentMonthDate = new Date();
-  const monthlyCatchSummary = [
-    { key: "MAIN", title: "Corvina", accent: "main", items: catchesWithContext.filter((item) => item.catchType !== "MIXTURE" && item.catchType !== "DISCARD") },
-    { key: "MIXTURE", title: "Mistura", accent: "mix", items: catchesWithContext.filter((item) => item.catchType === "MIXTURE") },
-    { key: "DISCARD", title: "Descarte", accent: "discard", items: catchesWithContext.filter((item) => item.catchType === "DISCARD") },
-  ].map((group) => {
-    const monthlyItems = group.items.filter((item) => {
-      const date = new Date(item.caughtAt);
-      return date.getMonth() === currentMonthDate.getMonth() && date.getFullYear() === currentMonthDate.getFullYear();
-    });
-    const speciesMap = new Map<string, number>();
-    monthlyItems.forEach((item) => {
-      const name = String(item.species || "Não informada").trim() || "Não informada";
-      speciesMap.set(name, (speciesMap.get(name) || 0) + Number(item.weightKg || 0));
-    });
-    const species = Array.from(speciesMap.entries())
-      .map(([name, weightKg]) => ({ name, weightKg }))
-      .sort((a, b) => b.weightKg - a.weightKg || a.name.localeCompare(b.name));
-    return {
-      ...group,
-      count: monthlyItems.length,
-      totalKg: monthlyItems.reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
-      species,
-    };
-  });
   const finishedTripsByYear = s.trips
     .filter((trip) => trip.status === "FINISHED")
     .reduce<Record<number, any[]>>((groups, trip) => {
@@ -852,39 +827,6 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
             </div>
           </div>
 
-          <section className="capture-month-summary">
-            <div className="capture-month-summary-head">
-              <div>
-                <small>ESPÉCIES CAPTURADAS NESTE MÊS</small>
-                <b>{monthLabel(currentMonthDate)}</b>
-              </div>
-              <span>{monthlyCatchSummary.reduce((sum, group) => sum + group.totalKg, 0).toLocaleString("pt-BR")} kg registrados</span>
-            </div>
-            <div className="capture-month-grid">
-              {monthlyCatchSummary.map((group) => (
-                <article key={group.key} className={`capture-month-card ${group.accent}`}>
-                  <header>
-                    <small>{group.title.toUpperCase()}</small>
-                    <b>{f(group.totalKg)} kg</b>
-                    <span>{group.count} {group.count === 1 ? "lançamento" : "lançamentos"}</span>
-                  </header>
-                  {group.species.length ? (
-                    <div className="capture-month-species">
-                      {group.species.map((item) => (
-                        <div key={`${group.key}-${item.name}`} className="capture-month-species-row">
-                          <strong>{item.name}</strong>
-                          <em>{f(item.weightKg)} kg</em>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="capture-month-empty">Nenhuma captura nesta categoria durante este mês.</div>
-                  )}
-                </article>
-              ))}
-            </div>
-          </section>
-
           {catchTrips.map((trip) => {
             const tripCatches = catchesWithContext.filter((item) => Number(item._tripId) === Number(trip.id));
             const isOpen = openCatchTripIds.includes(Number(trip.id));
@@ -895,11 +837,23 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
             const lastCatch = tripCatches.length
               ? new Date(Math.max(...tripCatches.map((item) => new Date(item.caughtAt).getTime())))
               : null;
-            const tripTotals = {
-              main: tripCatches.filter((item) => item.catchType !== "MIXTURE" && item.catchType !== "DISCARD").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
-              mix: tripCatches.filter((item) => item.catchType === "MIXTURE").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
-              discard: tripCatches.filter((item) => item.catchType === "DISCARD").reduce((sum, item) => sum + Number(item.weightKg || 0), 0),
-            };
+            const tripGroups = [
+              { key: "MAIN", title: "Corvina", accent: "main", items: tripCatches.filter((item) => item.catchType !== "MIXTURE" && item.catchType !== "DISCARD") },
+              { key: "MIXTURE", title: "Mistura", accent: "mix", items: tripCatches.filter((item) => item.catchType === "MIXTURE") },
+              { key: "DISCARD", title: "Descarte", accent: "discard", items: tripCatches.filter((item) => item.catchType === "DISCARD") },
+            ].map((group) => {
+              const speciesTotals = new Map<string, number>();
+              group.items.forEach((item) => {
+                const name = String(item.species || "Não informada").trim() || "Não informada";
+                speciesTotals.set(name, (speciesTotals.get(name) || 0) + Number(item.weightKg || 0));
+              });
+              return {
+                ...group,
+                count: group.items.length,
+                totalKg: group.items.reduce((total, item) => total + Number(item.weightKg || 0), 0),
+                species: Array.from(speciesTotals, ([name, weightKg]) => ({ name, weightKg })).sort((a, b) => b.weightKg - a.weightKg),
+              };
+            });
 
             return (
               <section key={trip.id} className={`set-trip-folder ${isCurrent ? "current" : "finished"} ${isOpen ? "open" : ""}`}>
@@ -923,20 +877,35 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                   <div className="set-trip-folder-body">
                     {tripCatches.length ? (
                       <>
-                        <div className="capture-trip-stats">
-                          <article>
-                            <small>CORVINA</small>
-                            <b>{f(tripTotals.main)} kg</b>
-                          </article>
-                          <article>
-                            <small>MISTURA</small>
-                            <b>{f(tripTotals.mix)} kg</b>
-                          </article>
-                          <article className="discard">
-                            <small>DESCARTE</small>
-                            <b>{f(tripTotals.discard)} kg</b>
-                          </article>
-                        </div>
+                        <section className="capture-month-summary capture-trip-summary">
+                          <div className="capture-month-summary-head">
+                            <div>
+                              <small>ESPÉCIES CAPTURADAS NESTA VIAGEM</small>
+                              <b>{trip.name}</b>
+                            </div>
+                            <span>{f(tripGroups.reduce((total, group) => total + group.totalKg, 0))} kg registrados</span>
+                          </div>
+                          <div className="capture-month-grid">
+                            {tripGroups.map((group) => (
+                              <article key={group.key} className={`capture-month-card ${group.accent}`}>
+                                <header>
+                                  <small>{group.title.toUpperCase()}</small>
+                                  <b>{f(group.totalKg)} kg</b>
+                                  <span>{group.count} {group.count === 1 ? "lançamento" : "lançamentos"}</span>
+                                </header>
+                                {group.species.length ? (
+                                  <div className="capture-month-species">
+                                    {group.species.map((item) => (
+                                      <div className="capture-month-species-row" key={`${group.key}-${item.name}`}>
+                                        <strong>{item.name}</strong><em>{f(item.weightKg)} kg</em>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : <div className="capture-month-empty">Nenhuma captura nesta categoria durante a viagem.</div>}
+                              </article>
+                            ))}
+                          </div>
+                        </section>
                         <div className="tablewrap set-trip-tablewrap">
                           <table>
                             <thead>
