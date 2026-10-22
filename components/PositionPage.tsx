@@ -245,31 +245,226 @@ Conferir na carta náutica antes de usar.`;
   const exportPdf = async () => {
     if (!generated || isOutdated) return;
     const { jsPDF } = await import("jspdf");
-    const pdf = new jsPDF({ orientation: "landscape" });
-    pdf.setFontSize(16);
-    pdf.text(result.title.slice(0, 65), 12, 16);
-    pdf.setFontSize(9);
-    pdf.text(`Rumo magnetico ${result.magneticBearing.toFixed(2)}° M | Variacao ${result.declination.toFixed(2)}° | ${WMM_MODEL} ${result.magneticDate}`, 12, 24);
-    let y = 36;
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Mestre", 12, y);
-    pdf.text("Faixa", 68, y);
-    if (result.useStart) pdf.text("Ponta inicial (S / W)", 110, y);
-    if (result.useEnd) pdf.text("Ponta final (S / W)", 208, y);
-    pdf.setFont("helvetica", "normal");
-    for (const b of result.boats) {
-      if (y > 185) {
-        pdf.addPage();
-        y = 20;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 12;
+    const contentWidth = pageWidth - margin * 2;
+
+    const colors = {
+      bgDark: [6, 28, 35] as const,
+      bgPanel: [9, 46, 56] as const,
+      bgPanelSoft: [13, 57, 67] as const,
+      accent: [44, 211, 188] as const,
+      accentSoft: [116, 255, 226] as const,
+      chief: [151, 16, 29] as const,
+      border: [29, 88, 96] as const,
+      line: [214, 226, 229] as const,
+      textDark: [17, 39, 44] as const,
+      textMuted: [92, 112, 118] as const,
+      white: [255, 255, 255] as const,
+      zebra: [245, 250, 251] as const,
+      lightChip: [234, 246, 244] as const,
+    };
+
+    const setColor = (kind: "fill" | "draw" | "text", rgb: readonly [number, number, number]) => {
+      if (kind === "fill") pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
+      else if (kind === "draw") pdf.setDrawColor(rgb[0], rgb[1], rgb[2]);
+      else pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
+    };
+
+    const fmtDecl = `${Math.abs(result.declination).toFixed(2)}° ${result.declination < 0 ? "W" : "E"}`;
+    const modeLabel = result.useStart && result.useEnd ? "Posição inicial + final" : result.useStart ? "Somente posição inicial" : "Somente posição final";
+    const nowLabel = new Date().toLocaleString("pt-BR");
+
+    const columns = (() => {
+      const cols: { key: string; label: string; width: number }[] = [
+        { key: "name", label: "Barco / Mestre", width: 40 },
+        { key: "side", label: "Faixa", width: 38 },
+      ];
+      if (result.useStart && result.useEnd) {
+        cols.push({ key: "start", label: "Ponta inicial (S / W)", width: 55 });
+        cols.push({ key: "end", label: "Ponta final (S / W)", width: 55 });
+      } else if (result.useStart) {
+        cols.push({ key: "start", label: "Posição inicial (S / W)", width: 110 });
+      } else {
+        cols.push({ key: "end", label: "Posição final (S / W)", width: 110 });
       }
-      y += 7;
-      pdf.text(b.name.slice(0, 28), 12, y);
-      pdf.text(sideLabel(b.slot, gapValue).slice(0, 28), 68, y);
-      if (result.useStart) pdf.text(formatPoint(b.start), 110, y);
-      if (result.useEnd) pdf.text(formatPoint(b.end), 208, y);
+      return cols;
+    })();
+
+    const ellipsize = (value: string, width: number, fontSize = 9) => {
+      if (!value) return "";
+      pdf.setFontSize(fontSize);
+      const maxWidth = width - 2;
+      if (pdf.getTextWidth(value) <= maxWidth) return value;
+      let out = value;
+      while (out.length > 1 && pdf.getTextWidth(`${out}…`) > maxWidth) out = out.slice(0, -1);
+      return `${out}…`;
+    };
+
+    const drawCard = (x: number, y: number, w: number, h: number, label: string, value: string, accent = false) => {
+      setColor("fill", accent ? colors.bgPanelSoft : colors.bgPanel);
+      setColor("draw", colors.border);
+      pdf.roundedRect(x, y, w, h, 3, 3, "FD");
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+      setColor("text", accent ? colors.accentSoft : colors.white);
+      pdf.text(label.toUpperCase(), x + 4, y + 4.8);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12.5);
+      setColor("text", colors.white);
+      const wrapped = pdf.splitTextToSize(value, w - 8).slice(0, 2);
+      pdf.text(wrapped, x + 4, y + 11);
+    };
+
+    const drawHeader = () => {
+      setColor("fill", colors.bgDark);
+      pdf.rect(0, 0, pageWidth, pageHeight, "F");
+
+      setColor("fill", colors.bgPanel);
+      pdf.roundedRect(margin, 10, contentWidth, 22, 4, 4, "F");
+      setColor("fill", colors.accent);
+      pdf.roundedRect(margin + 5, 15, 14, 12, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(15);
+      setColor("text", colors.bgDark);
+      pdf.text("PB", margin + 9.6, 23.1, { align: "center" });
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(17);
+      setColor("text", colors.white);
+      pdf.text(result.title.slice(0, 62), margin + 24, 20);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8.5);
+      setColor("text", colors.accentSoft);
+      pdf.text("PAINEL DE BORDO • POSIÇÕES DE TURMA", margin + 24, 26);
+
+      setColor("fill", colors.bgPanelSoft);
+      pdf.roundedRect(pageWidth - margin - 56, 14, 51, 13, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.3);
+      setColor("text", colors.white);
+      pdf.text(`Exportado em ${nowLabel}`, pageWidth - margin - 52, 19.3);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.4);
+      setColor("text", colors.accentSoft);
+      pdf.text(`${WMM_MODEL} • ${result.magneticDate}`, pageWidth - margin - 52, 24.3);
+
+      const gapCards = 4;
+      const cardY = 38;
+      const cardH = 18;
+      const cardW = (contentWidth - gapCards * 3) / 4;
+      drawCard(margin, cardY, cardW, cardH, "Rumo magnético", `${result.magneticBearing.toFixed(2)}° M`, true);
+      drawCard(margin + cardW + 4, cardY, cardW, cardH, "Espaçamento", `${Number(result.gap).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} MN`);
+      drawCard(margin + (cardW + 4) * 2, cardY, cardW, cardH, "Embarcações", `${result.boats.length} barcos`);
+      drawCard(margin + (cardW + 4) * 3, cardY, cardW, cardH, "Modo", modeLabel);
+
+      const infoY = 61;
+      const leftW = 103;
+      const rightW = contentWidth - leftW - 4;
+      setColor("fill", colors.white);
+      setColor("draw", colors.border);
+      pdf.roundedRect(margin, infoY, leftW, 28, 3, 3, "FD");
+      pdf.roundedRect(margin + leftW + 4, infoY, rightW, 28, 3, 3, "FD");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.8);
+      setColor("text", colors.bgPanel);
+      pdf.text("REFERÊNCIA OPERACIONAL", margin + 4, infoY + 5.2);
+      pdf.text("RESUMO DA EXPORTAÇÃO", margin + leftW + 8, infoY + 5.2);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8.1);
+      setColor("text", colors.textDark);
+      pdf.text(`Chefe / referência: ${chiefName || "—"}`, margin + 4, infoY + 11.2);
+      if (result.useStart) pdf.text(`Ponta inicial: ${formatPoint(result.boats.find((b) => b.slot === 0)?.start || result.boats[0]?.start)}`, margin + 4, infoY + 16.6);
+      if (result.useEnd) pdf.text(`${result.useStart ? "Ponta final" : "Posição final"}: ${formatPoint(result.boats.find((b) => b.slot === 0)?.end || result.boats[0]?.end)}`, margin + 4, infoY + (result.useStart ? 22 : 16.6));
+
+      const summaryLines = [
+        `Declinação magnética: ${fmtDecl}`,
+        result.useStart && result.useEnd ? `Rede entre pontas: ${result.netLength.toFixed(2)} MN` : `Referência: ponto independente`,
+        `Turma: ${westNames.length} terra • 1 chefe • ${eastNames.length} fora`,
+      ];
+      summaryLines.forEach((line, idx) => {
+        pdf.text(line, margin + leftW + 8, infoY + 11.2 + idx * 5.3);
+      });
+
+      setColor("fill", colors.lightChip);
+      setColor("draw", colors.border);
+      pdf.roundedRect(margin, 92, contentWidth, 9, 3, 3, "FD");
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+      setColor("text", colors.textDark);
+      const warning = "PLANEJAMENTO OPERACIONAL: confira carta náutica, rumo, afastamento, datum WGS84, obstáculos e orientação terra/fora antes do uso.";
+      pdf.text(warning, margin + 4, 97.6);
+    };
+
+    const drawTableHeader = (y: number) => {
+      let x = margin;
+      setColor("fill", colors.bgPanelSoft);
+      pdf.roundedRect(margin, y, contentWidth, 9, 2.4, 2.4, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8.4);
+      setColor("text", colors.white);
+      for (const col of columns) {
+        pdf.text(col.label, x + 2.5, y + 5.9);
+        x += col.width;
+      }
+    };
+
+    const drawFooter = (pageNumber: number) => {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.4);
+      setColor("text", colors.accentSoft);
+      pdf.text("Painel de Bordo • Posição • Exportação PDF", margin, pageHeight - 6);
+      pdf.text(`Página ${pageNumber}`, pageWidth - margin, pageHeight - 6, { align: "right" });
+    };
+
+    drawHeader();
+    let pageNumber = 1;
+    let y = 107;
+    drawTableHeader(y);
+    y += 11;
+
+    const rowHeight = 10.2;
+    for (let i = 0; i < result.boats.length; i++) {
+      const b = result.boats[i];
+      if (y + rowHeight > pageHeight - 14) {
+        drawFooter(pageNumber);
+        pdf.addPage();
+        pageNumber += 1;
+        drawHeader();
+        y = 107;
+        drawTableHeader(y);
+        y += 11;
+      }
+
+      const chief = b.name.trim().toLocaleLowerCase() === chiefName.trim().toLocaleLowerCase();
+      setColor("fill", chief ? colors.chief : i % 2 === 0 ? colors.white : colors.zebra);
+      setColor("draw", chief ? colors.chief : colors.line);
+      pdf.roundedRect(margin, y - 1.5, contentWidth, rowHeight, 1.8, 1.8, "FD");
+
+      let x = margin;
+      pdf.setFont("helvetica", chief ? "bold" : "normal");
+      pdf.setFontSize(9);
+      setColor("text", chief ? colors.white : colors.textDark);
+
+      const values: Record<string, string> = {
+        name: b.name,
+        side: sideLabel(b.slot, gapValue),
+        start: formatPoint(b.start),
+        end: formatPoint(b.end),
+      };
+      for (const col of columns) {
+        const val = ellipsize(values[col.key] || "", col.width, 9);
+        pdf.text(val, x + 2.5, y + 4.8);
+        x += col.width;
+      }
+      y += rowHeight + 1.3;
     }
-    pdf.setFontSize(8);
-    pdf.text("PLANEJAMENTO: conferir coordenadas, rumo, afastamento e obstáculos em carta atualizada antes do uso.", 12, 200);
+
+    drawFooter(pageNumber);
     pdf.save("posicoes-turma.pdf");
   };
 
