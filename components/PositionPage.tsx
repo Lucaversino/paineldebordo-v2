@@ -101,8 +101,6 @@ export default function PositionPage() {
 
   const fleetNames = useMemo(() => buildFleetOrder(westNames, chiefName, eastNames), [westNames, chiefName, eastNames]);
   const totalBoats = westNames.length + eastNames.length + 1;
-  const normalizedChiefName = chiefName.trim().toLocaleLowerCase();
-  const isChiefBoat = (name: string) => name.trim().toLocaleLowerCase() === normalizedChiefName;
 
   const draft = useMemo(() => {
     try {
@@ -116,11 +114,11 @@ export default function PositionPage() {
       const magneticBearing = (actualBearing - declination + 360) % 360;
       const h = actualBearing;
       const g = Number(gap);
-      return { boats: makeFleet(a, b, h, g, fleetNames), actualBearing, magneticBearing, declination, netLength, error: "" };
+      return { boats: makeFleet(a, b, h, g, fleetNames, westNames.length), actualBearing, magneticBearing, declination, netLength, error: "" };
     } catch (e) {
       return { boats: [] as BoatPosition[], actualBearing: 0, magneticBearing: 0, declination: 0, netLength: 0, error: e instanceof Error ? e.message : "Erro nos dados." };
     }
-  }, [startLat, startLon, endLat, endLon, gap, fleetNames, magneticDate]);
+  }, [startLat, startLon, endLat, endLon, gap, fleetNames, westNames.length, magneticDate]);
 
   const [generated, setGenerated] = useState<null | {
     signature: string;
@@ -369,7 +367,7 @@ Conferir na carta náutica antes de usar.`;
             </thead>
             <tbody>
               {result.boats.map((b) => (
-                <tr key={b.id} className={isChiefBoat(b.name) ? "position-central-row" : undefined}>
+                <tr key={b.id} className={b.slot === 0 ? "position-central-row" : undefined}>
                   <td><strong>{b.name}</strong></td>
                   <td>{sideLabel(b.slot, gapValue)}</td>
                   <td>{formatPoint(b.start)}</td>

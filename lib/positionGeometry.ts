@@ -25,11 +25,12 @@ export function destination(start:Point,bearingDeg:number,nm:number):Point {
  const newLon=lon+Math.atan2(Math.sin(theta)*Math.sin(d)*Math.cos(lat),Math.cos(d)-Math.sin(lat)*Math.sin(newLat));
  return {lat:newLat/rad,lon:((newLon/rad+540)%360)-180};
 }
-export function makeFleet(start:Point,end:Point,heading:number,gap:number,names:string[]):BoatPosition[] {
+export function makeFleet(start:Point,end:Point,heading:number,gap:number,names:string[],centerIndex=Math.floor(names.length/2)):BoatPosition[] {
  if(!Number.isFinite(heading)||heading<0||heading>=360)throw new Error("Rumo deve estar entre 0° e 359,99°.");
  if(!Number.isFinite(gap)||gap<=0||gap>20)throw new Error("Informe uma distância entre 0 e 20 MN.");
- if(names.length<1||names.length>60)throw new Error("A turma deve ter de 1 a 60 embarcações.");
+ if(names.length<1||names.length>61)throw new Error("A turma deve ter de 1 a 61 embarcações.");
+ if(!Number.isInteger(centerIndex)||centerIndex<0||centerIndex>=names.length)throw new Error("Referência central inválida.");
  // Offset left/right is perpendicular to requested heading; displacement is not applied along the net.
- return names.map((name,i)=>{const slot=i-Math.floor(names.length/2);const offset=slot*gap;const perpendicular=(heading+(offset>=0?90:270))%360;
+ return names.map((name,i)=>{const slot=i-centerIndex;const offset=slot*gap;const perpendicular=(heading+(offset>=0?90:270))%360;
  return {id:`barco-${i+1}`,name:name.trim()||`Barco ${i+1}`,slot,start:destination(start,perpendicular,Math.abs(offset)),end:destination(end,perpendicular,Math.abs(offset))};});
 }
