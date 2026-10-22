@@ -94,6 +94,7 @@ export default function PositionPage() {
   const [eastNames, setEastNames] = useState(initialEastNames);
   const [westNames, setWestNames] = useState(initialWestNames);
   const [saved, setSaved] = useState<SavedGroup[]>([]);
+  const [openedGroupId, setOpenedGroupId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -174,9 +175,17 @@ export default function PositionPage() {
       setMessage("Gere ou atualize as posições antes de salvar a turma.");
       return;
     }
+    const requested = window.prompt("Nome para salvar esta turma:", result.title);
+    if (requested === null) return;
+    const groupTitle = requested.trim().slice(0, 80);
+    if (!groupTitle) {
+      setMessage("Informe um nome para identificar a turma.");
+      return;
+    }
+    const id = openedGroupId || crypto.randomUUID();
     const item: SavedGroup = {
-      id: crypto.randomUUID(),
-      title,
+      id,
+      title: groupTitle,
       chiefName,
       eastNames,
       westNames,
@@ -189,12 +198,36 @@ export default function PositionPage() {
       useStart,
       useEnd,
       singleMagneticHeading,
-      createdAt: new Date().toISOString(),
+      createdAt: openedGroupId ? saved.find((g) => g.id === openedGroupId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
     };
-    const next = [item, ...saved].slice(0, 50);
-    localStorage.setItem(KEY, JSON.stringify(next));
+    const next = [item, ...saved.filter((g) => g.id !== id)].slice(0, 50);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      setMessage("Não foi possível armazenar a turma neste dispositivo.");
+      return;
+    }
+    setTitle(groupTitle);
+    setGenerated((previous) => previous ? { ...previous, title: groupTitle, signature: JSON.stringify([groupTitle, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames, magneticDate, useStart, useEnd, singleMagneticHeading]) } : previous);
+    setOpenedGroupId(id);
     setSaved(next);
-    setMessage("Turma salva neste dispositivo. Faça também uma exportação como backup.");
+    setMessage(`Turma “${groupTitle}” salva neste dispositivo. O PDF usará esse nome.`);
+  };
+
+  const renameSavedGroup = (g: SavedGroup) => {
+    const requested = window.prompt("Novo nome da turma:", g.title);
+    if (requested === null) return;
+    const nextTitle = requested.trim().slice(0, 80);
+    if (!nextTitle) { setMessage("O nome da turma não pode ficar vazio."); return; }
+    const next = saved.map((item) => item.id === g.id ? { ...item, title: nextTitle } : item);
+    try { localStorage.setItem(KEY, JSON.stringify(next)); }
+    catch { setMessage("Não foi possível salvar o novo nome."); return; }
+    setSaved(next);
+    if (openedGroupId === g.id) {
+      setTitle(nextTitle);
+      setGenerated((previous) => previous ? { ...previous, title: nextTitle, signature: JSON.stringify([nextTitle, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames, magneticDate, useStart, useEnd, singleMagneticHeading]) } : previous);
+    }
+    setMessage(`Nome atualizado para “${nextTitle}”.`);
   };
 
   const loadGroup = (g: SavedGroup) => {
@@ -208,6 +241,7 @@ export default function PositionPage() {
       nextWest = legacy.westNames;
     }
     setTitle(g.title);
+    setOpenedGroupId(g.id);
     setChiefName(nextChief);
     setEastNames(nextEast);
     setWestNames(nextWest);
@@ -465,7 +499,8 @@ Conferir na carta náutica antes de usar.`;
     }
 
     drawFooter(pageNumber);
-    pdf.save("posicoes-turma.pdf");
+    const safeFileName = (result.title || "turma").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 55) || "turma";
+    pdf.save(`posicoes-${safeFileName}.pdf`);
   };
 
 
@@ -616,14 +651,16 @@ Conferir na carta náutica antes de usar.`;
           {saved.map((g) => (
             <div key={g.id}>
               <span>
-                <strong>{g.title}</strong>
+                <strong>{g.title || "Turma sem nome"}</strong>
                 <small>{((g.westNames?.length || 0) + (g.eastNames?.length || 0) + 1) || (g.names?.length || 0)} barcos · {new Date(g.createdAt).toLocaleDateString("pt-BR")}</small>
               </span>
               <button onClick={() => loadGroup(g)}>Abrir</button>
+              <button onClick={() => renameSavedGroup(g)} aria-label={`Renomear turma ${g.title}`}>Renomear</button>
               <button aria-label="Excluir turma" onClick={() => {
                 if (!confirm("Excluir a turma salva?")) return;
                 const next = saved.filter((x) => x.id !== g.id);
                 setSaved(next);
+                if (openedGroupId === g.id) setOpenedGroupId(null);
                 localStorage.setItem(KEY, JSON.stringify(next));
               }}><Trash2 size={16} /></button>
             </div>
