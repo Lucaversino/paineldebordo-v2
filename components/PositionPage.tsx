@@ -18,6 +18,9 @@ type SavedGroup = {
   endLon: string;
   heading: string;
   gap: string;
+  useStart?: boolean;
+  useEnd?: boolean;
+  singleMagneticHeading?: string;
   createdAt: string;
 };
 
@@ -44,16 +47,17 @@ function sideLabel(slot: number, gapValue: number) {
   return slot < 0 ? `Oeste / terra · ${miles} MN` : `Leste / fora · ${miles} MN`;
 }
 
-function gpxOf(boats: BoatPosition[], title: string, gapValue: number) {
+function gpxOf(boats: BoatPosition[], title: string, gapValue: number, useStart: boolean, useEnd: boolean) {
+  const marks = boats.flatMap((b) => [
+    ...(useStart ? [{ point: b.start, suffix: "Inicial" }] : []),
+    ...(useEnd ? [{ point: b.end, suffix: "Final" }] : []),
+  ].map(({ point, suffix }) => `<wpt lat="${point.lat.toFixed(8)}" lon="${point.lon.toFixed(8)}"><name>${escapeXml(`${b.name} - ${suffix}`)}</name><desc>${escapeXml(sideLabel(b.slot, gapValue))}</desc><sym>Flag</sym></wpt>`)).join("\n");
+  const routes = useStart && useEnd ? boats.map((b) => `<rte><name>${escapeXml(b.name)}</name><rtept lat="${b.start.lat.toFixed(8)}" lon="${b.start.lon.toFixed(8)}"><name>Inicial</name></rtept><rtept lat="${b.end.lat.toFixed(8)}" lon="${b.end.lon.toFixed(8)}"><name>Final</name></rtept></rte>`).join("\n") : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Painel de Bordo" xmlns="http://www.topografix.com/GPX/1/1">
 <metadata><name>${escapeXml(title)}</name></metadata>
-${boats
-  .map(
-    (b, i) =>
-      `<rte><name>${escapeXml(`${i + 1} ${b.name} · ${sideLabel(b.slot, gapValue)}`)}</name><rtept lat="${b.start.lat.toFixed(8)}" lon="${b.start.lon.toFixed(8)}"><name>Inicio ${escapeXml(b.name)}</name></rtept><rtept lat="${b.end.lat.toFixed(8)}" lon="${b.end.lon.toFixed(8)}"><name>Final ${escapeXml(b.name)}</name></rtept></rte>`,
-  )
-  .join("\n")}
+${marks}
+${routes}
 </gpx>`;
 }
 
@@ -82,6 +86,9 @@ export default function PositionPage() {
   const [endLon, setEndLon] = useState("51°1165");
   
   const [gap, setGap] = useState("0.25");
+  const [useStart, setUseStart] = useState(true);
+  const [useEnd, setUseEnd] = useState(true);
+  const [singleMagneticHeading, setSingleMagneticHeading] = useState("");
   const [magneticDate, setMagneticDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [chiefName, setChiefName] = useState(initialChiefName);
   const [eastNames, setEastNames] = useState(initialEastNames);
@@ -104,24 +111,38 @@ export default function PositionPage() {
 
   const draft = useMemo(() => {
     try {
-      const a = parsePosition(startLat, startLon);
-      const b = parsePosition(endLat, endLon);
-      const actualBearing = bearing(a, b);
-      const netLength = distance(a, b);
-      if (netLength < 0.01) throw new Error("A ponta inicial e final não podem ser iguais.");
-      const ref = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
-      const declination = magneticDeclination(ref.lat, ref.lon, new Date(`${magneticDate}T12:00:00Z`));
+      if (!useStart && !useEnd) throw new Error("Ative pelo menos uma posição: inicial ou final.");
+      const a = useStart ? parsePosition(startLat, startLon) : null;
+      const b = useEnd ? parsePosition(endLat, endLon) : null;
+      const point = a || b;
+      if (!point) throw new Error("Informe uma posição válida.");
+      const both = !!a && !!b;
+      const netLength = a && b ? distance(a, b) : 0;
+      if (both && netLength < 0.01) throw new Error("As duas pontas não podem ser iguais.");
+      const ref = a && b ? { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 } : point;
+      const date = new Date(`${magneticDate}T12:00:00Z`);
+      if (Number.isNaN(date.getTime())) throw new Error("Informe a data magnética válida.");
+      const declination = magneticDeclination(ref.lat, ref.lon, date);
+      let actualBearing: number;
+      if (a && b) actualBearing = bearing(a, b);
+      else {
+        if (!singleMagneticHeading.trim()) throw new Error("Com apenas uma ponta, informe o rumo magnético de referência para distribuir os barcos.");
+        const magnetic = Number(singleMagneticHeading.replace(",", "."));
+        if (!Number.isFinite(magnetic) || magnetic < 0 || magnetic >= 360) throw new Error("Informe um rumo magnético de 0° a 359,99°.");
+        actualBearing = (magnetic + declination + 360) % 360;
+      }
       const magneticBearing = (actualBearing - declination + 360) % 360;
-      const h = actualBearing;
-      const g = Number(gap);
-      return { boats: makeFleet(a, b, h, g, fleetNames, westNames.length), actualBearing, magneticBearing, declination, netLength, error: "" };
+      const boats = makeFleet(a || point, b || point, actualBearing, Number(gap), fleetNames, westNames.length);
+      return { boats, actualBearing, magneticBearing, declination, netLength, error: "" };
     } catch (e) {
       return { boats: [] as BoatPosition[], actualBearing: 0, magneticBearing: 0, declination: 0, netLength: 0, error: e instanceof Error ? e.message : "Erro nos dados." };
     }
-  }, [startLat, startLon, endLat, endLon, gap, fleetNames, westNames.length, magneticDate]);
+  }, [startLat, startLon, endLat, endLon, gap, fleetNames, westNames.length, magneticDate, useStart, useEnd, singleMagneticHeading]);
 
   const [generated, setGenerated] = useState<null | {
     signature: string;
+    useStart: boolean;
+    useEnd: boolean;
     boats: BoatPosition[];
     actualBearing: number;
     magneticBearing: number;
@@ -134,7 +155,7 @@ export default function PositionPage() {
   }>(null);
 
   const heading = draft.error ? "" : String(draft.actualBearing);
-  const signature = JSON.stringify([title, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames, magneticDate]);
+  const signature = JSON.stringify([title, startLat, startLon, endLat, endLon, gap, chiefName, eastNames, westNames, magneticDate, useStart, useEnd, singleMagneticHeading]);
   const isOutdated = !!generated && generated.signature !== signature;
   const result = generated ? { ...generated, error: "" } : { boats: [] as BoatPosition[], actualBearing: 0, magneticBearing: 0, declination: 0, magneticDate, netLength: 0, error: "" };
   const gapValue = Number(result.gap || gap || 0);
@@ -144,7 +165,7 @@ export default function PositionPage() {
       setMessage(draft.error);
       return;
     }
-    setGenerated({ signature, boats: draft.boats, actualBearing: draft.actualBearing, magneticBearing: draft.magneticBearing, declination: draft.declination, magneticDate, netLength: draft.netLength, heading, gap, title });
+    setGenerated({ signature, useStart, useEnd, boats: draft.boats, actualBearing: draft.actualBearing, magneticBearing: draft.magneticBearing, declination: draft.declination, magneticDate, netLength: draft.netLength, heading, gap, title });
     setMessage(`Posições geradas para ${draft.boats.length} embarcações. Confira os dados antes de compartilhar.`);
   };
 
@@ -165,6 +186,9 @@ export default function PositionPage() {
       endLon,
       heading,
       gap,
+      useStart,
+      useEnd,
+      singleMagneticHeading,
       createdAt: new Date().toISOString(),
     };
     const next = [item, ...saved].slice(0, 50);
@@ -192,6 +216,9 @@ export default function PositionPage() {
     setEndLat(g.endLat);
     setEndLon(g.endLon);
     setGap(g.gap);
+    setUseStart(g.useStart !== false);
+    setUseEnd(g.useEnd !== false);
+    setSingleMagneticHeading(g.singleMagneticHeading || "");
     setGenerated(null);
     setMessage("Turma carregada. Clique em Gerar / Atualizar posições.");
   };
@@ -199,8 +226,7 @@ export default function PositionPage() {
   const share = async (b: BoatPosition) => {
     const text = `${result.title} | ${b.name}
 ${sideLabel(b.slot, gapValue)}
-Ponta inicial: ${formatPoint(b.start)}
-Ponta final: ${formatPoint(b.end)}
+${result.useStart ? `Ponta inicial: ${formatPoint(b.start)}\n` : ""}${result.useEnd ? `Ponta final: ${formatPoint(b.end)}\n` : ""}
 Conferir na carta náutica antes de usar.`;
     if (navigator.share) {
       try {
@@ -228,8 +254,8 @@ Conferir na carta náutica antes de usar.`;
     pdf.setFont("helvetica", "bold");
     pdf.text("Mestre", 12, y);
     pdf.text("Faixa", 68, y);
-    pdf.text("Ponta inicial (S / W)", 110, y);
-    pdf.text("Ponta final (S / W)", 208, y);
+    if (result.useStart) pdf.text("Ponta inicial (S / W)", 110, y);
+    if (result.useEnd) pdf.text("Ponta final (S / W)", 208, y);
     pdf.setFont("helvetica", "normal");
     for (const b of result.boats) {
       if (y > 185) {
@@ -239,8 +265,8 @@ Conferir na carta náutica antes de usar.`;
       y += 7;
       pdf.text(b.name.slice(0, 28), 12, y);
       pdf.text(sideLabel(b.slot, gapValue).slice(0, 28), 68, y);
-      pdf.text(formatPoint(b.start), 110, y);
-      pdf.text(formatPoint(b.end), 208, y);
+      if (result.useStart) pdf.text(formatPoint(b.start), 110, y);
+      if (result.useEnd) pdf.text(formatPoint(b.end), 208, y);
     }
     pdf.setFontSize(8);
     pdf.text("PLANEJAMENTO: conferir coordenadas, rumo, afastamento e obstáculos em carta atualizada antes do uso.", 12, 200);
@@ -265,20 +291,25 @@ Conferir na carta náutica antes de usar.`;
         <div className="position-panel">
           <h2>01 · Posição de referência</h2>
           <label>Nome da turma ou referência<input value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} /></label>
+          <div className="position-mode-controls" role="group" aria-label="Pontas que serão geradas">
+            <label><input type="checkbox" checked={useStart} onChange={e => setUseStart(e.target.checked)} /> Ativar posição inicial</label>
+            <label><input type="checkbox" checked={useEnd} onChange={e => setUseEnd(e.target.checked)} /> Ativar posição final</label>
+          </div>
           <div className="position-coords">
-            <fieldset>
+            {useStart && <fieldset>
               <legend>Ponta inicial</legend>
               <label>Latitude Sul<input inputMode="numeric" value={startLat} onChange={(e) => setStartLat(formatCoordinateInput(e.target.value))} /></label>
               <label>Longitude Oeste<input inputMode="numeric" value={startLon} onChange={(e) => setStartLon(formatCoordinateInput(e.target.value))} /></label>
-            </fieldset>
-            <fieldset>
+            </fieldset>}
+            {useEnd && <fieldset>
               <legend>Ponta final</legend>
               <label>Latitude Sul<input inputMode="numeric" value={endLat} onChange={(e) => setEndLat(formatCoordinateInput(e.target.value))} /></label>
               <label>Longitude Oeste<input inputMode="numeric" value={endLon} onChange={(e) => setEndLon(formatCoordinateInput(e.target.value))} /></label>
-            </fieldset>
+            </fieldset>}
           </div>
+          {useStart !== useEnd && <label>Rumo magnético de referência (°M) para distribuição lateral<input type="number" min="0" max="359.99" step="0.01" value={singleMagneticHeading} onChange={e => setSingleMagneticHeading(e.target.value)} placeholder="Ex.: 50,5" /><small className="position-muted">Obrigatório com uma ponta: determina a direção de afastamento para terra e fora.</small></label>}
           <div className="position-duo">
-            <label>Rumo magnético calculado automaticamente (°M)<input type="text" readOnly aria-readonly="true" value={draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`} title="Calculado automaticamente a partir das pontas e da declinação magnética" /><small className="position-muted">Atualiza conforme as pontas e a data escolhida.</small></label>
+            <label>Rumo magnético de referência (°M)<input type="text" readOnly aria-readonly="true" value={draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`} title="Calculado automaticamente a partir das pontas e da declinação magnética" /><small className="position-muted">Com duas pontas é automático; com uma, usa o rumo informado.</small></label>
             <label>Espaçamento por barco (MN)<input type="number" min="0.01" max="20" step="0.01" value={gap} onChange={(e) => setGap(e.target.value)} /></label>
           </div>
           <div className="position-duo">
@@ -288,7 +319,7 @@ Conferir na carta náutica antes de usar.`;
           <p className="position-muted">Modelo {WMM_MODEL} para a posição média da rede e a data escolhida.</p>
           <div className="position-quick"><span>Espaçamento rápido:</span>{[0.2, 0.25, 0.3].map((x) => <button key={x} className={Number(gap) === x ? "active" : ""} type="button" onClick={() => setGap(String(x))}>{x.toLocaleString("pt-BR")} MN</button>)}</div>
           <div className="position-metrics">
-            <span>Rede entre pontas <strong>{draft.netLength.toFixed(2)} MN</strong></span>
+            {useStart && useEnd && <span>Rede entre pontas <strong>{draft.netLength.toFixed(2)} MN</strong></span>}
             <span>Rumo magnético (M) <strong>{draft.error ? "—" : `${draft.magneticBearing.toFixed(2)}° M`}</strong></span>
           </div>
           
@@ -343,12 +374,12 @@ Conferir na carta náutica antes de usar.`;
         <div className="position-actions-head">
           <div>
             <h2>03 · Posições calculadas</h2>
-            <p className="position-muted">As faixas são deslocadas perpendicularmente ao rumo calculado entre as pontas. Confira a orientação de terra e fora na carta antes de usar.</p>
+            <p className="position-muted">As faixas são deslocadas perpendicularmente ao rumo calculado ou informado. Confira a orientação de terra e fora na carta antes de usar.</p>
           </div>
           <div className="position-buttons">
             <button onClick={saveGroup} disabled={!generated || isOutdated}><Save size={16} /> Salvar turma</button>
             <button onClick={() => void exportPdf()} disabled={!generated || isOutdated || !result.boats.length}><FileDown size={16} /> PDF geral</button>
-            <button onClick={() => download("posicoes-timezero.gpx", gpxOf(result.boats, result.title, gapValue), "application/gpx+xml;charset=utf-8")} disabled={!generated || isOutdated || !result.boats.length}><Download size={16} /> GPX TimeZero</button>
+            <button onClick={() => download("posicoes-timezero.gpx", gpxOf(result.boats, result.title, gapValue, result.useStart, result.useEnd), "application/gpx+xml;charset=utf-8")} disabled={!generated || isOutdated || !result.boats.length}><Download size={16} /> GPX TimeZero</button>
           </div>
         </div>
         {isOutdated && <p className="position-alert">Os dados foram alterados. Clique em Atualizar posições para aplicar as mudanças antes de exportar ou compartilhar.</p>}
@@ -360,8 +391,8 @@ Conferir na carta náutica antes de usar.`;
               <tr>
                 <th>Barco / Mestre</th>
                 <th>Faixa</th>
-                <th>Ponta inicial</th>
-                <th>Ponta final</th>
+                {result.useStart && <th>Ponta inicial</th>}
+                {result.useEnd && <th>Ponta final</th>}
                 <th>Ações</th>
               </tr>
             </thead>
@@ -370,11 +401,11 @@ Conferir na carta náutica antes de usar.`;
                 <tr key={b.id} className={b.slot === 0 ? "position-central-row" : undefined}>
                   <td><strong>{b.name}</strong></td>
                   <td>{sideLabel(b.slot, gapValue)}</td>
-                  <td>{formatPoint(b.start)}</td>
-                  <td>{formatPoint(b.end)}</td>
+                  {result.useStart && <td>{formatPoint(b.start)}</td>}
+                  {result.useEnd && <td>{formatPoint(b.end)}</td>}
                   <td className="position-row-actions">
                     <button disabled={isOutdated} onClick={() => void share(b)}><Share2 size={15} /> Enviar</button>
-                    <button disabled={isOutdated} onClick={() => download(`posicao-${b.id}.gpx`, gpxOf([b], `${result.title} ${b.name}`, gapValue), "application/gpx+xml;charset=utf-8")}><Download size={15} /> GPX</button>
+                    <button disabled={isOutdated} onClick={() => download(`posicao-${b.id}.gpx`, gpxOf([b], `${result.title} ${b.name}`, gapValue, result.useStart, result.useEnd), "application/gpx+xml;charset=utf-8")}><Download size={15} /> GPX</button>
                   </td>
                 </tr>
               ))}
