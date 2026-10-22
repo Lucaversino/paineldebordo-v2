@@ -30,7 +30,21 @@ export function makeFleet(start:Point,end:Point,heading:number,gap:number,names:
  if(!Number.isFinite(gap)||gap<=0||gap>20)throw new Error("Informe uma distância entre 0 e 20 MN.");
  if(names.length<1||names.length>61)throw new Error("A turma deve ter de 1 a 61 embarcações.");
  if(!Number.isInteger(centerIndex)||centerIndex<0||centerIndex>=names.length)throw new Error("Referência central inválida.");
- // Offset left/right is perpendicular to requested heading; displacement is not applied along the net.
- return names.map((name,i)=>{const slot=i-centerIndex;const offset=slot*gap;const perpendicular=(heading+(offset>=0?90:270))%360;
- return {id:`barco-${i+1}`,name:name.trim()||`Barco ${i+1}`,slot,start:destination(start,perpendicular,Math.abs(offset)),end:destination(end,perpendicular,Math.abs(offset))};});
+ // O slot é semântico: positivo = fora/Leste e negativo = terra/Oeste.
+ // À direita da trajetória só fica Leste quando o rumo aponta predominantemente ao Norte.
+ // Para rumo ao Sul (ex.: 225° M), é necessário inverter o lado perpendicular.
+ // Próximo de Leste/Oeste puro os afastamentos seriam N/S, sem separação Leste/Oeste definida.
+ const eastComponent = Math.cos(heading * rad);
+ if (Math.abs(eastComponent) < 0.01745 && names.length > 1)
+   throw new Error("Rumo muito próximo de 90°/270°: o afastamento transversal não define Leste/fora e Oeste/terra. Confira a orientação antes de gerar.");
+ return names.map((name,i)=>{
+  const slot=i-centerIndex;
+  const eastSide=slot>0;
+  const rightSide=eastComponent>=0 ? eastSide : !eastSide;
+  const perpendicular=(heading+(rightSide?90:270))%360;
+  const offsetNm=Math.abs(slot)*gap;
+  return {id:`barco-${i+1}`,name:name.trim()||`Barco ${i+1}`,slot,
+   start:slot===0?start:destination(start,perpendicular,offsetNm),
+   end:slot===0?end:destination(end,perpendicular,offsetNm)};
+ });
 }
