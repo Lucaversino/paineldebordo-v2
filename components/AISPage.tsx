@@ -47,6 +47,7 @@ import Polygon from "ol/geom/Polygon";
 import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
+import { isAutomaticFishingVessel, validAutomaticPosition, automaticPositionIsOld } from "../lib/aisAutomatic";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import { officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
 
@@ -665,7 +666,7 @@ function bathymetryContourStyle(feature: any) {
   return style;
 }
 
-// V213 AIS LIGHT: sem polling de barcos; consulta sob demanda para navegação mais leve.
+// V246: camada regional automática independente das consultas manuais.
 export default function AISPage({ defaultLat, defaultLon }: Props) {
   const fallbackLat = validCoordinate(defaultLat, 90) ?? -27.15;
   const fallbackLon = validCoordinate(defaultLon, 180) ?? -48.55;
@@ -698,6 +699,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<OlMap | null>(null);
+  const autoLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const [autoMode, setAutoMode] = useState<"fishing" | "all" | "off">("fishing");
+  const [autoMessage, setAutoMessage] = useState("Carregando barcos de pesca da região…");
   const vesselSourceRef = useRef<VectorSource | null>(null);
   const positionSourceRef = useRef<VectorSource | null>(null);
   const probeSourceRef = useRef<VectorSource | null>(null);
@@ -1033,7 +1037,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       text: currentZoom >= 11
         ? new Text({
             text: (vessel.name || vessel.mmsi).slice(0, 26),
-            offsetY: radius + 10,
+            offsetY: -(radius + 10),
             font: "800 10px system-ui",
             fill: new Fill({ color: "#f4ffff" }),
             stroke: new Stroke({ color: "#062027", width: 3 }),
@@ -3108,7 +3112,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const vessel = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("vessel") || null) as Vessel | null,
-        { hitTolerance: 10, layerFilter: layer => layer === vesselLayer },
+        { hitTolerance: 10, layerFilter: layer => layer === vesselLayer || layer === autoLayerRef.current },
       );
       if (vessel) {
         trackedRef.current = vessel;
@@ -3191,6 +3195,119 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       mapRef.current = null;
     };
   }, []);
+
+  // Camada própria: atualizações regionais não apagam pesquisas manuais.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || autoMode === "off") {
+      setAutoMessage("Barcos automáticos desligados");
+      return;
+    }
+    const source = new VectorSource();
+    const layer = new VectorLayer({ source, declutter: true, renderBuffer: 80,
+      updateWhileAnimating: false, updateWhileInteracting: false });
+    layer.setZIndex(29);
+    autoLayerRef.current = layer;
+    map.addLayer(layer);
+    let disposed = false;
+    let generation = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | null = null;
+    let lastStarted = 0;
+    let snapshot: Vessel[] = [];
+    const render = () => {
+      const visible = snapshot.filter(v => autoMode === "all" || isAutomaticFishingVessel(v));
+      const keys = new Set<string>();
+      for (const vessel of visible) {
+        const key = vessel.mmsi;
+        keys.add(key);
+        // A pesquisa manual tem prioridade visual e não deve duplicar o barco.
+        const manual = mapVesselRegistryRef.current.has(`mmsi:${key}`);
+        let feature = source.getFeatureById(key);
+        if (manual) { if (feature) source.removeFeature(feature); continue; }
+        if (!feature) {
+          feature = new Feature({ geometry: new Point(fromLonLat([vessel.lon, vessel.lat])) });
+          feature.setId(key);
+          source.addFeature(feature);
+        }
+        const signature = JSON.stringify(vessel);
+        if (feature.get("signature") !== signature) {
+          (feature.getGeometry() as Point).setCoordinates(fromLonLat([vessel.lon, vessel.lat]));
+          feature.set("vessel", vessel, true);
+          feature.set("signature", signature, true);
+          // Nomes acima, inclusive no zoom inicial; declutter evita sobreposição.
+          feature.setStyle(buildVesselStyle(vessel, 11));
+        }
+      }
+      for (const feature of source.getFeatures()) {
+        if (!keys.has(String(feature.getId()))) source.removeFeature(feature);
+      }
+      return visible.length;
+    };
+    const schedule = (delay = 900) => {
+      clearTimeout(timer);
+      if (disposed || document.hidden) return;
+      timer = setTimeout(load, Math.max(delay, 15000 - (Date.now() - lastStarted)));
+    };
+    const load = async () => {
+      if (disposed || document.hidden) return;
+      const view = map.getView();
+      if (view.getAnimating() || view.getInteracting()) { schedule(); return; }
+      const token = ++generation;
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      const timeout = setTimeout(() => requestController.abort(), 20000);
+      lastStarted = Date.now();
+      const [lon, lat] = toLonLat(view.getCenter()!);
+      setAutoMessage("Atualizando barcos da região…");
+      try {
+        const response = await aisFetch(`/api/ais-map?lat=${lat}&lon=${lon}&zoom=${view.getZoom() || 10}`, { signal: requestController.signal });
+        if (!response.ok) throw new Error(response.status === 401 ? "Sessão encerrada. Entre novamente." : "Fonte AIS indisponível. Nova tentativa automática.");
+        const data = await response.json();
+        if (disposed || token !== generation) return;
+        if (!Array.isArray(data.vessels)) throw new Error("Resposta AIS inválida. Nova tentativa automática.");
+        snapshot = data.vessels.filter(validAutomaticPosition).slice(0, 180);
+        const count = render();
+        const old = data.stale || snapshot.some(v => automaticPositionIsOld(v));
+        setAutoMessage(count
+          ? `${count} ${autoMode === "fishing" ? "barcos de pesca" : "barcos"} · ${data.source || "AIS"} · ${old ? "há posições antigas" : "posições recebidas"} · consulta ${new Date().toLocaleTimeString("pt-BR")}`
+          : snapshot.length ? "Nenhum barco identificado como pesca nesta consulta. Experimente Todos." : "Sem posições nesta região. Cobertura ou fonte AIS indisponível.");
+      } catch (error) {
+        if (!disposed && token === generation) {
+          snapshot = []; source.clear();
+          setAutoMessage(error instanceof Error && error.name !== "AbortError" ? error.message : "Consulta AIS demorou. Nova tentativa automática.");
+        }
+      } finally {
+        clearTimeout(timeout);
+        if (!disposed && token === generation) schedule(60000);
+      }
+    };
+    const moved = () => {
+      ++generation; controller?.abort();
+      snapshot = []; source.clear();
+      setAutoMessage("Carregando a nova região…");
+      schedule();
+    };
+    const visibility = () => {
+      ++generation; controller?.abort(); clearTimeout(timer);
+      if (!document.hidden) schedule();
+    };
+    const manualChanged = () => render();
+    map.on("moveend", moved);
+    vesselSourceRef.current?.on("change", manualChanged);
+    document.addEventListener("visibilitychange", visibility);
+    schedule(100);
+    return () => {
+      disposed = true; ++generation;
+      clearTimeout(timer); controller?.abort();
+      map.un("moveend", moved);
+      vesselSourceRef.current?.un("change", manualChanged);
+      document.removeEventListener("visibilitychange", visibility);
+      map.removeLayer(layer); source.clear(); layer.dispose();
+      if (autoLayerRef.current === layer) autoLayerRef.current = null;
+    };
+  }, [autoMode]);
 
   useEffect(() => {
     if (!ENABLE_DHN_CHARTS) return;
@@ -3643,7 +3760,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         <div>
           <small>MONITORAMENTO MARÍTIMO</small>
           <h2>AIS — posição do barco</h2>
-          <p>Busca pelo nome e posição AIS individual, com horário e origem do sinal bem destacados.</p>
+          <p>Barcos da região aparecem automaticamente. Toque em um barco para conferir a posição e a hora do sinal.</p>
         </div>
         <div className="ais-credit-top-actions">
           <div className={`ais-live-box ${credits == null ? "loading" : credits <= 0 ? "no-credit" : "has-credit"}`}>
@@ -3668,11 +3785,21 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
       {credits != null && credits <= 0 && (
         <div className="ais-no-credit-warning" role="alert">
-          <div><b>⚠ SEM CRÉDITOS</b><span>Compre créditos para continuar usando as consultas AIS.</span></div>
+          <div><b>⚠ SEM CRÉDITOS</b><span>Consultas Premium exigem créditos. Os barcos automáticos continuam disponíveis.</span></div>
           <div><button type="button" onClick={() => openCreditPack(2)}>2 CR</button><button type="button" onClick={() => openCreditPack(6)}>6 CR</button><button type="button" onClick={() => openCreditPack(8)}>8 CR</button><button type="button" onClick={() => openCreditPack(10)}>10 CR</button></div>
         </div>
       )}
 
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 16px", background: "#102c3a", color: "#fff", borderRadius: 12, marginBottom: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <strong>Barcos no mapa</strong>
+          <select aria-label="Barcos automáticos no mapa" value={autoMode} onChange={e => setAutoMode(e.target.value as typeof autoMode)} style={{ background: "#fff", color: "#102c3a", padding: 8, borderRadius: 8 }}>
+            <option value="fishing">Pesca</option><option value="all">Todos</option><option value="off">Desligado</option>
+          </select>
+        </label>
+        <span role="status" style={{ flex: "1 1 220px", fontSize: 12 }}>{autoMessage}</span>
+        <small>Atualiza a cada 60 s · sem créditos do painel · aproxime para separar os nomes</small>
+      </div>
       <div className="ais-library-grid">
         <section className="ais-saved-folder">
           <div className="ais-library-head">
@@ -3853,8 +3980,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           </div>
         )}
 
-        {/* V213 AIS LIGHT: sem camada/polling automático de embarcações.
-            Batimetria, cartas, GPS e ferramentas de navegação permanecem ativos. */}
+        {/* V246: camada automática regional independente das pesquisas. */}
 
         <div className={`ais-v147-orientation ${orientationMenuOpen ? "open" : ""}`}>
           <button
