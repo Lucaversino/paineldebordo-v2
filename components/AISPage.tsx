@@ -1,4 +1,5 @@
 "use client";
+import { aisMapPixelRatio, officialWaypointStyleBucket, reuseUnchangedMapItems } from "../lib/aisMapPerformance";
 import GfwFreeSearch from "./GfwFreeSearch";
 import { formatCoordinateInput } from "../lib/marineCoordinate";
 
@@ -149,7 +150,7 @@ function parseDhnCapabilities(xml: string, catalog: DhnCatalogEntry[]) {
     const title = directChildText(layer, "Title");
     if (!layerName || !title) return;
 
-    const numberTokens = ((layerName + " " + title).match(/\b\d{2,5}\b/g) || []);
+    const numberTokens: string[] = ((layerName + " " + title).match(/\b\d{2,5}\b/g) || []);
     const entry = catalog.find((item) => numberTokens.includes(item.number));
     if (!entry || charts.has(entry.number)) return;
 
@@ -1311,6 +1312,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const source = waypointSourceRef.current;
     if (!source) return;
     source.clear();
+    const features: Feature[] = [];
     items.forEach((item) => {
       if (!Number.isFinite(Number(item.latitude)) || !Number.isFinite(Number(item.longitude))) return;
       const feature = new Feature({
@@ -1318,8 +1320,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       });
       feature.set("waypoint", item);
       feature.setStyle(buildWaypointStyle(item, mapRef.current?.getView().getZoom() || 10));
-      source.addFeature(feature);
+      features.push(feature);
     });
+    source.addFeatures(features);
   }
 
   function officialWaypointTypeLabel(type: OfficialWaypointType) {
@@ -1364,14 +1367,17 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const source = officialWaypointSourceRef.current;
     if (!source) return;
     source.clear();
+    const features: Feature[] = [];
     const zoomNow = mapRef.current?.getView().getZoom() || 10;
     items.filter((item) => item.visible !== false).forEach((item) => {
       if (!Number.isFinite(Number(item.latitude)) || !Number.isFinite(Number(item.longitude))) return;
       const feature = new Feature({ geometry: new Point(fromLonLat([Number(item.longitude), Number(item.latitude)])) });
       feature.set("officialWaypoint", item);
       feature.setStyle(buildOfficialWaypointStyle(item, zoomNow));
-      source.addFeature(feature);
+      feature.set("_officialStyleBucket", officialWaypointStyleBucket(zoomNow), true);
+      features.push(feature);
     });
+    source.addFeatures(features);
   }
 
 
@@ -1407,6 +1413,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
     const source = officialAreaSourceRef.current;
     if (!source) return;
     source.clear();
+    const features: Feature[] = [];
     items.filter((item) => item.visible !== false && Array.isArray(item.points) && item.points.length >= 3).forEach((item) => {
       const coords = item.points.map((point) => fromLonLat([Number(point.longitude), Number(point.latitude)]));
       if (coords.some((coord) => !Number.isFinite(coord[0]) || !Number.isFinite(coord[1]))) return;
@@ -1414,7 +1421,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const feature = new Feature({ geometry: new Polygon([ring]) });
       feature.set("officialArea", item);
       feature.setStyle(buildOfficialAreaStyle(item));
-      source.addFeature(feature);
+      features.push(feature);
 
       // V200: os vértices permanecem visíveis como pequenos waypoints, no estilo de plotter marítimo.
       coords.forEach((coord) => {
@@ -1427,9 +1434,10 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
           }),
           zIndex: 37,
         }));
-        source.addFeature(vertex);
+        features.push(vertex);
       });
     });
+    source.addFeatures(features);
   }
 
   function setOfficialAreaDraft(points: OfficialAreaPoint[]) {
@@ -1576,7 +1584,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const response = await aisFetch("/api/official-waypoints");
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return;
-      setOfficialWaypoints(Array.isArray(data?.waypoints) ? data.waypoints : []);
+      setOfficialWaypoints(previous => reuseUnchangedMapItems(previous, Array.isArray(data?.waypoints) ? data.waypoints : []));
     } catch {
       // Waypoints oficiais nunca devem bloquear o funcionamento do AIS.
     }
@@ -1588,7 +1596,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const response = await aisFetch("/api/official-areas");
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return;
-      setOfficialAreas(Array.isArray(data?.areas) ? data.areas : []);
+      setOfficialAreas(previous => reuseUnchangedMapItems(previous, Array.isArray(data?.areas) ? data.areas : []));
       setCanManageOfficialAreas(data?.canManage === true);
     } catch {
       // Áreas oficiais são complementares e nunca bloqueiam o AIS.
@@ -2999,6 +3007,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
     const map = new OlMap({
       target: hostRef.current,
+      pixelRatio: aisMapPixelRatio(window.devicePixelRatio, window.matchMedia("(pointer: coarse)").matches),
       controls: [],
       layers: [street, bathymetry, dhn, bathymetryContours, areaLayer, officialAreaLayer, vesselLayer, positionLayer, probeLayer, measureLayer, navigationLayer, waypointLayer, routeLayer, officialWaypointLayer, officialAreaDraftLayer],
       view,
@@ -3064,7 +3073,11 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }
       officialWaypointSource.getFeatures().forEach((feature) => {
         const item = feature.get("officialWaypoint") as OfficialWaypoint | undefined;
-        if (item) feature.setStyle(buildOfficialWaypointStyle(item, currentZoom));
+        const bucket = officialWaypointStyleBucket(currentZoom);
+        if (item && feature.get("_officialStyleBucket") !== bucket) {
+          feature.setStyle(buildOfficialWaypointStyle(item, currentZoom));
+          feature.set("_officialStyleBucket", bucket, true);
+        }
       });
       const selected = trackedRef.current;
       if (selected) anchorCardForVessel(selected);
@@ -3082,7 +3095,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
         return;
       }
       if (routeModeRef.current) {
-        const hit = map.forEachFeatureAtPixel(event.pixel,(feature:any)=>feature.get("routePointIndex") != null ? feature : null,{hitTolerance:14});
+        const hit = map.forEachFeatureAtPixel(event.pixel,(feature:any)=>feature.get("routePointIndex") != null ? feature : null,{hitTolerance:14, layerFilter: layer => layer === routeLayer});
         if (hit) return;
         const [lon,lat]=toLonLat(event.coordinate); setDraftRoute([...routePointsRef.current,{order:routePointsRef.current.length+1,latitude:lat,longitude:lon}]); setStatusMessage(`Ponto ${routePointsRef.current.length} adicionado à rota.`); return;
       }
@@ -3095,7 +3108,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const vessel = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("vessel") || null) as Vessel | null,
-        { hitTolerance: 10 },
+        { hitTolerance: 10, layerFilter: layer => layer === vesselLayer },
       );
       if (vessel) {
         trackedRef.current = vessel;
@@ -3111,7 +3124,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const officialWaypoint = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("officialWaypoint") || null) as OfficialWaypoint | null,
-        { hitTolerance: 14 },
+        { hitTolerance: 14, layerFilter: layer => layer === officialWaypointLayer },
       );
       if (officialWaypoint) {
         const lat = Number(officialWaypoint.latitude);
@@ -3126,7 +3139,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       const waypoint = map.forEachFeatureAtPixel(
         event.pixel,
         (feature: any) => (feature.get("waypoint") || null) as MapWaypoint | null,
-        { hitTolerance: 10 },
+        { hitTolerance: 10, layerFilter: layer => layer === waypointLayer },
       );
       if (waypoint) {
         setSelectedOfficialWaypoint(null);
@@ -3174,6 +3187,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       mapVesselRegistryRef.current.clear();
       vesselStyleBucketRef.current = null;
       map.setTarget(undefined);
+      map.dispose();
       mapRef.current = null;
     };
   }, []);
@@ -3290,10 +3304,9 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       return;
     }
 
-    layer.setOpacity(dhnOpacity);
     layer.setVisible(true);
     setDhnLoadMessage(`Carta ${chart.number} · ${chart.title}`);
-  }, [baseMode, dhnCharts, dhnOpacity, selectedDhnChart]);
+  }, [baseMode, dhnCharts, selectedDhnChart]);
 
   useEffect(() => {
     dhnLayerRef.current?.setOpacity(dhnOpacity);
