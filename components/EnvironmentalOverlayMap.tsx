@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { chlorophyllValue } from "../lib/chlorophyllValue";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import Feature from "ol/Feature";
 import Map from "ol/Map";
@@ -71,7 +72,7 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
 
   const points = mode === "wind" ? wind : chlorophyll;
   const numbers = useMemo(() => points
-    .map((item) => Number(mode === "wind" ? item.speedKmh : item.mgM3))
+    .map((item) => (mode === "wind" ? Number(item.speedKmh) : (chlorophyllValue(item.mgM3) ?? Number.NaN)))
     .filter(Number.isFinite), [mode, points]);
   const min = numbers.length ? Math.min(...numbers) : 0;
   const max = numbers.length ? Math.max(...numbers) : 1;
@@ -149,16 +150,16 @@ export default function EnvironmentalOverlayMap({ lat, lon, mode, wind, chloroph
     labelSource.clear();
 
     const finite = points.filter((item) => {
-      const value = Number(mode === "wind" ? item.speedKmh : item.mgM3);
+      const value = (mode === "wind" ? Number(item.speedKmh) : (chlorophyllValue(item.mgM3) ?? Number.NaN));
       return Number.isFinite(value) && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon));
     });
-    const finiteNumbers = finite.map((item) => Number(mode === "wind" ? item.speedKmh : item.mgM3));
+    const finiteNumbers = finite.map((item) => (mode === "wind" ? Number(item.speedKmh) : (chlorophyllValue(item.mgM3) ?? Number.NaN)));
     const localMin = finiteNumbers.length ? Math.min(...finiteNumbers) : 0;
     const localMax = finiteNumbers.length ? Math.max(...finiteNumbers) : 1;
     const span = Math.max(0.01, localMax - localMin);
 
     for (const item of finite) {
-      const value = Number(mode === "wind" ? item.speedKmh : item.mgM3);
+      const value = (mode === "wind" ? Number(item.speedKmh) : (chlorophyllValue(item.mgM3) ?? Number.NaN));
       const normalized = Math.max(0, Math.min(1, (value - localMin) / span));
       const coordinate = fromLonLat([Number(item.lon), Number(item.lat)]);
       const heatFeature = new Feature({ geometry: new Point(coordinate), weight: 0.42 + normalized * 0.58 });

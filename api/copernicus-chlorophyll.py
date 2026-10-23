@@ -34,7 +34,7 @@ def _to_float(value):
         number = float(value)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(number) or abs(number) > 1e20:
+    if not math.isfinite(number) or number < 0 or number > 1000:
         return None
     return number
 
@@ -66,7 +66,7 @@ def _forecast(lat: float, lon: float, days: int, username: str, password: str):
         chl = chl.sel(latitude=lat, method="nearest")
     if "longitude" in chl.dims:
         chl = chl.sel(longitude=lon, method="nearest")
-    chl = chl.squeeze(drop=True).load()
+    chl = chl.load()  # Preserva o eixo time mesmo com apenas um dia disponível.
 
     by_date = {}
     if "time" in chl.dims:
@@ -91,6 +91,7 @@ def _forecast(lat: float, lon: float, days: int, username: str, password: str):
             "model": "Copernicus Marine / NEMO" if date_key in by_date else None,
         })
 
+    dataset.close()
     return {
         "source": "Copernicus Marine / GLOBAL_ANALYSISFORECAST_BGC_001_028",
         "dataset": DATASET_ID,
@@ -128,7 +129,7 @@ class handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             return _json(self, 400, {"error": "Latitude, longitude ou período inválido."})
 
-        if lat < -80 or lat > 90 or lon < -180 or lon > 180:
+        if not math.isfinite(lat) or not math.isfinite(lon) or lat < -80 or lat > 90 or lon < -180 or lon > 180:
             return _json(self, 400, {"error": "Posição fora da cobertura do produto Copernicus."})
         days = max(1, min(days, 10))
 

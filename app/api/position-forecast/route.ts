@@ -1,3 +1,4 @@
+import { chlorophyllValue } from "../../../lib/chlorophyllValue";
 import { createHash } from "node:crypto";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { fetchNoaaChlorophyllGrid, fetchNoaaChlorophyllPoint } from "../../../lib/noaaChlorophyll";
@@ -256,11 +257,11 @@ async function fetchWeeklyChlorophyllForecast(lat: number, lon: number, requestU
       source: json?.source || "Copernicus Marine / NEMO-PISCES",
       values: days.map((day) => {
         const item = received.find((row: any) => row?.date === day.date);
-        const value = Number(item?.mgM3);
+        const value = chlorophyllValue(item?.mgM3);
         return {
           date: day.date,
-          mgM3: Number.isFinite(value) ? value : null,
-          model: Number.isFinite(value) ? "Copernicus Marine / NEMO" : null,
+          mgM3: value,
+          model: value != null ? "Copernicus Marine / NEMO" : null,
         };
       }),
     };
@@ -371,7 +372,7 @@ export async function GET(request: Request) {
     const satelliteGrid = Array.isArray(satelliteChlorophyll?.grid) ? satelliteChlorophyll.grid : [];
     const chlorophyllGrid = grid.map((point, index) => {
       const satellite = satelliteGrid.find((item: any) => item?.row === point.row && item?.col === point.col);
-      if (Number.isFinite(Number(satellite?.mgM3))) {
+      if (chlorophyllValue(satellite?.mgM3) != null) {
         return {
           ...point,
           mgM3: Number(satellite.mgM3),
@@ -425,10 +426,10 @@ export async function GET(request: Request) {
     // Copernicus Marine Ocean Colour NRT (observação multissensor). NOAA/VIIRS
     // permanece como fallback. A previsão NEMO/PISCES não foi alterada.
     const copernicusCurrent = satelliteChlorophyll?.current;
-    const currentSatellite = copernicusCurrent?.mgM3 != null
+    const currentSatellite = chlorophyllValue(copernicusCurrent?.mgM3) != null
       ? copernicusCurrent
       : (currentChlorophyll?.mgM3 != null ? currentChlorophyll : centralChl);
-    const currentChlorophyllMgM3 = currentSatellite?.mgM3 ?? null;
+    const currentChlorophyllMgM3 = chlorophyllValue(currentSatellite?.mgM3);
     const currentChlorophyllSource = currentSatellite?.mgM3 != null
       ? (currentSatellite?.source || "NOAA CoastWatch / VIIRS · satélite")
       : null;
@@ -456,7 +457,7 @@ export async function GET(request: Request) {
         seaTemperatureC: average(marineIndexes.map((index) => marine?.hourly?.sea_surface_temperature?.[index])) ?? marine?.hourly?.sea_surface_temperature?.[mi] ?? null,
         currentKmh: average(marineIndexes.map((index) => marine?.hourly?.ocean_current_velocity?.[index])) ?? marine?.hourly?.ocean_current_velocity?.[mi] ?? null,
         currentDirection: directionName(marine?.hourly?.ocean_current_direction?.[mi]),
-        chlorophyllMgM3: Number.isFinite(Number(chl?.mgM3)) ? Number(chl.mgM3) : null,
+        chlorophyllMgM3: chlorophyllValue(chl?.mgM3),
         chlorophyllModel: chl?.model || null,
       };
     });

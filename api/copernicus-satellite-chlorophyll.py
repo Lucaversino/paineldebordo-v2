@@ -50,7 +50,7 @@ def _stamp_to_iso(value):
         return None
     # numpy.datetime64 costuma chegar como YYYY-MM-DDTHH:MM:SS.000000000.
     # Para o painel basta uma data/hora ISO estável.
-    return text.replace(" ", "T")
+    return text.replace(" ", "T").split(".")[0].removesuffix("Z") + "Z"
 
 
 def _grid_points(lat: float, lon: float):
@@ -100,6 +100,7 @@ def _current_satellite(lat: float, lon: float, username: str, password: str):
     )
 
     chl = dataset[VARIABLE].load()
+    dataset.close()
     points = _grid_points(lat, lon)
 
     if "time" in chl.dims:
@@ -181,7 +182,7 @@ class handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             return _json(self, 400, {"error": "Latitude ou longitude inválida."})
 
-        if lat < -80 or lat > 80 or lon < -180 or lon > 180:
+        if not math.isfinite(lat) or not math.isfinite(lon) or lat < -80 or lat > 80 or lon < -180 or lon > 180:
             return _json(self, 400, {"error": "Posição fora da cobertura operacional."})
 
         try:

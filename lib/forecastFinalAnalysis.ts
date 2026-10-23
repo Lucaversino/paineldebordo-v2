@@ -1,3 +1,4 @@
+import { chlorophyllValue } from "./chlorophyllValue";
 export type ForecastAnalysisItem = {
   title: string;
   value: string;
@@ -36,8 +37,8 @@ export function buildForecastFinalAnalysis(data: any): ForecastFinalAnalysis {
   const current = data?.current || {};
   const weekly = Array.isArray(data?.weeklyForecast) ? data.weeklyForecast : [];
 
-  const satChl = num(current.chlorophyllMgM3);
-  const forecastChl = weekly.map((d: any) => num(d?.chlorophyllMgM3)).filter((v: number | null): v is number => v != null);
+  const satChl = chlorophyllValue(current.chlorophyllMgM3);
+  const forecastChl = weekly.map((d: any) => chlorophyllValue(d?.chlorophyllMgM3)).filter((v: number | null): v is number => v != null);
   const firstForecast = forecastChl.length ? forecastChl[0] : null;
   const lastForecast = forecastChl.length ? forecastChl[forecastChl.length - 1] : null;
   const avgForecast = forecastChl.length ? forecastChl.reduce((a: number, b: number) => a + b, 0) / forecastChl.length : null;

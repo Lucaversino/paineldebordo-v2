@@ -80,6 +80,7 @@ function parseCsvLine(line: string) {
 }
 
 function validChlorophyll(value: unknown) {
+  if (typeof value !== "number" && typeof value !== "string") return null;
   const n = Number(value);
   // Valores <=0, fill values e absurdos não devem entrar no mapa.
   return Number.isFinite(n) && n >= 0.001 && n <= 1000 ? n : null;
@@ -125,6 +126,7 @@ async function fetchDatasetPoint(
     const valueIndex = headers.findIndex((item) => item === "chlor_a");
     const timeIndex = headers.findIndex((item) => item === "time");
 
+    if (valueIndex < 0 || timeIndex < 0) return null;
     let latest: NoaaChlorophyllPoint | null = null;
     let latestTime = Number.NEGATIVE_INFINITY;
     for (const line of lines.slice(2)) {
@@ -133,7 +135,11 @@ async function fetchDatasetPoint(
       if (value == null) continue;
       const rawTime = (cells[timeIndex >= 0 ? timeIndex : 0] || "").replace(/^"|"$/g, "") || null;
       const parsedTime = rawTime ? Date.parse(rawTime) : Number.NaN;
-      const rank = Number.isFinite(parsedTime) ? parsedTime : latestTime + 1;
+      if (!Number.isFinite(parsedTime)) continue;
+      if (timeExpression.startsWith("last")) {
+        if (Date.now() - parsedTime > 10 * 86400000 || parsedTime > Date.now() + 86400000) continue;
+      } else if (rawTime?.slice(0, 10) !== timeExpression.slice(0, 10)) continue;
+      const rank = parsedTime;
       if (latest && rank < latestTime) continue;
       latestTime = rank;
       latest = {
@@ -233,6 +239,8 @@ async function fetchDatasetGrid(
       const sampleLon = Number(cells[lonIndex]);
       const value = validChlorophyll(cells[valueIndex]);
       if (!Number.isFinite(sampleLat) || !Number.isFinite(sampleLon) || value == null) continue;
+      const observed = Date.parse(cells[timeIndex] || "");
+      if (!Number.isFinite(observed) || Date.now() - observed > 10 * 86400000 || observed > Date.now() + 86400000) continue;
       rows.push({
         lat: sampleLat,
         lon: sampleLon,
