@@ -55,7 +55,6 @@ const STALE_TTL_MS = 5 * 60_000;
 const MAX_VESSELS = 180;
 
 function numberOrNull(value: unknown) {
-  if (value == null || (typeof value === "string" && !value.trim())) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -139,7 +138,7 @@ function parseVesselApiItem(raw: any): MapVessel | null {
   const timeRaw = cleanText(
     source?.timestamp ?? source?.position_timestamp ?? source?.received_at ?? source?.processed_timestamp ?? raw?.timestamp,
   );
-  const parsedTime = timeRaw && !Number.isNaN(new Date(timeRaw).getTime()) ? new Date(timeRaw).toISOString() : "";
+  const parsedTime = timeRaw && !Number.isNaN(new Date(timeRaw).getTime()) ? new Date(timeRaw) : new Date();
   const speed = numberOrNull(source?.speed ?? source?.sog ?? source?.SPEED);
   const course = numberOrNull(source?.course ?? source?.cog ?? source?.COURSE);
   const heading = numberOrNull(source?.heading ?? source?.HEADING);
@@ -155,8 +154,8 @@ function parseVesselApiItem(raw: any): MapVessel | null {
     heading: heading != null && heading < 511 ? heading : null,
     vesselType: shipTypeText(raw?.ship_type ?? raw?.vessel_type ?? raw?.type ?? source?.ship_type ?? source?.vessel_type ?? source?.type),
     navStatusText: cleanText(source?.navigational_status ?? source?.nav_status ?? source?.navStatus) || navStatusText(source?.navstat ?? source?.NAVSTAT),
-    positionReceived: parsedTime,
-    updateTime: parsedTime,
+    positionReceived: parsedTime.toISOString(),
+    updateTime: parsedTime.toISOString(),
     dataSource: "VesselAPI Free",
     receivedAt: Date.now(),
   };
@@ -224,7 +223,7 @@ function parseKplerItem(raw: any): MapVessel | null {
   if (lat == null || lon == null || !mmsi || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
 
   const timeRaw = cleanText(pos?.timestamp || pos?.updateTimestamp || raw?.updateTimestamp);
-  const parsedTime = timeRaw && !Number.isNaN(new Date(timeRaw).getTime()) ? new Date(timeRaw).toISOString() : "";
+  const parsedTime = timeRaw && !Number.isNaN(new Date(timeRaw).getTime()) ? new Date(timeRaw) : new Date();
   const heading = numberOrNull(pos?.heading);
   const nav = pos?.navigationalStatus;
 
@@ -239,8 +238,8 @@ function parseKplerItem(raw: any): MapVessel | null {
     heading: heading != null && heading < 511 ? heading : null,
     vesselType: shipTypeText(staticData?.vesselType ?? staticData?.type ?? staticData?.shipType),
     navStatusText: cleanText(nav) || navStatusText(nav),
-    positionReceived: parsedTime,
-    updateTime: parsedTime,
+    positionReceived: parsedTime.toISOString(),
+    updateTime: parsedTime.toISOString(),
     dataSource: "Kpler Maritime",
     receivedAt: Date.now(),
   };
@@ -338,7 +337,7 @@ function parseMarinesiaMapItem(raw: any): MapVessel | null {
   const mmsi = cleanText(raw?.mmsi).replace(/\D/g, "");
   if (lat == null || lon == null || !mmsi || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
   const stamp = cleanText(raw?.ts || raw?.timestamp);
-  const iso = stamp && !Number.isNaN(new Date(stamp).getTime()) ? new Date(stamp).toISOString() : "";
+  const iso = stamp && !Number.isNaN(new Date(stamp).getTime()) ? new Date(stamp).toISOString() : new Date().toISOString();
   const heading = numberOrNull(raw?.hdt ?? raw?.heading);
   return {
     mmsi,
@@ -442,9 +441,9 @@ async function fetchAisStreamCache(lat: number, lon: number, zoom = 10): Promise
     }
 
     return rows.map((row) => {
-      const rawStamp = row.position_received || row.last_seen_at || "";
+      const rawStamp = row.position_received || row.last_seen_at || new Date();
       const stampDate = rawStamp instanceof Date ? rawStamp : new Date(rawStamp);
-      const stamp = Number.isNaN(stampDate.getTime()) ? "" : stampDate.toISOString();
+      const stamp = Number.isNaN(stampDate.getTime()) ? new Date().toISOString() : stampDate.toISOString();
       return {
         mmsi: cleanText(row.mmsi).replace(/\D/g, ""),
         imo: cleanText(row.imo).replace(/\D/g, ""),
