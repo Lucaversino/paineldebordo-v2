@@ -213,6 +213,7 @@ export const officialWaypoints = pgTable("official_waypoints", {
   longitude: doublePrecision("longitude").notNull(),
   description: text("description").notNull().default(""),
   visible: boolean("visible").notNull().default(true),
+  scope: text("scope").notNull().default("public"),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull().default(nowText),
   updatedAt: text("updated_at").notNull().default(nowText),

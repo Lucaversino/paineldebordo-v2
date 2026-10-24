@@ -7125,3 +7125,14 @@ select option:checked {
 .set-trip-gpx-toolbar button svg{width:15px;height:15px}
 .app:not(.dark) .set-trip-gpx-toolbar{background:#ecf8f6;color:#28575c;border-color:#bbd9d4}
 @media(max-width:760px){.set-trip-gpx-toolbar{align-items:stretch;flex-direction:column;font-size:10px}.set-trip-gpx-toolbar button{justify-content:center}}
+
+/* V247: GPX e símbolos compactos */
+.admin-official-form select{width:100%;background:#06171d;border:1px solid #294d55;border-radius:9px;color:#e6fff9;padding:10px;font-size:12px}
+.admin-gpx-import{padding:10px;border:1px dashed #39776e;border-radius:10px}
+.admin-gpx-import input{font-size:11px!important}
+.admin-gpx-import small{color:#8fc7be;font-size:10px}
+.admin-official-types{grid-template-columns:repeat(3,minmax(0,1fr))}
+.admin-official-types button{min-height:44px;padding:5px;gap:5px}
+.admin-official-types img{width:26px;height:26px}
+.admin-official-types small{display:none}
+@media(max-width:560px){.admin-official-types{grid-template-columns:repeat(3,minmax(0,1fr))}.admin-official-types img{width:24px;height:24px}}

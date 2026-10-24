@@ -48,7 +48,7 @@ import CircleGeom from "ol/geom/Circle";
 import { Circle as CircleStyle, Fill, Icon as IconStyle, RegularShape, Stroke, Style, Text } from "ol/style";
 import { fromLonLat, toLonLat } from "ol/proj";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
-import { officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
+import { WAYPOINT_TYPES, type OfficialWaypointIconType, officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
 
 const DHN_TILE_BASE = (process.env.NEXT_PUBLIC_DHN_TILE_BASE_URL || "/cartas").replace(/\/$/, "");
 // V194: carta náutica DHN automática no AIS. Não exige botão do usuário.
@@ -83,7 +83,7 @@ type MapWaypoint = {
   updatedAt: string;
 };
 
-type OfficialWaypointType = "skull" | "rock" | "reef" | "wreck";
+type OfficialWaypointType = OfficialWaypointIconType;
 type OfficialWaypoint = {
   id: number;
   name: string;
@@ -92,6 +92,7 @@ type OfficialWaypoint = {
   longitude: number;
   description: string;
   visible: boolean;
+  scope: "public" | "private";
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -1326,10 +1327,7 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
   }
 
   function officialWaypointTypeLabel(type: OfficialWaypointType) {
-    if (type === "skull") return "CAVEIRA · PERIGO";
-    if (type === "rock") return "PEDRA / LAJE";
-    if (type === "reef") return "PARCEL";
-    return "NAUFRÁGIO";
+    return WAYPOINT_TYPES.find(t => t.value === type)?.label || "Referência";
   }
 
   function officialWaypointIcon(type: OfficialWaypointType) {
@@ -1339,13 +1337,13 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
 
   function buildOfficialWaypointStyle(item: OfficialWaypoint, currentZoom: number) {
     // V199: o ícone é um pin 96x96 com margem interna; a ponta do pin fica exatamente na coordenada.
-    const iconPx = currentZoom < 8 ? 36 : currentZoom < 11 ? 46 : 56;
-    const scale = iconPx / 96;
-    const showName = currentZoom >= 9;
+    const iconPx = currentZoom < 8 ? 15 : currentZoom < 11 ? 20 : 24;
+    const scale = iconPx / 48;
+    const showName = currentZoom >= 8;
     return new Style({
       image: new IconStyle({
         src: officialWaypointIcon(item.waypointType),
-        anchor: [0.5, 0.91],
+        anchor: [0.5, 0.5],
         anchorXUnits: "fraction",
         anchorYUnits: "fraction",
         scale,
@@ -1353,8 +1351,8 @@ export default function AISPage({ defaultLat, defaultLon }: Props) {
       }),
       text: showName ? new Text({
         text: item.name,
-        offsetY: 17,
-        font: "900 10px system-ui, sans-serif",
+        offsetY: -19,
+        font: "800 10px system-ui, sans-serif",
         fill: new Fill({ color: "#f7ffff" }),
         stroke: new Stroke({ color: "#04181e", width: 4 }),
         padding: [3, 4, 3, 4],

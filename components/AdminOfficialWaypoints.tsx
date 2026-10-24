@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, LoaderCircle, MapPin, Pencil, PlusCircle, RefreshCw, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, LoaderCircle, MapPin, Pencil, PlusCircle, RefreshCw, Upload, Save, ShieldCheck, Trash2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import { coordinateInputToDecimal, decimalToCoordinateInput, formatCoordinateInput } from "../lib/marineCoordinate";
-import { officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
+import { WAYPOINT_TYPES, type OfficialWaypointIconType, officialWaypointIconDataUri } from "../lib/officialWaypointIcons";
 
-type OfficialWaypointType = "skull" | "rock" | "reef" | "wreck";
+type OfficialWaypointType = OfficialWaypointIconType;
 type OfficialWaypoint = {
   id: number;
   name: string;
@@ -15,17 +15,13 @@ type OfficialWaypoint = {
   longitude: number;
   description: string;
   visible: boolean;
+  scope: "public" | "private";
   createdBy: string;
   createdAt: string;
   updatedAt: string;
 };
 
-const TYPES: Array<{ value: OfficialWaypointType; label: string; hint: string }> = [
-  { value: "skull", label: "Caveira", hint: "Perigo / atenção máxima" },
-  { value: "rock", label: "Pedra", hint: "Pedra, laje ou risco" },
-  { value: "reef", label: "Parcel", hint: "Parcel / elevação do fundo" },
-  { value: "wreck", label: "Naufrágio", hint: "Barco ou estrutura naufragada" },
-];
+const TYPES = WAYPOINT_TYPES.map(t => ({ ...t, hint: t.label }));
 
 function iconSrc(type: OfficialWaypointType) {
   return officialWaypointIconDataUri(type);
@@ -50,6 +46,8 @@ export default function AdminOfficialWaypoints() {
   const [longitude, setLongitude] = useState("");
   const [description, setDescription] = useState("");
   const [visible, setVisible] = useState(true);
+  const [scope, setScope] = useState<"public" | "private">("public");
+  const [importing, setImporting] = useState(false);
 
   const adminFetch = async (url: string, init: RequestInit = {}) => {
     const makeRequest = async (token?: string | null) => {
@@ -72,6 +70,7 @@ export default function AdminOfficialWaypoints() {
     setLongitude("");
     setDescription("");
     setVisible(true);
+    setScope("public");
   };
 
   const load = async () => {
@@ -99,6 +98,7 @@ export default function AdminOfficialWaypoints() {
     setLongitude(decimalToCoordinateInput(item.longitude));
     setDescription(item.description || "");
     setVisible(item.visible !== false);
+    setScope(item.scope === "private" ? "private" : "public");
     setMessage("");
     setError("");
   };
@@ -119,7 +119,7 @@ export default function AdminOfficialWaypoints() {
       const response = await adminFetch("/api/official-waypoints", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: editingId, name, waypointType, latitude: lat, longitude: lon, description, visible }),
+        body: JSON.stringify({ id: editingId, name, waypointType, latitude: lat, longitude: lon, description, visible, scope }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Não foi possível salvar.");
@@ -170,6 +170,31 @@ export default function AdminOfficialWaypoints() {
     }
   };
 
+  const importGpx = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 5_000_000) { setError("GPX maior que 5 MB."); return; }
+    setImporting(true); setError(""); setMessage("");
+    try {
+      const xml = new DOMParser().parseFromString(await file.text(), "application/xml");
+      if (xml.querySelector("parsererror") || xml.documentElement.localName !== "gpx") throw new Error("Arquivo GPX inválido.");
+      const nodes = Array.from(xml.getElementsByTagName("*")).filter(n => n.localName === "wpt");
+      if (!nodes.length) throw new Error("GPX sem waypoints (wpt). Rotas não são importadas como marcas para evitar pontos duplicados.");
+      if (nodes.length > 500) throw new Error("Limite de 500 waypoints por arquivo.");
+      const waypoints = nodes.map((n, i) => {
+        const child = (key: string) => Array.from(n.children).find(c => c.localName === key)?.textContent?.trim() || "";
+        return { name: child("name").slice(0, 80) || `Marca ${i + 1}`, description: child("desc").slice(0, 500), latitude: Number(n.getAttribute("lat")), longitude: Number(n.getAttribute("lon")), waypointType, visible: true, scope };
+      });
+      if (waypoints.some(w => !Number.isFinite(w.latitude) || !Number.isFinite(w.longitude) || Math.abs(w.latitude) > 90 || Math.abs(w.longitude) > 180)) throw new Error("GPX possui coordenadas inválidas.");
+      if (!window.confirm(`Importar ${waypoints.length} marcas para ${scope === "public" ? "TODOS os usuários" : "somente sua conta"}?`)) return;
+      const response = await adminFetch("/api/official-waypoints/import", { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ waypoints }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Falha na importação.");
+      setMessage(`${data.imported} waypoints GPX importados (${scope === "public" ? "todos" : "particulares"}).`);
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Falha ao ler GPX."); }
+    finally { setImporting(false); }
+  };
+
   return <section className="admin-official-waypoints">
     <div className="admin-official-head">
       <div><small>MAPA AIS · SUPER ADMIN</small><h3><MapPin /> Waypoints Oficiais</h3><p>Cadastre perigos, pedras, parcéis e naufrágios. Usuários apenas visualizam; exclusão fica protegida no servidor para o administrador principal.</p></div>
@@ -183,6 +208,16 @@ export default function AdminOfficialWaypoints() {
       <form className="admin-official-form" onSubmit={submit}>
         <div className="admin-official-form-title"><span><ShieldCheck /><b>{editingId ? "EDITAR WAYPOINT OFICIAL" : "NOVO WAYPOINT OFICIAL"}</b></span>{editingId && <button type="button" onClick={resetForm}><X /></button>}</div>
         <label>Nome<input value={name} onChange={(e) => setName(e.target.value.slice(0, 80))} placeholder="Ex.: Pedra do Sul" required /></label>
+        <label>Quem pode visualizar?
+          <select value={scope} onChange={e => setScope(e.target.value as "public" | "private")}>
+            <option value="public">Público: todos os usuários do AIS</option>
+            <option value="private">Particular: somente minha conta</option>
+          </select>
+        </label>
+        <label className="admin-gpx-import">Importar marcas do TimeZero (.gpx)
+          <input type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" disabled={importing} onChange={e => { void importGpx(e.target.files?.[0]); e.target.value = ""; }} />
+          <small>{importing ? "Importando..." : `As marcas serão ${scope === "public" ? "públicas" : "particulares"}. Importação de waypoints (wpt).`}</small>
+        </label>
         <div className="admin-official-types">
           {TYPES.map((type) => <button key={type.value} type="button" className={waypointType === type.value ? "active" : ""} onClick={() => setWaypointType(type.value)}>
             <img src={iconSrc(type.value)} alt="" /><span><b>{type.label}</b><small>{type.hint}</small></span>
@@ -201,7 +236,7 @@ export default function AdminOfficialWaypoints() {
         <div className="admin-official-list-head"><b>CADASTRADOS</b><span>{items.length} waypoint(s)</span></div>
         {loading && !items.length ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando...</div> : items.length ? items.map((item) => <article key={item.id} className={!item.visible ? "hidden" : ""}>
           <img src={iconSrc(item.waypointType)} alt="" />
-          <div className="admin-official-item-main"><b>{item.name}</b><small>{typeLabel(item.waypointType)} · {decimalToCoordinateInput(item.latitude)} S / {decimalToCoordinateInput(item.longitude)} W</small><p>{item.description || "Sem observação."}</p></div>
+          <div className="admin-official-item-main"><b>{item.name} {item.scope === "private" ? "🔒" : "🌐"}</b><small>{typeLabel(item.waypointType)} · {decimalToCoordinateInput(item.latitude)} S / {decimalToCoordinateInput(item.longitude)} W</small><p>{item.description || "Sem observação."}</p></div>
           <div className="admin-official-item-actions">
             <button type="button" onClick={() => void toggleVisibility(item)} title={item.visible ? "Ocultar do AIS" : "Mostrar no AIS"}>{item.visible ? <Eye /> : <EyeOff />}</button>
             <button type="button" onClick={() => edit(item)} title="Editar"><Pencil /></button>
