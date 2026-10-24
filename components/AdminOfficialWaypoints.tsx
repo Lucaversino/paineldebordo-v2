@@ -48,6 +48,10 @@ export default function AdminOfficialWaypoints() {
   const [visible, setVisible] = useState(true);
   const [scope, setScope] = useState<"public" | "private">("public");
   const [importing, setImporting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectedCount = selectedIds.length;
+  const allSelected = items.length > 0 && items.every(item => selectedIds.includes(item.id));
 
   const adminFetch = async (url: string, init: RequestInit = {}) => {
     const makeRequest = async (token?: string | null) => {
@@ -80,7 +84,9 @@ export default function AdminOfficialWaypoints() {
       const response = await adminFetch("/api/official-waypoints?includeHidden=1");
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Não foi possível carregar os waypoints oficiais.");
-      setItems(Array.isArray(data?.waypoints) ? data.waypoints : []);
+      const received: OfficialWaypoint[] = Array.isArray(data?.waypoints) ? data.waypoints : [];
+      setItems(received);
+      setSelectedIds(current => current.filter(id => received.some(item => item.id === id)));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Falha ao carregar waypoints oficiais.");
     } finally {
@@ -143,6 +149,7 @@ export default function AdminOfficialWaypoints() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Não foi possível apagar.");
       setItems((current) => current.filter((row) => row.id !== item.id));
+      setSelectedIds(current => current.filter(id => id !== item.id));
       if (editingId === item.id) resetForm();
       setMessage("Waypoint oficial apagado.");
     } catch (cause) {
@@ -150,6 +157,38 @@ export default function AdminOfficialWaypoints() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const removeSelected = async () => {
+    if (bulkDeleting || !selectedCount) return;
+    const ids = [...selectedIds];
+    if (!window.confirm(`Excluir DEFINITIVAMENTE ${ids.length} waypoint(s) selecionado(s)? Esta ação não pode ser desfeita.`)) return;
+    setBulkDeleting(true);
+    setError("");
+    setMessage("");
+    try {
+      // Em lotes para limitar a carga da API, sem excluir nenhum registro fora da seleção.
+      let removed = 0;
+      for (let start = 0; start < ids.length; start += 200) {
+        const response = await adminFetch("/api/official-waypoints/bulk-delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(start, start + 200) }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || "Erro ao excluir waypoints selecionados.");
+        removed += Number(data.deleted || 0);
+        const deletedIds: number[] = Array.isArray(data.deletedIds) ? data.deletedIds : [];
+        setItems(current => current.filter(row => !deletedIds.includes(row.id)));
+        setSelectedIds(current => current.filter(id => !deletedIds.includes(id)));
+        if (editingId !== null && deletedIds.includes(editingId)) resetForm();
+      }
+      setMessage(`${removed} waypoint(s) apagado(s).`);
+      await load();
+    } catch (cause) {
+      setError(`${cause instanceof Error ? cause.message : "Erro ao excluir."} Verifique os restantes antes de tentar novamente.`);
+      await load();
+    } finally { setBulkDeleting(false); }
   };
 
   const toggleVisibility = async (item: OfficialWaypoint) => {
@@ -234,7 +273,13 @@ export default function AdminOfficialWaypoints() {
 
       <div className="admin-official-list">
         <div className="admin-official-list-head"><b>CADASTRADOS</b><span>{items.length} waypoint(s)</span></div>
-        {loading && !items.length ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando...</div> : items.length ? items.map((item) => <article key={item.id} className={!item.visible ? "hidden" : ""}>
+        <div className="admin-waypoint-bulk-toolbar">
+          <label><input type="checkbox" checked={allSelected} disabled={loading || bulkDeleting || !items.length} onChange={e => setSelectedIds(e.target.checked ? items.map(item => item.id) : [])} /> Selecionar todos</label>
+          <span>{selectedCount} selecionado(s)</span>
+          <button type="button" className="admin-waypoint-bulk-delete" onClick={() => void removeSelected()} disabled={!selectedCount || bulkDeleting || loading}>{bulkDeleting ? <LoaderCircle className="spin" /> : <Trash2 />} {bulkDeleting ? "Excluindo..." : "Excluir selecionados"}</button>
+        </div>
+        {loading && !items.length ? <div className="credits-loading"><LoaderCircle className="spin" /> Carregando...</div> : items.length ? items.map((item) => <article key={item.id} className={`${!item.visible ? "hidden" : ""} ${selectedIds.includes(item.id) ? "admin-waypoint-selected" : ""}`}>
+          <input className="admin-waypoint-select" type="checkbox" aria-label={`Selecionar waypoint ${item.name}`} checked={selectedIds.includes(item.id)} disabled={bulkDeleting} onChange={e => setSelectedIds(current => e.target.checked ? [...current, item.id] : current.filter(id => id !== item.id))} />
           <img src={iconSrc(item.waypointType)} alt="" />
           <div className="admin-official-item-main"><b>{item.name} {item.scope === "private" ? "🔒" : "🌐"}</b><small>{typeLabel(item.waypointType)} · {decimalToCoordinateInput(item.latitude)} S / {decimalToCoordinateInput(item.longitude)} W</small><p>{item.description || "Sem observação."}</p></div>
           <div className="admin-official-item-actions">
