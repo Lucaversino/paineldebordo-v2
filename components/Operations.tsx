@@ -25,6 +25,7 @@ import BackupImporter from "./BackupImporter";
 import TripFullReport from "./TripFullReport";
 import AnnualReport from "./AnnualReport";
 import { getTripYear } from "../lib/tripReports";
+import { downloadFishingSetsGpx } from "../lib/fishingSetGpx";
 import { OFFLINE_SYNC_EVENT, cacheOfflineManage, getOfflineManage } from "../lib/offlinePanel";
 const localDateTime = (value?: string | null) => {
   if (!value) return "";
@@ -721,6 +722,15 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
               ? new Date(Math.max(...tripSets.map((set) => new Date(set.startedAt).getTime())))
               : null;
 
+            const exportGpx = (items: typeof tripSets, name: string) => {
+              try {
+                const result = downloadFishingSetsGpx(items, name);
+                setMsg(`GPX TimeZero gerado: ${result.routes} rota(s) e ${result.marks} waypoint(s).${result.incomplete ? ` ${result.incomplete} largada(s) com apenas uma posição: exportadas como marcas.` : ""}${result.skipped ? ` ${result.skipped} largada(s) sem coordenadas válidas, ignoradas.` : ""}`);
+              } catch (error) {
+                setMsg(error instanceof Error ? error.message : "Erro ao gerar GPX.");
+              }
+            };
+
             return (
               <section key={trip.id} className={`set-trip-folder ${isCurrent ? "current" : "finished"} ${isOpen ? "open" : ""}`}>
                 <button type="button" className="set-trip-folder-head" onClick={() => toggleSetTripFolder(Number(trip.id))}>
@@ -741,6 +751,14 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
 
                 {isOpen && (
                   <div className="set-trip-folder-body">
+                    {tripSets.length > 0 && (
+                      <div className="set-trip-gpx-toolbar">
+                        <span>Exportar as redes desta viagem como rotas e marcas para o TimeZero</span>
+                        <button type="button" className="editbtn" onClick={() => exportGpx([...tripSets].sort((a, b) => Number(a.setNumber) - Number(b.setNumber)), trip.name)}>
+                          <Download /> GPX TimeZero · Viagem inteira
+                        </button>
+                      </div>
+                    )}
                     {tripSets.length ? (
                       <div className="tablewrap set-trip-tablewrap">
                         <table>
@@ -779,6 +797,9 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                                     <span className="offline-row-pending">AGUARDANDO SINCRONIZAÇÃO</span>
                                   ) : (
                                     <div className="rowactions">
+                                      <button type="button" className="editbtn" title="Exportar rota e waypoints desta largada para TimeZero" onClick={() => exportGpx([x], `${trip.name}-largada-${x.setNumber}`)}>
+                                        <Download /> GPX
+                                      </button>
                                       <button type="button" className="weatherbtn" onClick={() => setWeatherSet({ set: x, trip })}>
                                         <BarChart3 /> Meteorologia
                                       </button>
