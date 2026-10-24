@@ -27,6 +27,8 @@ import {
   LogOut,
   LocateFixed,
   MapPinned,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
@@ -101,7 +103,8 @@ export default function Home() {
     [offlineSyncing, setOfflineSyncing] = useState(false),
     [gpsPermissionMessage, setGpsPermissionMessage] = useState(""),
     [operationsIntent, setOperationsIntent] = useState<"boat" | "trip" | null>(null),
-    [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false);
+    [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false),
+    [hideDashboardValues, setHideDashboardValues] = useState(false);
   const onboardingRedirected = useRef(false);
   const primeOfflineManage = async () => {
     if (!navigator.onLine) return;
@@ -566,14 +569,14 @@ export default function Home() {
         {view === "Dashboard" ? (
           <section className="content">
             {gpsPermissionMessage && <div className="gps-dashboard-message">{gpsPermissionMessage}</div>}
-            <div className="dashboard-help-row"><button type="button" className="dashboard-help-link" onClick={() => setView("Ajuda")}><CircleHelp size={18} /> Ajuda · aprenda a usar</button></div>
+            <div className="dashboard-help-row"><button type="button" className="dashboard-privacy-toggle" onClick={() => setHideDashboardValues((v) => !v)} aria-pressed={hideDashboardValues} aria-label={hideDashboardValues ? "Mostrar valores do dashboard" : "Ocultar valores do dashboard"} title={hideDashboardValues ? "Mostrar os valores" : "Esconder os valores"}>{hideDashboardValues ? <Eye size={18} /> : <EyeOff size={18} />} {hideDashboardValues ? "Mostrar valores" : "Ocultar valores"}</button><button type="button" className="dashboard-help-link" onClick={() => setView("Ajuda")}><CircleHelp size={18} /> Ajuda · aprenda a usar</button></div>
             {onboardingCompleteMessage && (
               <div className="onboarding-complete-banner">
                 <div><b>🎣 Bem-vindo ao Painel de Bordo!</b><span>Sua primeira viagem foi criada. Agora você já pode registrar largadas, capturas e acompanhar toda a pescaria.</span><small>Qualquer dúvida, entre na página Ajuda.</small></div>
                 <div><button type="button" onClick={() => setView("Ajuda")}><CircleHelp /> ABRIR AJUDA</button><button type="button" className="onboarding-dismiss" onClick={() => setOnboardingCompleteMessage(false)} aria-label="Fechar mensagem"><X /></button></div>
               </div>
             )}
-            <DailyDataUsage />
+            <div className={hideDashboardValues ? "dashboard-private-panel" : ""}><DailyDataUsage /></div>
             {loading ? (
               <div className="emptydash">
                 <h2>Carregando painel...</h2>
@@ -656,27 +659,27 @@ export default function Home() {
                       <div>
                         <small>CORVINA CAPTURADA</small>
                         <strong>
-                          {fmt(data.total)} <em>kg</em>
+                          {hideDashboardValues ? "••••" : fmt(data.total)} <em>{hideDashboardValues ? "" : "kg"}</em>
                         </strong>
                       </div>
                       <div>
                         <small>META TOTAL</small>
-                        <b>{fmt(t.targetKg)} kg</b>
+                        <b>{hideDashboardValues ? "••••" : `${fmt(t.targetKg)} kg`}</b>
                       </div>
                     </div>
                     <div className="progress">
-                      <i style={{ width: `${pct}%` }} />
+                      <i style={{ width: `${hideDashboardValues ? 0 : pct}%` }} />
                     </div>
                     <div className="progressline">
-                      <b>{fmt(pct, 1)}% atingido</b>
-                      <span>Faltam {fmt(left)} kg</span>
+                      <b>{hideDashboardValues ? "••••" : `${fmt(pct, 1)}% atingido`}</b>
+                      <span>{hideDashboardValues ? "Valores ocultos" : `Faltam ${fmt(left)} kg`}</span>
                     </div>
                   </div>
                   <div className="forecast">
                     <small>PROJEÇÃO FINAL</small>
-                    <strong>{fmt(forecast)} kg</strong>
+                    <strong>{hideDashboardValues ? "••••" : `${fmt(forecast)} kg`}</strong>
                     <span className={forecast >= t.targetKg ? "good" : "warn"}>
-                      {data.total
+                      {hideDashboardValues ? "Valores ocultos" : data.total
                         ? forecast >= t.targetKg
                           ? "Acima da meta"
                           : "Abaixo da meta"
@@ -688,34 +691,34 @@ export default function Home() {
                   <article>
                     <small>MÉDIA DIÁRIA</small>
                     <b>
-                      {fmt(avg)} <em>kg/dia</em>
+                      {hideDashboardValues ? "••••" : fmt(avg)} <em>{hideDashboardValues ? "" : "kg/dia"}</em>
                     </b>
                     <span>Produção real</span>
                   </article>
                   <article className="accent">
                     <small>NECESSÁRIO/DIA</small>
                     <b>
-                      {fmt(needed)} <em>kg/dia</em>
+                      {hideDashboardValues ? "••••" : fmt(needed)} <em>{hideDashboardValues ? "" : "kg/dia"}</em>
                     </b>
                     <span>Para alcançar a meta</span>
                   </article>
                   <article>
                     <small>LARGADAS</small>
-                    <b>{data.setCount}</b>
+                    <b>{hideDashboardValues ? "••••" : data.setCount}</b>
                     <span>Na viagem atual</span>
                   </article>
                   <article>
                     <small>PRODUÇÃO HOJE</small>
                     <b>
-                      {fmt(data.daily.at(-1)?.kg || 0)} <em>kg</em>
+                      {hideDashboardValues ? "••••" : fmt(data.daily.at(-1)?.kg || 0)} <em>{hideDashboardValues ? "" : "kg"}</em>
                     </b>
                     <span>Somente hoje</span>
                   </article>
                 </div>
                 <div className="catch-breakdown">
-                  <article className="main-catch"><small>ESPÉCIE PRINCIPAL</small><b>Corvina</b><strong>{fmt(data.corvinaTotal)} kg</strong></article>
-                  <article><small>MISTURA DE PEIXE</small><strong>{fmt(data.mixtureTotal)} kg</strong></article>
-                  <article className="discard"><small>DESCARTE</small><strong>{fmt(data.discardTotal)} kg</strong></article>
+                  <article className="main-catch"><small>ESPÉCIE PRINCIPAL</small><b>Corvina</b><strong>{hideDashboardValues ? "••••" : `${fmt(data.corvinaTotal)} kg`}</strong></article>
+                  <article><small>MISTURA DE PEIXE</small><strong>{hideDashboardValues ? "••••" : `${fmt(data.mixtureTotal)} kg`}</strong></article>
+                  <article className="discard"><small>DESCARTE</small><strong>{hideDashboardValues ? "••••" : `${fmt(data.discardTotal)} kg`}</strong></article>
                 </div>
                 <div className="actions">
                   <button onClick={() => { setSaveError(""); setModal("set"); }}>
@@ -772,7 +775,9 @@ export default function Home() {
                         <h3>Produção acumulada</h3>
                       </div>
                     </div>
-                    {chart.length ? (
+                    {hideDashboardValues ? (
+                      <div className="chartempty">Produção oculta no modo privacidade.</div>
+                    ) : chart.length ? (
                       <DashboardProductionChart data={chart} />
                     ) : (
                       <div className="chartempty">
