@@ -102,7 +102,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   autoTable(doc, {
     startY: 114,
     margin: { left: 16, right: 16, bottom: 52 },
-    head: [["Nº", "Data", "Início", "Final", "Prof.", "Posição inicial", "Posição final", "Corvina", "Mistura", "Descarte"]],
+    head: [["Nº", "Data", "Início", "Final", "Prof.", "Ponta Sul", "Ponta Norte", "Corvina", "Mistura", "Descarte"]],
     body: tripSets.map((item) => {
       const setCatches = tripCatches.filter((entry) => Number(entry.fishingSetId) === Number(item.id));
       const sumType = (type: string) => setCatches.filter((entry) => (entry.catchType || "PRIMARY") === type).reduce((sum, entry) => sum + Number(entry.weightKg || 0), 0);

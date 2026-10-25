@@ -769,8 +769,8 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                               <th>Horário inicial</th>
                               <th>Horário final</th>
                               <th>Profundidade</th>
-                              <th>Posição inicial</th>
-                              <th>Posição final</th>
+                              <th>Ponta Sul</th>
+                              <th>Ponta Norte</th>
                               <th>Captura</th>
                               <th>Ações</th>
                             </tr>

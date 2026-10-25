@@ -172,7 +172,7 @@ export function generateSetWeatherPdf(input: {
   doc.text(`Emitido em ${new Date().toLocaleString("pt-BR")}`, 281, 31, { align: "right" });
 
   const detailRows = [
-    ["Posição inicial", `${dmm(fishingSet?.startLatitude, true)}  ·  ${dmm(fishingSet?.startLongitude, false)}`],
+    ["Ponta Sul", `${dmm(fishingSet?.startLatitude, true)}  ·  ${dmm(fishingSet?.startLongitude, false)}`],
     ["Profundidade", fishingSet?.depthMeters != null ? `${num(fishingSet.depthMeters, 0)} m` : "-"],
     ["Captura da largada", `${num(captureKg, 0)} kg`],
     ["Fonte", snapshot?.sourceMode === "HISTORICAL_BACKFILL" ? "Dados históricos/modelados" : "Snapshot do dia"],

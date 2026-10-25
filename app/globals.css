@@ -7155,3 +7155,38 @@ select option:checked {
 .dashboard-private-panel{position:relative;isolation:isolate;overflow:hidden;border-radius:12px}
 .dashboard-private-panel::after{content:"DADOS E VALORES OCULTOS";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#071e25;color:#68dccb;font-size:12px;font-weight:750;letter-spacing:.08em;z-index:2}
 @media(max-width:480px){.dashboard-privacy-toggle,.dashboard-help-link{font-size:12px;padding:8px}}
+
+/* V250: destaque visual das duas pontas no cadastro e edição de largadas. */
+.coords.coords-ponta {
+  padding: 16px 14px 15px;
+  border-width: 2px;
+  border-radius: 16px;
+}
+.coords.coords-ponta-sul {
+  border-color: rgba(35, 204, 168, .8);
+  background: linear-gradient(145deg, rgba(17, 97, 81, .25), rgba(6, 28, 34, .7));
+}
+.coords.coords-ponta-norte {
+  border-color: rgba(76, 168, 249, .85);
+  background: linear-gradient(145deg, rgba(27, 76, 120, .25), rgba(6, 28, 34, .7));
+}
+.coords.coords-ponta legend {
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+.coords.coords-ponta-sul legend { color: #4cf0c3; }
+.coords.coords-ponta-norte legend { color: #83c7ff; }
+.coords-ponta-hint {
+  color: #afc4c8;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+@media (max-width: 520px) {
+  .coords.coords-ponta legend { font-size: 13px; letter-spacing: .03em; }
+  .coords-ponta-hint { display: block; padding-top: 3px; }
+}

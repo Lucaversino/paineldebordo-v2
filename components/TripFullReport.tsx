@@ -152,7 +152,7 @@ export default function TripFullReport({ trip, sets, catches, onBack, onPdf }: P
         <div className="full-report-heading"><Waves /><div><small>LARGADAS</small><h4>Todos os dados operacionais e meteorológicos</h4></div></div>
         <div className="full-report-tablewrap wide">
           <table>
-            <thead><tr><th>#</th><th>Data / horário</th><th>Rede</th><th>Posição inicial</th><th>Posição final</th><th>Captura</th><th>Descarte</th><th>Meteorologia</th></tr></thead>
+            <thead><tr><th>#</th><th>Data / horário</th><th>Rede</th><th>Ponta Sul</th><th>Ponta Norte</th><th>Captura</th><th>Descarte</th><th>Meteorologia</th></tr></thead>
             <tbody>
               {report.tripSets.map((set) => {
                 const setCatches = report.tripCatches.filter((item) => Number(item.fishingSetId) === Number(set.id));
