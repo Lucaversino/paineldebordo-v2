@@ -7190,3 +7190,16 @@ select option:checked {
   .coords.coords-ponta legend { font-size: 13px; letter-spacing: .03em; }
   .coords-ponta-hint { display: block; padding-top: 3px; }
 }
+
+/* V251 · edição rápida de captura diretamente nas Largadas */
+.set-capture-quick-cell{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:105px}
+.set-capture-quick-edit{display:inline-flex;align-items:center;gap:5px;border:1px solid #288c83;border-radius:7px;background:#07332f;color:#68efcb;padding:6px 9px;font-size:11px;font-weight:750;cursor:pointer;white-space:nowrap}
+.set-capture-quick-edit:hover{background:#145149;color:#fff}
+.set-capture-quick-edit svg{width:13px;height:13px}
+.set-capture-select-modal{max-height:85vh;overflow-y:auto}
+.set-capture-select-list{display:grid;gap:8px;margin:16px 0}
+.set-capture-select-item{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #275159;border-radius:10px;background:#0b2e34;padding:12px}
+.set-capture-select-item span{display:grid;gap:4px}
+.set-capture-select-item small{color:#89b9bd}
+.set-capture-select-item .editbtn{white-space:nowrap}
+@media(max-width:500px){.set-capture-select-item{flex-wrap:wrap}.set-capture-quick-edit{font-size:10px}}

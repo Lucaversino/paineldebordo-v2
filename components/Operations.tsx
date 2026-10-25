@@ -146,6 +146,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     [form, setForm] = useState<any>(null),
     [editing, setEditing] = useState<any>(null),
     [editingCatch, setEditingCatch] = useState<any>(null),
+    [captureSet, setCaptureSet] = useState<any>(null),
     [editingSpecies, setEditingSpecies] = useState<any>(null),
     [reportTripId, setReportTripId] = useState(""),
     [pdfTrip, setPdfTrip] = useState<any>(null),
@@ -338,7 +339,8 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       return;
     }
     setEditingCatch(null);
-    setMsg("Captura atualizada. O dashboard foi recalculado.");
+    setCaptureSet(null);
+    setMsg("Captura atualizada e sincronizada com Largadas, Capturas e Dashboard.");
     load();
   }
   async function saveSpecies(e: any) {
@@ -791,7 +793,19 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                                   <small>Lat. {dmm(x.endLatitude, true)}</small>
                                   <small>Long. {dmm(x.endLongitude, false)}</small>
                                 </td>
-                                <td>{f(x.total)} kg</td>
+                                <td>
+                                  <div className="set-capture-quick-cell">
+                                    <b>{f(x.total)} kg</b>
+                                    {Number(x.id) >= 0 && !x.offlinePending && (
+                                      <button type="button" className="set-capture-quick-edit" title="Editar os pesos das capturas desta largada" onClick={() => {
+                                        setMsg("");
+                                        const records = s.catches.filter((c) => Number(c.fishingSetId) === Number(x.id));
+                                        if (records.length === 1) setEditingCatch(records[0]);
+                                        else setCaptureSet(x);
+                                      }}><Pencil /> Editar captura</button>
+                                    )}
+                                  </div>
+                                </td>
                                 <td>
                                   {Number(x.id) < 0 || x.offlinePending ? (
                                     <span className="offline-row-pending">AGUARDANDO SINCRONIZAÇÃO</span>
@@ -1395,6 +1409,27 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
             <button className="save">SALVAR ALTERAÇÕES</button>
             {msg && <p className="error">{msg}</p>}
           </form>
+        </div>
+      )}
+      {captureSet && !editingCatch && (
+        <div className="overlay" onMouseDown={() => setCaptureSet(null)}>
+          <div className="modal form set-capture-select-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <button type="button" className="modalx" onClick={() => setCaptureSet(null)}>×</button>
+            <small>CAPTURAS DA LARGADA</small>
+            <h2>Largada #{String(captureSet.setNumber).padStart(2, "0")}</h2>
+            <p>Edite o peso de cada espécie. Os totais da largada e da aba Capturas serão recalculados automaticamente.</p>
+            {s.catches.filter((c) => Number(c.fishingSetId) === Number(captureSet.id)).length ? (
+              <div className="set-capture-select-list">
+                {s.catches.filter((c) => Number(c.fishingSetId) === Number(captureSet.id)).map((c) => (
+                  <div key={c.id} className="set-capture-select-item">
+                    <span><strong>{c.species}</strong><small>{getCatchCategoryLabel(c.catchType)} · {f(c.weightKg)} kg</small></span>
+                    <button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setEditingCatch(c); }}><Pencil /> Editar peso</button>
+                  </div>
+                ))}
+              </div>
+            ) : <p>Nenhuma captura cadastrada nesta largada. Registre primeiro uma captura na aba Capturas ou no formulário de nova largada.</p>}
+            <button type="button" className="editbtn" onClick={() => setCaptureSet(null)}>Fechar</button>
+          </div>
         </div>
       )}
       {editingCatch && (
