@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Compass } from "lucide-react";
+import { Compass, Ruler } from "lucide-react";
 
 function parseClock(value: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
@@ -24,6 +24,21 @@ export default function NavigationCalculator() {
   const [distance, setDistance] = useState("");
   const [departure, setDeparture] = useState("");
   const [arrival, setArrival] = useState("");
+  const [meters, setMeters] = useState("");
+
+  // Definição internacional exata: 1 milha náutica = 1852 metros.
+  // 1 décimo de milha náutica = 185,2 metros.
+  const metersResult = useMemo(() => {
+    if (!meters.trim()) return null;
+    const value = Number(meters.trim().replace(",", "."));
+    if (!Number.isFinite(value) || value < 0) return null;
+    return { nauticalMiles: value / 1852, tenths: value / 185.2 };
+  }, [meters]);
+
+  const formatConversion = (value: number) => value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  });
 
   const result = useMemo(() => {
     const nauticalMiles = Number(distance.trim().replace(",", "."));
@@ -90,6 +105,33 @@ export default function NavigationCalculator() {
           <small>VELOCIDADE NECESSÁRIA</small>
           <strong>{result ? result.speed.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"} <em>nós</em></strong>
         </div>
+      </div>
+      <div className="navigation-meter-converter" aria-label="Conversor de metros para milhas náuticas">
+        <div className="navigation-meter-head">
+          <Ruler size={16} aria-hidden="true" />
+          <div><small>CONVERSOR DE DISTÂNCIA</small><b>Metros para milhas e décimos náuticos</b></div>
+        </div>
+        <div className="navigation-meter-body">
+          <label className="navigation-meter-field">
+            <span>METROS</span>
+            <input
+              value={meters}
+              onChange={(event) => setMeters(event.target.value)}
+              inputMode="decimal"
+              placeholder="Ex.: 427"
+              aria-label="Distância em metros"
+            />
+          </label>
+          <div className="navigation-meter-output" aria-live="polite">
+            <small>MILHAS NÁUTICAS (MN)</small>
+            <strong>{metersResult ? formatConversion(metersResult.nauticalMiles) : "—"} <em>MN</em></strong>
+          </div>
+          <div className="navigation-meter-output" aria-live="polite">
+            <small>DÉCIMOS DE MILHA</small>
+            <strong>{metersResult ? formatConversion(metersResult.tenths) : "—"} <em>décimos</em></strong>
+          </div>
+        </div>
+        <p className="navigation-meter-hint">Cálculo exato: 1 MN = 1.852 m; 1 décimo de MN = 185,2 m. Resultados exibidos com até 6 casas decimais.</p>
       </div>
     </section>
   );

@@ -7203,3 +7203,21 @@ select option:checked {
 .set-capture-select-item small{color:#89b9bd}
 .set-capture-select-item .editbtn{white-space:nowrap}
 @media(max-width:500px){.set-capture-select-item{flex-wrap:wrap}.set-capture-quick-edit{font-size:10px}}
+
+/* V252 — Conversor de metros no próprio cálculo de navegação (sem serviços externos). */
+.navigation-meter-converter{margin-top:13px;padding-top:12px;border-top:1px solid rgba(49,84,91,.65)}
+.navigation-meter-head{display:flex;align-items:center;gap:9px;margin-bottom:10px;color:#2edcac}
+.navigation-meter-head>div{display:flex;flex-direction:column;gap:2px}
+.navigation-meter-head small{font-size:9px;font-weight:900;letter-spacing:.1em;color:#2edcac}
+.navigation-meter-head b{font-size:12px;font-weight:800;color:var(--text)}
+.navigation-meter-body{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;align-items:end}
+.navigation-meter-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.navigation-meter-field span,.navigation-meter-output small{font-size:9px;letter-spacing:.06em;color:var(--sub);font-weight:850}
+.navigation-meter-field input{box-sizing:border-box;min-width:0;width:100%;height:40px;border:1px solid var(--line);border-radius:9px;background:rgba(5,27,32,.72);color:var(--text);font:inherit;font-size:15px;font-weight:800;padding:0 11px;outline:none}
+.navigation-meter-field input:focus{border-color:#2edcac;box-shadow:0 0 0 2px rgba(46,220,172,.1)}
+.navigation-meter-output{display:flex;min-width:0;flex-direction:column;gap:7px;padding:0 3px 5px}
+.navigation-meter-output strong{font-size:19px;line-height:1;color:#2edcac;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.navigation-meter-output em{font-size:10px;font-style:normal;color:var(--sub)}
+.navigation-meter-hint{margin:9px 0 0;font-size:10px;color:var(--sub);line-height:1.5}
+.app:not(.dark) .navigation-meter-field input{background:#fff}
+@media(max-width:660px){.navigation-meter-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.navigation-meter-field{grid-column:1/-1}.navigation-meter-output strong{font-size:17px}.navigation-meter-output small{font-size:8px}}
