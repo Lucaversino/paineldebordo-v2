@@ -1,6 +1,6 @@
 import { getDb } from "../../../db";
 import { catches, fishingSets, trips } from "../../../db/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, and, eq, isNull } from "drizzle-orm";
 import { requirePanelUserResponse } from "../../../lib/panelAuth";
 import { fetchNoaaChlorophyllPoint } from "../../../lib/noaaChlorophyll";
 
@@ -150,15 +150,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const manualLatRaw = url.searchParams.get("lat");
   const manualLonRaw = url.searchParams.get("lon");
+  const manualAtRaw = url.searchParams.get("manualAt");
+  const manualAt = manualAtRaw ? Number(manualAtRaw) : NaN;
   const manualLat = manualLatRaw == null ? NaN : Number(manualLatRaw);
   const manualLon = manualLonRaw == null ? NaN : Number(manualLonRaw);
   const hasManualPosition = manualLatRaw != null && manualLonRaw != null && Number.isFinite(manualLat) && Number.isFinite(manualLon) && Math.abs(manualLat) <= 90 && Math.abs(manualLon) <= 180;
-  const cacheKey = hasManualPosition ? `${user.id}|manual:${manualLat.toFixed(5)},${manualLon.toFixed(5)}` : `${user.id}|auto`;
+  const cacheKey = hasManualPosition ? `${user.id}|manual:${manualLat.toFixed(5)},${manualLon.toFixed(5)}:${manualAtRaw || ""}` : `${user.id}|auto`;
   const cached = oceanCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return Response.json(cached.payload);
   const db = getDb();
   const [allSets, allCatches] = await Promise.all([
-    db.select({ id:fishingSets.id, tripId:fishingSets.tripId, setNumber:fishingSets.setNumber, startedAt:fishingSets.startedAt, depth:fishingSets.depthMeters, lat:fishingSets.startLatitude, lon:fishingSets.startLongitude })
+    db.select({ id:fishingSets.id, tripId:fishingSets.tripId, setNumber:fishingSets.setNumber, startedAt:fishingSets.startedAt, finishedAt:fishingSets.finishedAt, endLat:fishingSets.endLatitude, endLon:fishingSets.endLongitude, depth:fishingSets.depthMeters, lat:fishingSets.startLatitude, lon:fishingSets.startLongitude })
       .from(fishingSets).innerJoin(trips, eq(fishingSets.tripId, trips.id)).where(eq(trips.ownerId, user.id)).orderBy(asc(fishingSets.startedAt)),
     db.select({ fishingSetId:catches.fishingSetId, weightKg:catches.weightKg, catchType:catches.catchType })
       .from(catches).innerJoin(trips, eq(catches.tripId, trips.id)).where(eq(trips.ownerId, user.id)),
@@ -167,34 +169,29 @@ export async function GET(request: Request) {
   allCatches.filter(c=>c.catchType !== "DISCARD").forEach(c=>kgBySet.set(c.fishingSetId,(kgBySet.get(c.fishingSetId)||0)+Number(c.weightKg||0)));
   const rows = allSets.map(s=>({ ...s, kg:kgBySet.get(s.id)||0, hour:new Date(s.startedAt).getHours() })).filter(r=>r.kg>0);
   const patterns = bucketAnalysis(rows);
-  const validSets = allSets.filter(s => s.lat != null && s.lon != null);
-  const localDayKey = (value: string | Date) => {
-    try {
-      // startedAt vem do input datetime-local e é salvo como texto; preserve a data digitada a bordo.
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-      const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
-      const pick = (type: string) => parts.find(p => p.type === type)?.value || "";
-      return `${pick("year")}-${pick("month")}-${pick("day")}`;
-    } catch {
-      return "";
-    }
-  };
-  const todayKey = localDayKey(new Date());
-  let automaticSet = validSets.find(s => localDayKey(s.startedAt) === todayKey) || null;
-  let positionSource: "FIRST_SET_TODAY" | "FIRST_SET_LATEST_DAY" | "MANUAL" = "FIRST_SET_TODAY";
-
-  // Se ainda não houver largada hoje, usa a primeira posição do último dia com largada.
-  // Isso mantém o painel útil sem trocar silenciosamente para a última posição do dia.
-  if (!automaticSet && validSets.length) {
-    const latestDay = localDayKey(validSets[validSets.length - 1].startedAt);
-    automaticSet = validSets.find(s => localDayKey(s.startedAt) === latestDay) || validSets[0];
-    positionSource = "FIRST_SET_LATEST_DAY";
-  }
-
-  const position = hasManualPosition
-    ? { lat: manualLat, lon: manualLon, setNumber: null, startedAt: null, source: "MANUAL" as const }
+  // Restrinja o posicionamento à viagem ativa; histórico serve só para estatísticas.
+  const activeTrips = await db.select({ id: trips.id }).from(trips)
+    .where(and(eq(trips.ownerId, user.id), eq(trips.status, "IN_PROGRESS"), isNull(trips.deletedAt)));
+  const activeIds = new Set(activeTrips.map(t => t.id));
+  const validSets = allSets.filter(s => activeIds.has(s.tripId) &&
+    ((s.endLat != null && s.endLon != null) || (s.lat != null && s.lon != null)));
+  // A última largada registrada, não a primeira do dia. Empate resolvido pelo ID.
+  const automaticSet = [...validSets].sort((a, b) =>
+    String(b.startedAt).localeCompare(String(a.startedAt)) || b.id - a.id)[0] || null;
+  const setTime = automaticSet ? new Date(automaticSet.startedAt).getTime() : NaN;
+  const manualIsNewer = hasManualPosition && Number.isFinite(manualAt) &&
+    (!Number.isFinite(setTime) || manualAt > setTime);
+  const position = manualIsNewer
+    ? { lat: manualLat, lon: manualLon, setNumber: null, startedAt: new Date(manualAt).toISOString(), source: "MANUAL" as const }
     : automaticSet
-      ? { lat: Number(automaticSet.lat), lon: Number(automaticSet.lon), setNumber: automaticSet.setNumber, startedAt: automaticSet.startedAt, source: positionSource }
+      ? {
+        lat: Number(automaticSet.endLat ?? automaticSet.lat),
+        lon: Number(automaticSet.endLon ?? automaticSet.lon),
+        setNumber: automaticSet.setNumber,
+        startedAt: automaticSet.finishedAt && automaticSet.endLat != null && automaticSet.endLon != null
+          ? automaticSet.finishedAt : automaticSet.startedAt,
+        source: "LATEST_ACTIVE_SET" as const,
+      }
       : null;
 
   let environment:any = null;
@@ -213,6 +210,6 @@ export async function GET(request: Request) {
     sampleCount < 5 ? "Ainda há poucas largadas com captura para detectar padrões confiáveis." : "A análise aprende com as largadas registradas neste painel e compara produtividade média por faixa.",
     "Correlação não prova causa: lua, vento, maré e clorofila devem ser comparados com histórico antes de orientar uma decisão operacional.",
   ] }, sources:{ marine:"Open-Meteo Marine", weather:"Open-Meteo Forecast", chlorophyll:"NOAA CoastWatch ERDDAP / VIIRS" } };
-  oceanCache.set(cacheKey, { expiresAt: Date.now() + 120_000, payload });
+  oceanCache.set(cacheKey, { expiresAt: Date.now() + 30_000, payload });
   return Response.json(payload);
 }

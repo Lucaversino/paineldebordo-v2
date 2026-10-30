@@ -100,7 +100,7 @@ function parseMarineCoordinate(input: string, axis: "lat" | "lon") {
   return negative ? -value : value;
 }
 
-type ManualPosition = { lat: number; lon: number } | null;
+type ManualPosition = { lat: number; lon: number; recordedAt: number } | null;
 
 export default function OceanIntelligence() {
   const [data, setData] = useState<any>(null);
@@ -118,7 +118,7 @@ export default function OceanIntelligence() {
     if (manual) setRefreshing(true);
     try {
       const point = override === undefined ? manualPosition : override;
-      const params = point ? `?lat=${encodeURIComponent(point.lat)}&lon=${encodeURIComponent(point.lon)}` : "";
+      const params = point ? `?lat=${encodeURIComponent(point.lat)}&lon=${encodeURIComponent(point.lon)}&manualAt=${point.recordedAt}` : "";
       const response = await fetch(`/api/ocean-intelligence${params}`, { cache: "no-store", signal: AbortSignal.timeout(9000) });
       if (response.ok) setData(await response.json());
     } catch {
@@ -135,14 +135,15 @@ export default function OceanIntelligence() {
       const saved = sessionStorage.getItem("ocean-analysis-position-v90");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Number.isFinite(parsed?.lat) && Number.isFinite(parsed?.lon)) {
-          savedPoint = { lat: parsed.lat, lon: parsed.lon };
+        if (Number.isFinite(parsed?.lat) && Number.isFinite(parsed?.lon) && Number.isFinite(parsed?.recordedAt)) {
+          savedPoint = { lat: parsed.lat, lon: parsed.lon, recordedAt: parsed.recordedAt };
           setManualPosition(savedPoint);
         }
       }
     } catch {}
     const timer = window.setTimeout(() => void loadOcean(false, savedPoint), 1400);
-    return () => window.clearTimeout(timer);
+    const interval = window.setInterval(() => void loadOcean(false), 60_000);
+    return () => { window.clearTimeout(timer); window.clearInterval(interval); };
     // O carregamento inicial usa a posição automática ou a posição manual desta sessão.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -203,7 +204,7 @@ export default function OceanIntelligence() {
       setPositionError("Confira a posição. Exemplo: 25º 4565 S e 46º 3545 W.");
       return;
     }
-    const point = { lat, lon };
+    const point = { lat, lon, recordedAt: Date.now() };
     setManualPosition(point);
     try { sessionStorage.setItem("ocean-analysis-position-v90", JSON.stringify(point)); } catch {}
     setPositionEditor(false);
@@ -223,10 +224,8 @@ export default function OceanIntelligence() {
   const e = data.environment;
   const a = data.analysis;
   const positionLabel = e?.position?.source === "MANUAL"
-    ? "POSIÇÃO MANUAL"
-    : e?.position?.source === "FIRST_SET_LATEST_DAY"
-      ? "1ª POSIÇÃO DO ÚLTIMO DIA"
-      : "1ª POSIÇÃO DA LARGADA DE HOJE";
+    ? "ÚLTIMA POSIÇÃO PESQUISADA"
+    : "ÚLTIMA POSIÇÃO DA LARGADA DA VIAGEM ATIVA";
 
   return <section className="ocean-intel">
     <div className="ocean-head"><div><BrainCircuit/><span><small>ASSISTENTE DE PESCA</small><b>Inteligência oceânica + análise das largadas</b></span></div><div className="ocean-head-actions"><button type="button" onClick={() => void loadOcean(true)} disabled={refreshing}><RefreshCw className={refreshing ? "spin" : ""}/> Atualizar</button><em>confiança {a.confidence}</em></div></div>
@@ -239,11 +238,11 @@ export default function OceanIntelligence() {
       </div>
       <div className="ocean-position-actions">
         <button type="button" onClick={openPositionEditor}><Pencil/> Alterar posição</button>
-        {e.position.source === "MANUAL" && <button type="button" className="secondary" onClick={() => void resetPosition()}><RotateCcw/> Usar 1ª largada</button>}
+        {e.position.source === "MANUAL" && <button type="button" className="secondary" onClick={() => void resetPosition()}><RotateCcw/> Usar última largada</button>}
       </div>
     </div>}
 
-    {!e ? <div className="ocean-empty ocean-empty-position"><span>Registre uma largada com coordenadas para usar automaticamente a primeira posição do dia.</span><button type="button" onClick={openPositionEditor}><MapPin/> Alterar posição para analisar</button></div> : <>
+    {!e ? <div className="ocean-empty ocean-empty-position"><span>Registre uma largada com coordenadas para usar automaticamente a última posição da viagem ativa.</span><button type="button" onClick={openPositionEditor}><MapPin/> Alterar posição para analisar</button></div> : <>
       <div className="ocean-grid">
         <article><MoonStar/><small>LUA AGORA</small><b>{e.lunar.name}</b><span>{n(e.lunar.illumination * 100,0)}% iluminada</span><i>Nasce {tm(e.lunar.moonrise)} • põe {tm(e.lunar.moonset)}</i></article>
         <article><Wind/><small>VENTO</small><b>{n(e.wind?.speedKmh)} km/h</b><span>Direção: {e.wind?.direction || "—"}{e.wind?.directionDeg != null ? ` (${n(e.wind.directionDeg,0)}°)` : ""}</span><i>Rajadas {n(e.wind?.gustKmh)} km/h • Atualização {tm(e.wind?.time)}</i></article>
