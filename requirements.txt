@@ -1,1 +1,2 @@
 copernicusmarine==2.4.1
+eccodes>=2.43,<3

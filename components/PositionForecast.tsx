@@ -173,6 +173,10 @@ export default function PositionForecast() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [gpsStatus, setGpsStatus] = useState("");
+  const [tzRadius, setTzRadius] = useState("60");
+  const [tzHours, setTzHours] = useState("48");
+  const [tzBusy, setTzBusy] = useState(false);
+  const [tzError, setTzError] = useState("");
 
   const lat = digitsToDecimal(latDigits, "S");
   const lon = digitsToDecimal(lonDigits, "W");
@@ -371,6 +375,27 @@ export default function PositionForecast() {
     }
   }
 
+  async function exportTimeZero() {
+    const selectedLat = Number(data?.position?.lat);
+    const selectedLon = Number(data?.position?.lon);
+    if (!data || !Number.isFinite(selectedLat) || !Number.isFinite(selectedLon)) { setTzError("Consulte uma posição antes de exportar."); return; }
+    setTzBusy(true); setTzError("");
+    try {
+      const qs = new URLSearchParams({ lat:String(selectedLat), lon:String(selectedLon), radius:tzRadius, hours:tzHours });
+      const response = await fetch(`/api/timezero-grib?${qs}`, { cache:"no-store" });
+      if (!response.ok) { const json = await response.json().catch(() => ({})); throw new Error(json.error || "Falha na geração do arquivo GRIB1."); }
+      const file = await response.blob();
+      const magic = new Uint8Array(await file.slice(0,8).arrayBuffer());
+      if (file.size < 100 || String.fromCharCode(...magic.slice(0,4)) !== "GRIB" || magic[7] !== 1) throw new Error("Arquivo não reconhecido como GRIB1; download interrompido.");
+      const blobUrl = URL.createObjectURL(file);
+      const a = document.createElement("a"); a.href = blobUrl;
+      a.download = `painel-timezero-${tzHours}h-${new Date().toISOString().slice(0,10)}.grb`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    } catch (err) { setTzError(err instanceof Error ? err.message : "Não foi possível gerar o GRIB."); }
+    finally { setTzBusy(false); }
+  }
+
   function clearSearch() {
     setLatDigits("");
     setLonDigits("");
@@ -537,6 +562,17 @@ export default function PositionForecast() {
         <div className="position-share-actions">
           <button type="button" className="position-pdf-big" onClick={exportPdf} disabled={!data || busy}><Download /><span><b>FAZER PDF</b><small>Cards grandes e fáceis de ler</small></span></button>
           <button type="button" className="position-share-big" onClick={shareWhatsApp} disabled={!data || busy || shareBusy}><Share2 /><span><b>{shareBusy ? "COMPARTILHANDO..." : "COMPARTILHAR PREVISÃO"}</b><small>Enviar PDF pelo celular ou WhatsApp</small></span></button>
+        </div>
+        <div className="timezero-export-card">
+          <h3>Exportar previsão para TimeZero v4</h3>
+          <p>Arquivo GRIB1 com vento (10 m) e pressão em grade regional. Fonte: Open-Meteo. Posição usada: última previsão consultada, indicada acima.</p>
+          <div className="timezero-export-fields">
+            <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}><option value="30">30 milhas</option><option value="60">60 milhas</option><option value="100">100 milhas</option></select></label>
+            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option></select></label>
+          </div>
+          <button type="button" className="position-consult" onClick={exportTimeZero} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "GERANDO GRIB1..." : "BAIXAR PREVISÃO PARA TIMEZERO (.GRB)"}</button>
+          <small>No TimeZero: menu TIMEZERO → Open Weather File → selecione o arquivo baixado. Não é uma sincronização automática. Não contém ondas ou correntes.</small>
+          {tzError && <p className="position-error" role="alert">{tzError}</p>}
         </div>
         {notice && <p className="position-notice">{notice}</p>}
         {error && <p className="position-error">{error}</p>}
