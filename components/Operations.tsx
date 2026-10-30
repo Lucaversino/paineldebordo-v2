@@ -337,6 +337,22 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       setSaving(false);
     }
   }
+  function openSetCaptureModal(setRecord: any, catchRecord: any = null) {
+    setMsg("");
+    setAddingSetCatch(false);
+    setShowMobileCalc(false);
+    setCaptureSet(setRecord);
+    setEditingCatch(catchRecord);
+  }
+  function openCatchInFullModal(catchRecord: any) {
+    const setRecord = s.sets.find((item) => Number(item.id) === Number(catchRecord.fishingSetId)) || catchRecord._set || null;
+    if (setRecord) {
+      openSetCaptureModal(setRecord, catchRecord);
+      return;
+    }
+    setCaptureSet(null);
+    setEditingCatch(catchRecord);
+  }
   async function saveSet(e: any) {
     e.preventDefault();
     setMsg("");
@@ -393,7 +409,6 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       return;
     }
     setEditingCatch(null);
-    setCaptureSet(null);
     setMsg("Captura atualizada e sincronizada com Largadas, Capturas e Dashboard.");
     load();
   }
@@ -852,10 +867,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                                     <b>{f(x.total)} kg</b>
                                     {Number(x.id) >= 0 && !x.offlinePending && (
                                       <button type="button" className="set-capture-quick-edit" title="Editar os pesos das capturas desta largada" onClick={() => {
-                                        setMsg("");
-                                        const records = s.catches.filter((c) => Number(c.fishingSetId) === Number(x.id));
-                                        if (records.length === 1) setEditingCatch(records[0]);
-                                        else setCaptureSet(x);
+                                        openSetCaptureModal(x);
                                       }}><Pencil /> Editar captura</button>
                                     )}
                                   </div>
@@ -1023,7 +1035,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                                     <td>{x.notes || "—"}</td>
                                     <td>
                                       <div className="rowactions">
-                                        <button className="editbtn" onClick={() => setEditingCatch(x)}>
+                                        <button className="editbtn" onClick={() => openCatchInFullModal(x)}>
                                           <Pencil /> Editar
                                         </button>
                                         <button className="deletebtn" onClick={() => remove("catch", x.id)}>
@@ -1465,10 +1477,10 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
           </form>
         </div>
       )}
-      {captureSet && !editingCatch && (
-        <div className="overlay" onMouseDown={() => { setCaptureSet(null); setAddingSetCatch(false); setShowMobileCalc(false); }}>
+      {captureSet && (
+        <div className="overlay" onMouseDown={() => { setCaptureSet(null); setEditingCatch(null); setAddingSetCatch(false); setShowMobileCalc(false); }}>
           <div className="modal form set-capture-select-modal capture-modal-expanded" onMouseDown={(e) => e.stopPropagation()}>
-            <button type="button" className="modalx" onClick={() => { setCaptureSet(null); setAddingSetCatch(false); }}>×</button>
+            <button type="button" className="modalx" onClick={() => { setCaptureSet(null); setEditingCatch(null); setAddingSetCatch(false); }}>×</button>
             <small>CAPTURAS DA LARGADA</small>
             <h2>Largada #{String(captureSet.setNumber).padStart(2, "0")}</h2>
             <p>Totais agrupados por espécie. Novas capturas ficam vinculadas a esta largada e sincronizadas com a aba Capturas.</p>
@@ -1490,10 +1502,20 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                       <div className="capture-total-row capture-total-grand"><span>Total capturado (sem descarte)</span><b>{f(records.filter((c) => c.catchType !== "DISCARD").reduce((sum, c) => sum + Number(c.weightKg || 0), 0))} kg</b></div>
                     </div>
                     <strong>Registros individuais</strong>
-                    {records.length ? <div className="set-capture-select-list">{records.map((c) => <div key={c.id} className="set-capture-select-item"><span><strong>{c.species}</strong><small>{getCatchCategoryLabel(c.catchType)} · {f(c.weightKg)} kg</small></span><button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setEditingCatch(c); }}><Pencil /> Editar peso</button></div>)}</div> : <p>Nenhuma captura nesta largada.</p>}
+                    {records.length ? <div className="set-capture-select-list">{records.map((c) => <div key={c.id} className="set-capture-select-item"><span><strong>{c.species}</strong><small>{getCatchCategoryLabel(c.catchType)} · {f(c.weightKg)} kg</small></span><button type="button" className="editbtn" onClick={() => { setAddingSetCatch(false); setEditingCatch(c); }}><Pencil /> Editar peso</button></div>)}</div> : <p>Nenhuma captura nesta largada.</p>}
                   </>;
                 })()}
-                <button type="button" className="editbtn capture-add-toggle" onClick={() => { setAddingSetCatch(!addingSetCatch); setMsg(""); }}><Plus size={16} /> {addingSetCatch ? "Cancelar inclusão" : "Adicionar captura"}</button>
+                {editingCatch && <form className="capture-add-form capture-edit-form" onSubmit={saveCatch}>
+                  <strong className="capture-edit-title">EDITAR CAPTURA</strong>
+                  <p className="capture-edit-subtitle">Altere os dados da captura sem sair da tela completa da largada.</p>
+                  <label>Espécie<select name="speciesId" defaultValue={editingCatch.speciesId}>{s.species.map((x) => <option key={x.id} value={x.id}>{x.commonName}</option>)}</select></label>
+                  <label>Data e hora<input name="caughtAt" type="datetime-local" required defaultValue={editingCatch.caughtAt?.slice(0, 16)} /></label>
+                  <label>Peso (kg)<input name="weightKg" type="number" min="0.01" step="0.01" required defaultValue={editingCatch.weightKg} /></label>
+                  {editingCatch.catchType === "DISCARD" && <fieldset className="discard-condition"><legend>Condição do descarte</legend><label><input type="radio" name="discardCondition" value="VIVO" required defaultChecked={editingCatch.discardCondition === "VIVO"} /> Vivo</label><label><input type="radio" name="discardCondition" value="MORTO" required defaultChecked={editingCatch.discardCondition === "MORTO"} /> Morto</label></fieldset>}
+                  <label>Observação<input name="notes" defaultValue={editingCatch.notes || ""} /></label>
+                  <div className="capture-inline-actions"><button type="submit" className="save" disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</button><button type="button" className="editbtn" onClick={() => setEditingCatch(null)}>Cancelar edição</button></div>
+                </form>}
+                <button type="button" className="editbtn capture-add-toggle" onClick={() => { setEditingCatch(null); setAddingSetCatch(!addingSetCatch); setMsg(""); }}><Plus size={16} /> {addingSetCatch ? "Cancelar inclusão" : "Adicionar captura"}</button>
                 {addingSetCatch && <form className="capture-add-form" onSubmit={addCaptureToSet}>
                   <label>Espécie<select name="speciesId" required defaultValue=""><option value="">Selecione a espécie</option>{s.species.filter((sp) => sp.active !== false).map((sp) => <option key={sp.id} value={sp.id}>{sp.commonName}</option>)}</select></label>
                   <label>Categoria<select name="catchType" defaultValue="PRIMARY" onChange={(e) => { const form = e.currentTarget.form; const select = form?.querySelector<HTMLSelectElement>('[name="discardCondition"]'); if (select) select.required = e.currentTarget.value === "DISCARD"; }}><option value="PRIMARY">Captura principal</option><option value="MIXTURE">Mistura</option><option value="DISCARD">Descarte</option></select></label>
@@ -1502,14 +1524,14 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                   <button type="submit" className="save" disabled={saving}>{saving ? "Salvando..." : "Salvar nova captura"}</button>
                 </form>}
                 {msg && <p role="status">{msg}</p>}
-                <button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setAddingSetCatch(false); }}>Fechar</button>
+                <button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setEditingCatch(null); setAddingSetCatch(false); }}>Fechar</button>
               </div>
               <div className="capture-calc-column"><button type="button" className="editbtn capture-calc-mobile-toggle" onClick={() => setShowMobileCalc((v) => !v)}><Calculator size={16} /> {showMobileCalc ? "Ocultar calculadora" : "Abrir calculadora"}</button><div className={showMobileCalc ? "capture-calc-visible" : "capture-calc-hidden-mobile"}><CaptureCalculator /></div></div>
             </div>
           </div>
         </div>
       )}
-      {editingCatch && (
+      {editingCatch && !captureSet && (
         <div className="overlay" onMouseDown={() => setEditingCatch(null)}>
           <form
             className="modal form"
