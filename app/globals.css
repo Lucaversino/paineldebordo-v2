@@ -7221,3 +7221,18 @@ select option:checked {
 .navigation-meter-hint{margin:9px 0 0;font-size:10px;color:var(--sub);line-height:1.5}
 .app:not(.dark) .navigation-meter-field input{background:#fff}
 @media(max-width:660px){.navigation-meter-body{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.navigation-meter-field{grid-column:1/-1}.navigation-meter-output strong{font-size:17px}.navigation-meter-output small{font-size:8px}}
+
+/* V253 — compartilhamento voluntário de posição por GIF */
+.share-position-gif { margin: 14px 0 16px; padding: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; color: var(--text); }
+.share-position-heading { display: flex; gap: 10px; align-items: center; color: #24caa9; }
+.share-position-heading > div { display: flex; flex-direction: column; }
+.share-position-heading small { font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+.share-position-heading b { color: var(--text); font-size: 15px; }
+.share-position-gif p { font-size: 13px; color: var(--sub); margin: 12px 0; }
+.share-position-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.share-position-actions button { background: #22c6a5; color: #06242c; font-weight: 800; border: 0; border-radius: 10px; padding: 11px 15px; display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+.share-position-actions button:not(:first-child) { color: var(--text); background: #16444a; border: 1px solid #27736b; }
+.share-position-actions button:disabled { opacity: .55; cursor: wait; }
+.share-position-gif .share-position-ready { color: #26c8a5; }
+.share-position-gif .share-position-error { color: #ff8d8d; }
+.share-position-privacy { display: block; color: var(--sub); margin-top: 13px; }

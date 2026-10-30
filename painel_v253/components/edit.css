@@ -1,0 +1,61 @@
+.editbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #2b5b60;
+  background: #12343b;
+  color: #53dfb8;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.editbtn svg {
+  width: 14px;
+  height: 14px;
+}
+.rowactions {
+  display: flex;
+  gap: 7px;
+  white-space: nowrap;
+}
+.deletebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #70383d;
+  background: #351b20;
+  color: #ff8c91;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.deletebtn svg {
+  width: 14px;
+  height: 14px;
+}
+@media (max-width: 560px) {
+  .rowactions {
+    flex-direction: column;
+  }
+}
+.tripactions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 760px) {
+  .tripactions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: stretch;
+  }
+  .tripactions button {
+    flex: 1;
+    min-width: 135px;
+  }
+}

@@ -34,6 +34,7 @@ import CoordinateInput from "../components/CoordinateInput";
 import PwaControls from "../components/PwaControls";
 import DailyDataUsage from "../components/DailyDataUsage";
 import NavigationCalculator from "../components/NavigationCalculator";
+import SharePositionGif from "../components/SharePositionGif";
 import {
   OFFLINE_QUEUE_EVENT,
   cacheOfflineDashboard,
@@ -106,6 +107,30 @@ export default function Home() {
     [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false),
     [hideDashboardValues, setHideDashboardValues] = useState(false);
   const onboardingRedirected = useRef(false);
+  const closeModalSafely = () => {
+    if (busy) return;
+    if (modal === "set" && !window.confirm("Tem certeza que quer fechar? Os dados da nova largada não salvos serão perdidos.")) return;
+    setModal(null);
+  };
+  useEffect(() => {
+    if (modal !== "set") return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!busy && window.confirm("Tem certeza que quer fechar? Os dados da nova largada não salvos serão perdidos.")) setModal(null);
+      }
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [modal, busy]);
   const primeOfflineManage = async () => {
     if (!navigator.onLine) return;
     try {
@@ -756,6 +781,7 @@ export default function Home() {
                   </div>
                 </div>
                 <NavigationCalculator />
+                <SharePositionGif boatName={t?.boatName || ""} />
                 <div className="dashboard-current-location">
                   <button type="button" onClick={() => {
                     try { sessionStorage.setItem("painel-auto-current-forecast", "1"); } catch {}
@@ -828,9 +854,9 @@ export default function Home() {
       </main>
       {view !== "AIS" && <FishAI />}
       {modal && t && (
-        <div className="overlay" onMouseDown={() => setModal(null)}>
+        <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModalSafely(); }}>
           <form className="modal form" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
-            <button type="button" className="modalx" onClick={() => setModal(null)}>
+            <button type="button" className="modalx" onClick={closeModalSafely}>
               <X />
             </button>
             <small>{t.name}</small>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <g id="boat">
+    <path d="M32 3 C26 9 20 18 17 29 C14 40 15 50 20 57 C24 60 40 60 44 57 C49 50 50 40 47 29 C44 18 38 9 32 3Z" fill="#F7F9FB" stroke="#0B1F33" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M32 8 L28.5 22 L35.5 22 Z" fill="#FF7A00"/>
+    <path d="M23 28 Q23 24 27 23 H37 Q41 24 41 28 L43 39 Q43.5 43 39 45 H25 Q20.5 43 21 39Z" fill="#E7ECF1" stroke="#0B1F33" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M26 28 H38 L39.5 34 H24.5 Z" fill="#29465B" stroke="#0B1F33" stroke-width="1.5"/>
+    <path d="M22.5 38 Q32 42 41.5 38" fill="none" stroke="#FF7A00" stroke-width="3" stroke-linecap="round"/>
+    <rect x="25" y="47" width="14" height="7" rx="2" fill="#D5DDE5" stroke="#0B1F33" stroke-width="1.5"/>
+    <line x1="32" y1="3" x2="32" y2="10" stroke="#0B1F33" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+</svg>

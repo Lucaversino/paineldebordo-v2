@@ -1,0 +1,11 @@
+build/
+examples/
+scripts/
+.sites-runtime/
+tests/
+vendor/
+*.zip
+
+app/api/ais-stream/
+
+v81src/

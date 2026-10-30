@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>VesselFinder AIS</title>
+  <style>
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #07111f;
+    }
+    body > iframe,
+    body > div,
+    body > table {
+      max-width: 100% !important;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var parsedLat = Number(params.get("lat"));
+    var parsedLon = Number(params.get("lon"));
+    var parsedZoom = Number(params.get("zoom"));
+
+    var width = "100%";
+    var height = String(Math.max(560, window.innerHeight || 680));
+    var latitude = Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+      ? String(parsedLat)
+      : "-27.15";
+    var longitude = Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
+      ? String(parsedLon)
+      : "-48.55";
+    var zoom = Number.isFinite(parsedZoom)
+      ? String(Math.max(3, Math.min(18, Math.round(parsedZoom))))
+      : "8";
+    var names = false;
+    var show_track = false;
+  </script>
+  <script type="text/javascript" src="https://www.vesselfinder.com/aismap.js"></script>
+</body>
+</html>
