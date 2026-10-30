@@ -5,11 +5,13 @@ import { Download, MapPin, Share2 } from "lucide-react";
 
 type Position = { latitude: number; longitude: number; accuracy: number; timestamp: number };
 
-function coordinate(value: number, positive: string, negative: string) {
-  const absolute = Math.abs(value);
-  const degrees = Math.floor(absolute);
-  const minutes = (absolute - degrees) * 60;
-  return `${String(degrees).padStart(2, "0")}° ${minutes.toFixed(4).replace(".", ",")}' ${value < 0 ? negative : positive}`;
+function coordinate(value: number) {
+  // Formato náutico DDDº MMmm: minutos inteiros e dois decimais, sem S/W.
+  // Arredondar em centésimos de minuto ANTES de separar evita 60,00 minutos.
+  const totalHundredths = Math.round(Math.abs(value) * 60 * 100);
+  const degrees = Math.floor(totalHundredths / 6000);
+  const minutesHundredths = totalHundredths % 6000;
+  return `${String(degrees).padStart(2, "0")}º ${String(minutesHundredths).padStart(4, "0")}`;
 }
 
 function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string) {
@@ -31,8 +33,8 @@ async function createPositionGif(position: Position, boatName: string): Promise<
   logo.src = "/icon-192.png";
   await new Promise<void>((resolve) => { logo.onload = () => resolve(); logo.onerror = () => resolve(); });
   const gif = GIFEncoder();
-  const lat = coordinate(position.latitude, "N", "S");
-  const lon = coordinate(position.longitude, "L", "W");
+  const lat = coordinate(position.latitude);
+  const lon = coordinate(position.longitude);
   const time = new Date(position.timestamp).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 
   for (let frame = 0; frame < 10; frame++) {
@@ -54,13 +56,14 @@ async function createPositionGif(position: Position, boatName: string): Promise<
     ctx.beginPath(); ctx.arc(centerX, centerY, 30 + pulse * 90, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = "#20cda7"; ctx.beginPath(); ctx.arc(centerX, centerY, 19, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(centerX, centerY, 7, 0, Math.PI * 2); ctx.fill();
-    roundedRect(ctx, 39, 396, 522, 149, 22, "#0c3038");
-    ctx.textAlign = "left"; ctx.fillStyle = "#69daca"; ctx.font = "bold 16px Arial"; ctx.fillText("LATITUDE", 62, 428);
-    ctx.fillStyle = "#ffffff"; ctx.font = "bold 25px Arial"; ctx.fillText(lat, 62, 458);
-    ctx.fillStyle = "#69daca"; ctx.font = "bold 16px Arial"; ctx.fillText("LONGITUDE", 62, 491);
-    ctx.fillStyle = "#ffffff"; ctx.font = "bold 25px Arial"; ctx.fillText(lon, 62, 522);
+    roundedRect(ctx, 32, 365, 536, 192, 22, "#0c3038");
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#69daca"; ctx.font = "bold 16px Arial"; ctx.fillText("LATITUDE", 300, 391);
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 65px Arial"; ctx.fillText(lat, 300, 452);
+    ctx.fillStyle = "#69daca"; ctx.font = "bold 16px Arial"; ctx.fillText("LONGITUDE", 300, 485);
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 65px Arial"; ctx.fillText(lon, 300, 547);
     ctx.fillStyle = "#9fc4c6"; ctx.textAlign = "center"; ctx.font = "14px Arial";
-    ctx.fillText(`GPS ${time}  •  precisão aprox. ${Math.round(position.accuracy)} m`, 300, 580);
+    ctx.fillText(`GPS ${time}  •  precisão aprox. ${Math.round(position.accuracy)} m`, 300, 587);
     const rgba = ctx.getImageData(0, 0, 600, 600).data;
     const palette = quantize(rgba, 128);
     const indexed = applyPalette(rgba, palette);
@@ -73,7 +76,7 @@ async function createPositionGif(position: Position, boatName: string): Promise<
 export default function SharePositionGif({ boatName = "" }: { boatName?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [prepared, setPrepared] = useState<{ blob: Blob; url: string; text: string } | null>(null);
+  const [prepared, setPrepared] = useState<{ blob: Blob; url: string } | null>(null);
 
   async function generate() {
     setBusy(true); setError("");
@@ -83,7 +86,7 @@ export default function SharePositionGif({ boatName = "" }: { boatName?: string 
       const pos: Position = { latitude: current.coords.latitude, longitude: current.coords.longitude, accuracy: current.coords.accuracy, timestamp: current.timestamp };
       const blob = await createPositionGif(pos, boatName);
       const url = URL.createObjectURL(blob);
-      setPrepared((previous) => { if (previous) URL.revokeObjectURL(previous.url); return { blob, url, text: `📍 Minha posição GPS | ${boatName || "Painel de Bordo"}\n${coordinate(pos.latitude, "N", "S")} / ${coordinate(pos.longitude, "L", "W")}\nhttps://www.google.com/maps?q=${pos.latitude},${pos.longitude}\nAtualizado: ${new Date(pos.timestamp).toLocaleString("pt-BR")}` }; });
+      setPrepared((previous) => { if (previous) URL.revokeObjectURL(previous.url); return { blob, url }; });
     } catch (err) {
       if (err instanceof GeolocationPositionError) setError(err.code === 1 ? "Localização negada. Permita o GPS nas configurações do navegador." : err.code === 3 ? "O GPS demorou demais. Verifique o sinal e tente novamente." : "Não foi possível obter a posição atual.");
       else setError(err instanceof Error ? err.message : "Não foi possível criar o GIF.");
@@ -94,12 +97,16 @@ export default function SharePositionGif({ boatName = "" }: { boatName?: string 
     if (!prepared) return;
     const file = new File([prepared.blob], "painel-de-bordo-posicao.gif", { type: "image/gif" });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: "Minha posição | Painel de Bordo", text: prepared.text }); return; }
-      catch (err) { if ((err as Error)?.name === "AbortError") return; }
+      try {
+        // Somente o arquivo: sem title, text, URL, legenda ou link.
+        await navigator.share({ files: [file] });
+        return;
+      } catch (err) { if ((err as Error)?.name === "AbortError") return; }
     }
-    // Em desktops sem Web Share de arquivos, baixar o GIF e abrir o WhatsApp com as coordenadas.
+    // O WhatsApp Web não fornece API pública para anexar arquivo pelo navegador.
+    // Fazemos download e abrimos a conversa SEM texto pré-preenchido.
     download();
-    window.open(`https://wa.me/?text=${encodeURIComponent(prepared.text + "\nGIF salvo no dispositivo: anexe-o nesta conversa.")}`, "_blank", "noopener,noreferrer");
+    window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
   }
 
   function download() {
@@ -109,12 +116,12 @@ export default function SharePositionGif({ boatName = "" }: { boatName?: string 
 
   return <div className="share-position-gif">
     <div className="share-position-heading"><MapPin size={19} /><div><small>COMPARTILHAR LOCALIZAÇÃO</small><b>Minha posição atual em GIF</b></div></div>
-    <p>Gere um GIF animado com a logo do Painel de Bordo, coordenadas e horário do GPS. Sua posição só será obtida ao clicar no botão.</p>
+    <p>Gere um GIF animado com a logo do Painel de Bordo, coordenadas grandes no formato 31º 4615 / 51º 0245 e horário do GPS. Sua posição só será obtida ao clicar no botão.</p>
     <div className="share-position-actions">
       <button type="button" onClick={generate} disabled={busy}><MapPin size={17} />{busy ? "Obtendo GPS e criando GIF..." : "Gerar GIF da minha posição"}</button>
       {prepared && <><button type="button" onClick={share}><Share2 size={17} /> Compartilhar no WhatsApp</button><button type="button" onClick={download}><Download size={17} /> Baixar GIF</button></>}
     </div>
-    {prepared && <p className="share-position-ready">GIF pronto. Confira as coordenadas antes de enviar. No computador, o WhatsApp abrirá com o texto e você deverá anexar o GIF baixado.</p>}
+    {prepared && <p className="share-position-ready">GIF pronto. Confira as coordenadas antes de enviar. Compartilhe apenas o GIF, sem legenda nem link. No computador, anexe manualmente o GIF baixado na conversa do WhatsApp Web.</p>}
     {error && <p className="share-position-error" role="alert">{error}</p>}
     <small className="share-position-privacy">Atenção: ao compartilhar, outras pessoas poderão ver sua localização exata. Precisão sujeita ao sinal do GPS.</small>
   </div>;
