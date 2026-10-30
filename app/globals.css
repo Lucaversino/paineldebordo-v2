@@ -7236,3 +7236,13 @@ select option:checked {
 .share-position-gif .share-position-ready { color: #26c8a5; }
 .share-position-gif .share-position-error { color: #ff8d8d; }
 .share-position-privacy { display: block; color: var(--sub); margin-top: 13px; }
+
+/* V256: capturas por espécie e calculadora responsiva */
+.capture-modal-expanded{width:min(1080px,94vw)!important;max-width:1080px!important;max-height:90vh;overflow-y:auto}
+.capture-modal-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:20px;align-items:start;margin-top:18px}
+.capture-modal-main{min-width:0;display:flex;flex-direction:column;gap:12px}
+.capture-species-totals{background:#08282d;border:1px solid #286069;border-radius:12px;padding:14px;display:grid;gap:8px}
+.capture-total-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #215057;padding-top:8px}.capture-total-row b{font-size:1.12rem;white-space:nowrap;color:#4ee6c5}.capture-total-row small{opacity:.75}.capture-total-grand{font-weight:700}
+.capture-add-toggle{justify-content:center;display:flex;gap:8px;align-items:center}.capture-add-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;border:1px solid #286069;border-radius:12px;padding:14px}.capture-add-form .save{grid-column:1/-1}.capture-add-form label{min-width:0}
+.capture-calculator{background:#09282f;border:1px solid #286069;padding:12px;border-radius:12px;display:grid;gap:10px}.capture-calculator>strong{display:flex;align-items:center;gap:8px}.capture-calc-screen{background:#031920;border:1px solid #286069;border-radius:8px;padding:12px;text-align:right;font-size:26px;font-weight:700;overflow-wrap:anywhere}.capture-calc-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.capture-calc-keys button{padding:10px 0;border:1px solid #286069;border-radius:6px;background:#123941;color:#f3ffff;font-weight:700}.capture-calc-keys button:hover{background:#1c5059}.capture-calc-keys .capture-calc-equals{background:#18be9c;color:#03211d;grid-column:span 4}.capture-calculator small{opacity:.7}.capture-calc-mobile-toggle{display:none!important}
+@media(max-width:760px){.capture-modal-layout{grid-template-columns:minmax(0,1fr)}.capture-calc-mobile-toggle{display:flex!important;align-items:center;gap:8px;justify-content:center;width:100%}.capture-calc-hidden-mobile{display:none}.capture-calc-visible{display:block}.capture-add-form{grid-template-columns:1fr}.capture-modal-expanded{width:96vw!important;max-height:92dvh}.capture-total-row{font-size:.9rem}}

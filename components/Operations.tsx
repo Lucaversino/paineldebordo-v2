@@ -17,6 +17,7 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronRight,
+  Calculator,
 } from "lucide-react";
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
@@ -140,6 +141,33 @@ function Species3DViewer({ commonName }: { commonName: unknown }) {
     </div>
   );
 }
+function CaptureCalculator() {
+  const [screen, setScreen] = useState("0");
+  const [operand, setOperand] = useState<number | null>(null);
+  const [operation, setOperation] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(false);
+  function press(key: string) {
+    if (key === "C") { setScreen("0"); setOperand(null); setOperation(null); setFresh(false); return; }
+    if (/^[0-9]$/.test(key) || key === ".") {
+      if (key === "." && !fresh && screen.includes(".")) return;
+      setScreen((fresh || screen === "0") ? (key === "." ? "0." : key) : screen + key);
+      setFresh(false); return;
+    }
+    if (["+", "−", "×", "÷"].includes(key)) { setOperand(Number(screen)); setOperation(key); setFresh(true); return; }
+    if (key === "=" && operand !== null && operation) {
+      const value = Number(screen);
+      const result = operation === "+" ? operand + value : operation === "−" ? operand - value : operation === "×" ? operand * value : value === 0 ? NaN : operand / value;
+      setScreen(Number.isFinite(result) ? String(Number(result.toFixed(6))) : "Erro");
+      setOperand(null); setOperation(null); setFresh(true);
+    }
+  }
+  return <aside className="capture-calculator" aria-label="Calculadora auxiliar">
+    <strong><Calculator size={16} /> Calculadora</strong>
+    <output className="capture-calc-screen" aria-live="polite">{screen}</output>
+    <div className="capture-calc-keys">{["7","8","9","÷","4","5","6","×","1","2","3","−","C","0",".","+","="].map((key) => <button key={key} type="button" className={key === "=" ? "capture-calc-equals" : ""} onClick={() => press(key)}>{key}</button>)}</div>
+    <small>Calculadora auxiliar. Não altera os pesos registrados.</small>
+  </aside>;
+}
 export default function Operations({ view, onDashboard, initialForm = null, onInitialFormConsumed, onStartJourney, onboardingActive = false }: Props) {
   const [s, setS] = useState(empty),
     [loading, setLoading] = useState(true),
@@ -147,6 +175,8 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     [editing, setEditing] = useState<any>(null),
     [editingCatch, setEditingCatch] = useState<any>(null),
     [captureSet, setCaptureSet] = useState<any>(null),
+    [addingSetCatch, setAddingSetCatch] = useState(false),
+    [showMobileCalc, setShowMobileCalc] = useState(false),
     [editingSpecies, setEditingSpecies] = useState<any>(null),
     [reportTripId, setReportTripId] = useState(""),
     [pdfTrip, setPdfTrip] = useState<any>(null),
@@ -324,6 +354,30 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     setEditing(null);
     setMsg("Largada atualizada com sucesso.");
     load();
+  }
+  async function addCaptureToSet(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!captureSet || saving) return;
+    const data = new FormData(e.currentTarget);
+    const speciesId = Number(data.get("speciesId"));
+    const weightKg = Number(String(data.get("weightKg") || "").replace(",", "."));
+    const catchType = String(data.get("catchType") || "PRIMARY");
+    if (!speciesId || !Number.isFinite(weightKg) || weightKg <= 0) { setMsg("Escolha a espécie e informe um peso maior que zero."); return; }
+    const trip = s.trips.find((t) => Number(t.id) === Number(captureSet.tripId));
+    if (!trip || trip.status !== "IN_PROGRESS") { setMsg("Só é possível adicionar captura a uma viagem em andamento."); return; }
+    setSaving(true); setMsg("");
+    try {
+      const payload = catchType === "PRIMARY"
+        ? { action: "capture", tripId: trip.id, fishingSetId: captureSet.id, speciesId, weightKg }
+        : { action: "categorizedCatch", tripId: trip.id, fishingSetId: captureSet.id, categorySpeciesId: speciesId, catchType, weightKg, discardCondition: data.get("discardCondition") };
+      const res = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(result.error || "Erro ao adicionar captura."); return; }
+      setAddingSetCatch(false);
+      setMsg("Captura adicionada e sincronizada.");
+      load();
+    } catch { setMsg("Falha de conexão ao salvar captura."); }
+    finally { setSaving(false); }
   }
   async function saveCatch(e: any) {
     e.preventDefault();
@@ -1412,23 +1466,46 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         </div>
       )}
       {captureSet && !editingCatch && (
-        <div className="overlay" onMouseDown={() => setCaptureSet(null)}>
-          <div className="modal form set-capture-select-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <button type="button" className="modalx" onClick={() => setCaptureSet(null)}>×</button>
+        <div className="overlay" onMouseDown={() => { setCaptureSet(null); setAddingSetCatch(false); setShowMobileCalc(false); }}>
+          <div className="modal form set-capture-select-modal capture-modal-expanded" onMouseDown={(e) => e.stopPropagation()}>
+            <button type="button" className="modalx" onClick={() => { setCaptureSet(null); setAddingSetCatch(false); }}>×</button>
             <small>CAPTURAS DA LARGADA</small>
             <h2>Largada #{String(captureSet.setNumber).padStart(2, "0")}</h2>
-            <p>Edite o peso de cada espécie. Os totais da largada e da aba Capturas serão recalculados automaticamente.</p>
-            {s.catches.filter((c) => Number(c.fishingSetId) === Number(captureSet.id)).length ? (
-              <div className="set-capture-select-list">
-                {s.catches.filter((c) => Number(c.fishingSetId) === Number(captureSet.id)).map((c) => (
-                  <div key={c.id} className="set-capture-select-item">
-                    <span><strong>{c.species}</strong><small>{getCatchCategoryLabel(c.catchType)} · {f(c.weightKg)} kg</small></span>
-                    <button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setEditingCatch(c); }}><Pencil /> Editar peso</button>
-                  </div>
-                ))}
+            <p>Totais agrupados por espécie. Novas capturas ficam vinculadas a esta largada e sincronizadas com a aba Capturas.</p>
+            <div className="capture-modal-layout">
+              <div className="capture-modal-main">
+                {(() => {
+                  const records = s.catches.filter((c) => Number(c.fishingSetId) === Number(captureSet.id));
+                  const totals = new Map<string, { name: string; category: string; weight: number }>();
+                  records.forEach((c) => {
+                    const name = String(c.species || s.species.find((sp) => Number(sp.id) === Number(c.speciesId))?.commonName || "Espécie");
+                    const category = getCatchCategoryLabel(c.catchType);
+                    const key = `${normalizeSpeciesName(name)}:${c.catchType}`;
+                    const current = totals.get(key);
+                    totals.set(key, { name, category, weight: (current?.weight || 0) + Number(c.weightKg || 0) });
+                  });
+                  return <>
+                    <div className="capture-species-totals"><strong>TOTAL POR ESPÉCIE</strong>
+                      {Array.from(totals.values()).map((item) => <div className="capture-total-row" key={`${item.name}-${item.category}`}><span>{item.name} <small>({item.category})</small></span><b>{f(item.weight)} kg</b></div>)}
+                      <div className="capture-total-row capture-total-grand"><span>Total capturado (sem descarte)</span><b>{f(records.filter((c) => c.catchType !== "DISCARD").reduce((sum, c) => sum + Number(c.weightKg || 0), 0))} kg</b></div>
+                    </div>
+                    <strong>Registros individuais</strong>
+                    {records.length ? <div className="set-capture-select-list">{records.map((c) => <div key={c.id} className="set-capture-select-item"><span><strong>{c.species}</strong><small>{getCatchCategoryLabel(c.catchType)} · {f(c.weightKg)} kg</small></span><button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setEditingCatch(c); }}><Pencil /> Editar peso</button></div>)}</div> : <p>Nenhuma captura nesta largada.</p>}
+                  </>;
+                })()}
+                <button type="button" className="editbtn capture-add-toggle" onClick={() => { setAddingSetCatch(!addingSetCatch); setMsg(""); }}><Plus size={16} /> {addingSetCatch ? "Cancelar inclusão" : "Adicionar captura"}</button>
+                {addingSetCatch && <form className="capture-add-form" onSubmit={addCaptureToSet}>
+                  <label>Espécie<select name="speciesId" required defaultValue=""><option value="">Selecione a espécie</option>{s.species.filter((sp) => sp.active !== false).map((sp) => <option key={sp.id} value={sp.id}>{sp.commonName}</option>)}</select></label>
+                  <label>Categoria<select name="catchType" defaultValue="PRIMARY" onChange={(e) => { const form = e.currentTarget.form; const select = form?.querySelector<HTMLSelectElement>('[name="discardCondition"]'); if (select) select.required = e.currentTarget.value === "DISCARD"; }}><option value="PRIMARY">Captura principal</option><option value="MIXTURE">Mistura</option><option value="DISCARD">Descarte</option></select></label>
+                  <label>Peso (kg)<input name="weightKg" type="number" step="0.01" min="0.01" required placeholder="Ex.: 400" /></label>
+                  <label>Condição (somente descarte)<select name="discardCondition" defaultValue=""><option value="">Selecione se for descarte</option><option value="VIVO">Vivo</option><option value="MORTO">Morto</option></select></label>
+                  <button type="submit" className="save" disabled={saving}>{saving ? "Salvando..." : "Salvar nova captura"}</button>
+                </form>}
+                {msg && <p role="status">{msg}</p>}
+                <button type="button" className="editbtn" onClick={() => { setCaptureSet(null); setAddingSetCatch(false); }}>Fechar</button>
               </div>
-            ) : <p>Nenhuma captura cadastrada nesta largada. Registre primeiro uma captura na aba Capturas ou no formulário de nova largada.</p>}
-            <button type="button" className="editbtn" onClick={() => setCaptureSet(null)}>Fechar</button>
+              <div className="capture-calc-column"><button type="button" className="editbtn capture-calc-mobile-toggle" onClick={() => setShowMobileCalc((v) => !v)}><Calculator size={16} /> {showMobileCalc ? "Ocultar calculadora" : "Abrir calculadora"}</button><div className={showMobileCalc ? "capture-calc-visible" : "capture-calc-hidden-mobile"}><CaptureCalculator /></div></div>
+            </div>
           </div>
         </div>
       )}
