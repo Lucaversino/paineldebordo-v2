@@ -17,7 +17,7 @@ function GoogleLogo() {
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +33,13 @@ export default function LoginPage() {
     setMessage("");
     try {
       const supabase = createSupabaseBrowserClient();
-      if (mode === "signup") {
+      if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        });
+        if (error) throw error;
+        setMessage("Se este e-mail estiver cadastrado, você receberá um link para criar outra senha. Verifique também o spam.");
+      } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
@@ -80,13 +86,13 @@ export default function LoginPage() {
         <section className="logincard">
           <div className="loginbrand"><ShipWheel /></div>
           <small>PAINEL DE BORDO</small>
-          <h1>{mode === "login" ? "Bem-vindo a bordo" : "Criar sua conta"}</h1>
-          <p>{mode === "login" ? "Entre para acessar suas viagens, largadas, capturas e análises." : "Crie seu acesso para manter seus dados de pesca organizados e separados por usuário."}</p>
+          <h1>{mode === "login" ? "Bem-vindo a bordo" : mode === "forgot" ? "Recuperar senha" : "Criar sua conta"}</h1>
+          <p>{mode === "login" ? "Entre para acessar suas viagens, largadas, capturas e análises." : mode === "forgot" ? "Informe seu e-mail cadastrado para receber um link seguro de redefinição." : "Crie seu acesso para manter seus dados de pesca organizados e separados por usuário."}</p>
 
           <div className="loginaccount">
             <LockKeyhole />
             <div>
-              <span>{mode === "login" ? "Acesso protegido" : "Cadastro protegido"}</span>
+              <span>{mode === "signup" ? "Cadastro protegido" : "Acesso protegido"}</span>
               <b>Supabase Auth</b>
               <small>Seus registros ficam separados por usuário.</small>
             </div>
@@ -123,7 +129,7 @@ export default function LoginPage() {
               </div>
             </label>
 
-            <label className="loginfield">
+            {mode !== "forgot" && <label className="loginfield">
               <span>Senha</span>
               <div className="login-input-wrap">
                 <LockKeyhole />
@@ -145,18 +151,20 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff /> : <Eye />}
                 </button>
               </div>
-            </label>
+            </label>}
+
+            {mode === "login" && <button type="button" className="switchaccount" style={{ alignSelf: "flex-end", marginTop: 0 }} onClick={() => { setMode("forgot"); setError(""); setMessage(""); }}>Esqueci minha senha</button>}
 
             {error && <p className="login-message error">{error}</p>}
             {message && <p className="login-message success">{message}</p>}
 
             <button type="submit" className="primary-login" disabled={busy}>
               {mode === "signup" && <UserPlus />}
-              {busy ? "AGUARDE..." : mode === "login" ? "ENTRAR" : "CRIAR CONTA"}
+              {busy ? "AGUARDE..." : mode === "login" ? "ENTRAR" : mode === "forgot" ? "ENVIAR LINK DE RECUPERAÇÃO" : "CRIAR CONTA"}
             </button>
           </form>
 
-          <div className="login-divider"><span>ou</span></div>
+          {mode !== "forgot" && <><div className="login-divider"><span>ou</span></div>
 
           <button type="button" className="google-button" onClick={loginGoogle} disabled={busy}>
             <GoogleLogo />
@@ -170,6 +178,9 @@ export default function LoginPage() {
           >
             {mode === "login" ? <>Ainda não tem conta? <b>Criar conta</b></> : <>Já possui cadastro? <b>Entrar</b></>}
           </button>
+
+          </>}
+          {mode === "forgot" && <button type="button" className="switchaccount" onClick={() => { setMode("login"); setError(""); setMessage(""); }}>Voltar para entrar</button>}
 
           <footer>
             <span>Autenticação segura com Supabase</span>
