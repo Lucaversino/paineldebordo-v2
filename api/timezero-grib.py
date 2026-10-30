@@ -13,8 +13,8 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             from eccodes import (codes_grib_new_from_samples, codes_set, codes_set_values, codes_get_message, codes_release)
-        except Exception:
-            return self.send_json(503, 'Conversor GRIB1 indisponível. Verifique a instalação de eccodes no servidor.')
+        except (ImportError, OSError) as exc:
+            return self.send_json(503, 'Biblioteca ecCodes não carregou no servidor. Refaça o deploy com as dependências da V259. Detalhe: ' + str(exc)[:140])
         try:
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             lat = float(q.get('lat', ['nan'])[0]); lon = float(q.get('lon', ['nan'])[0]); radius = int(q.get('radius', ['60'])[0]); hours = int(q.get('hours', ['48'])[0])
