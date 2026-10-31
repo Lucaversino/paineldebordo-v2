@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, CloudSun, RefreshCw, Waves } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, CloudSun, RefreshCw, Waves, StickyNote } from "lucide-react";
 import { getOfflineManage } from "../lib/offlinePanel";
 
 type RecordAny = Record<string, any>;
@@ -26,6 +26,8 @@ export default function TripCalendar() {
   const [error,setError] = useState("");
   const [month,setMonth] = useState("");
   const [lost,setLost] = useState<Record<string,string>>({});
+  const [notes,setNotes] = useState<Record<string,string>>({});
+  const [noteNotice,setNoteNotice] = useState("");
   const [selection,setSelection] = useState("");
   const [weather,setWeather] = useState<Record<string,ForecastDay>>({});
   const [weatherStatus,setWeatherStatus] = useState("Previsão ainda não carregada");
@@ -35,6 +37,7 @@ export default function TripCalendar() {
   const end = keyOf(trip?.expectedReturnDate);
   const today = todayKey();
   const storageKey = tripId ? `painel-calendar-lost-days-${tripId}` : "";
+  const noteKey = tripId ? `painel-calendar-notes-${tripId}` : "";
   async function load() {
     setLoading(true); setError("");
     try {
@@ -50,10 +53,30 @@ export default function TripCalendar() {
   useEffect(()=>{void load();},[]);
   useEffect(()=>{if(start && !month) setMonth(start.slice(0,7));},[start,month]);
   useEffect(()=>{if(!storageKey)return;try{setLost(JSON.parse(localStorage.getItem(storageKey)||"{}"));}catch{setLost({});}},[storageKey]);
+  useEffect(()=>{if(!noteKey){setNotes({});return;}try{const data=JSON.parse(localStorage.getItem(noteKey)||"{}");setNotes(data && typeof data === "object" && !Array.isArray(data)?data:{});}catch{setNotes({});}},[noteKey]);
+  function updateNote(date:string,text:string){
+    if(!noteKey)return;
+    const next={...notes};
+    if(text.trim()) next[date]=text.trim();else delete next[date];
+    try{localStorage.setItem(noteKey,JSON.stringify(next));setNotes(next);setNoteNotice("Anotação salva neste dispositivo.");}
+    catch{setNoteNotice("Não foi possível salvar. Verifique o armazenamento do navegador.");}
+  }
   function updateLost(date:string,reason:string) {if(!storageKey)return;const next={...lost};if(reason.trim())next[date]=reason.trim();else delete next[date];setLost(next);localStorage.setItem(storageKey,JSON.stringify(next));}
   const sets=useMemo(()=>store.sets.filter(s=>String(s.tripId)===String(tripId)),[store.sets,tripId]);
   const catchRows=useMemo(()=>store.catches.filter(c=>String(c.tripId)===String(tripId) && c.catchType!=="DISCARD"),[store.catches,tripId]);
-  const production=useMemo(()=>{const map:Record<string,number>={}; for(const c of catchRows){const k=keyOf(c.caughtAt);if(k)map[k]=(map[k]||0)+Number(c.weightKg||0);}return map;},[catchRows]);
+  // Capturas vinculadas entram no dia operacional da largada/recolhimento.
+  // A data de lançamento da captura pode ser diferente do dia em que o peixe foi pescado.
+  const setById=useMemo(()=>new Map(sets.map(s=>[String(s.id),s])),[sets]);
+  const production=useMemo(()=>{
+    const map:Record<string,number>={};
+    for(const c of catchRows){
+      const fishingSet=c.fishingSetId!=null?setById.get(String(c.fishingSetId)):null;
+      const k=keyOf(fishingSet?.finishedAt||fishingSet?.startedAt||c.caughtAt);
+      const weight=Number(c.weightKg);
+      if(k && Number.isFinite(weight) && weight>0)map[k]=(map[k]||0)+weight;
+    }
+    return map;
+  },[catchRows,setById]);
   const setDays=useMemo(()=>new Set(sets.map(s=>keyOf(s.startedAt)).filter(Boolean)),[sets]);
   const total=Object.values(production).reduce((a,b)=>a+b,0);
   const goal=Math.max(0,Number(trip?.targetKg||0));
@@ -88,13 +111,18 @@ export default function TripCalendar() {
   if(loading)return <section className="tripcal"><p>Carregando calendário da viagem...</p></section>;
   if(!trip)return <section className="tripcal"><h2>Calendário de viagem</h2><p>Não existe viagem em andamento. Inicie uma viagem para acompanhar o calendário.</p><button onClick={()=>void load()}>Atualizar</button></section>;
   const chosen=selection||today;
+  const dailyRows=catchRows.filter(c=>{
+    const fishingSet=c.fishingSetId!=null?setById.get(String(c.fishingSetId)):null;
+    return keyOf(fishingSet?.finishedAt||fishingSet?.startedAt||c.caughtAt)===chosen;
+  });
   return <section className="tripcal">
     <div className="tripcal-head"><div><small>PLANEJAMENTO OPERACIONAL</small><h2><CalendarDays size={26}/> Calendário da viagem</h2><p>{trip.name} · Saída {start||"não informada"} · Chegada prevista {end||"não informada"}</p></div><button type="button" onClick={()=>void load()}><RefreshCw size={16}/> Atualizar registros</button></div>
     {error&&<p className="tripcal-note">{error}</p>}
     <div className="tripcal-metrics"><article><small>Produção acumulada</small><b>{fmt(total)} kg</b><span>Meta: {fmt(goal)} kg</span></article><article><small>Meta de pesca</small><b>{goal?fmt(Math.min(100,total/goal*100)):"—"}%</b><span>Percentual dos quilos previstos</span></article><article><small>Tempo da viagem</small><b>{travelPct}%</b><span>{elapsed} de {duration} dias transcorridos</span></article><article><small>Até o retorno estimado</small><b>{remaining} dias</b><span>{end&&today>end?"Prazo de retorno já passou":"Dias restantes"}</span></article><article><small>Dias perdidos marcados</small><b>{missed}</b><span>Marcação manual neste dispositivo</span></article></div>
-    <div className="tripcal-grid"><div className="tripcal-calendar"><div className="tripcal-month"><button onClick={()=>moveMonth(-1)} aria-label="Mês anterior"><ChevronLeft/></button><h3>{first.toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</h3><button onClick={()=>moveMonth(1)} aria-label="Próximo mês"><ChevronRight/></button></div><div className="tripcal-days">{["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"].map(x=><strong key={x}>{x}</strong>)}{cells.map((d,i)=>d?<button key={d} className={["tripcal-day",d===today?"today":"",d===chosen?"selected":"",lost[d]?"lost":"",d<calendarStart||d>calendarEnd?"outside":""].join(" ")} onClick={()=>setSelection(d)}><b>{Number(d.slice(-2))}</b>{d===start&&<small className="tripcal-tag">Saída</small>}{d===end&&<small className="tripcal-tag">Retorno</small>}{Number(production[d]||0)>0&&<span className="tripcal-kg">{fmt(production[d])} kg</span>}{setDays.has(d)&&<small>🎣 Largada</small>}{lost[d]&&<small className="tripcal-lost">Dia perdido</small>}{weather[d]&&<small className="tripcal-weather">{weather[d].description} · {Math.round(weather[d].wind||0)} km/h</small>}</button>:<span key={`pad${i}`}/>)}</div></div>
-    <aside className="tripcal-detail"><h3>{toDate(chosen).toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})}</h3><p><b>Produção registrada:</b> {fmt(production[chosen]||0)} kg</p><p><b>Largadas iniciadas:</b> {sets.filter(s=>keyOf(s.startedAt)===chosen).length}</p>{weather[chosen]?<div className="tripcal-weatherbox"><b><CloudSun size={18}/> Previsão do dia</b><p>{weather[chosen].description} · Vento até {fmt(weather[chosen].wind||0)} km/h</p><p>Rajadas: {fmt(weather[chosen].gust||0)} km/h · Chuva: {fmt(weather[chosen].rain||0)} mm</p><p><Waves size={16}/> Ondas: {weather[chosen].wave==null?"Indisponível":`${fmt(weather[chosen].wave)} m`}</p></div>:<p>Sem previsão disponível para esta data. O calendário não inventa previsões passadas.</p>}
+    <div className="tripcal-grid"><div className="tripcal-calendar"><div className="tripcal-month"><button onClick={()=>moveMonth(-1)} aria-label="Mês anterior"><ChevronLeft/></button><h3>{first.toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</h3><button onClick={()=>moveMonth(1)} aria-label="Próximo mês"><ChevronRight/></button></div><div className="tripcal-days">{["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"].map(x=><strong key={x}>{x}</strong>)}{cells.map((d,i)=>d?<button key={d} className={["tripcal-day",d===today?"today":"",d===chosen?"selected":"",lost[d]?"lost":"",d<calendarStart||d>calendarEnd?"outside":""].join(" ")} onClick={()=>setSelection(d)}><b>{Number(d.slice(-2))}</b>{d===start&&<small className="tripcal-tag">Saída</small>}{d===end&&<small className="tripcal-tag">Retorno</small>}{Number(production[d]||0)>0&&<span className="tripcal-kg">{fmt(production[d])} kg</span>}{setDays.has(d)&&<small>🎣 Largada</small>}{lost[d]&&<small className="tripcal-lost">Dia perdido</small>}{notes[d]&&<small className="tripcal-note-indicator">📝 Anotação</small>}{weather[d]&&<small className="tripcal-weather">{weather[d].description} · {Math.round(weather[d].wind||0)} km/h</small>}</button>:<span key={`pad${i}`}/>)}</div></div>
+    <aside className="tripcal-detail"><h3>{toDate(chosen).toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})}</h3><p><b>Produção registrada:</b> {fmt(production[chosen]||0)} kg</p><p><b>Largadas iniciadas:</b> {sets.filter(s=>keyOf(s.startedAt)===chosen).length}</p><small>Produção contabilizada pelo dia do recolhimento da largada (ou início, caso não exista recolhimento). Capturas sem largada usam a data registrada.</small>{dailyRows.length>0&&<div className="tripcal-catch-detail"><strong>Capturas do dia</strong>{dailyRows.map(c=><div key={c.id}><span>{c.species||"Espécie"}</span><b>{fmt(Number(c.weightKg||0))} kg</b></div>)}</div>}{weather[chosen]?<div className="tripcal-weatherbox"><b><CloudSun size={18}/> Previsão do dia</b><p>{weather[chosen].description} · Vento até {fmt(weather[chosen].wind||0)} km/h</p><p>Rajadas: {fmt(weather[chosen].gust||0)} km/h · Chuva: {fmt(weather[chosen].rain||0)} mm</p><p><Waves size={16}/> Ondas: {weather[chosen].wave==null?"Indisponível":`${fmt(weather[chosen].wave)} m`}</p></div>:<p>Sem previsão disponível para esta data. O calendário não inventa previsões passadas.</p>}
     {chosen>=calendarStart&&chosen<=today&&<label className="tripcal-mark"><span>Dia sem trabalho (marcação manual)</span><select value={lost[chosen]||""} onChange={e=>updateLost(chosen,e.target.value)}><option value="">Não marcado</option><option value="Mau tempo">Mau tempo</option><option value="Problema mecânico">Problema mecânico</option><option value="Descanso">Descanso</option><option value="Outro motivo">Outro motivo</option></select><small>Um dia sem peixe não é automaticamente um dia perdido.</small></label>}
+    <div className="tripcal-note-editor"><label htmlFor="tripcal-note"><StickyNote size={16}/> Anotações deste dia</label><textarea id="tripcal-note" key={`${tripId}-${chosen}`} rows={5} maxLength={3000} defaultValue={notes[chosen]||""} onChange={e=>{setNoteNotice("");}} placeholder="Ex.: mudança de área, manutenção, avistamentos, condições de pesca..." /><div><button type="button" onClick={()=>updateNote(chosen,(document.getElementById("tripcal-note") as HTMLTextAreaElement)?.value||"")}>Salvar anotação</button>{notes[chosen]&&<button type="button" onClick={()=>{updateNote(chosen,"");const input=document.getElementById("tripcal-note") as HTMLTextAreaElement|null;if(input)input.value="";}}>Apagar</button>}</div>{noteNotice&&<small role="status">{noteNotice}</small>}<small>As anotações são privadas e ficam neste navegador; ainda não sincronizam com outros dispositivos.</small></div>
     <button type="button" onClick={()=>void loadForecast()}><RefreshCw size={15}/> Atualizar previsão</button><small>{weatherStatus}</small><small>A previsão é regional, da última posição de largada. Consulte a fonte oficial antes de navegar.</small></aside></div>
   </section>;
 }

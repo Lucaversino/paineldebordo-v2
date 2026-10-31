@@ -7270,3 +7270,13 @@ select option:checked {
 .trip-mini-footer{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;color:#a4cbd0;font-size:.85rem}.trip-mini-footer button{margin-left:auto;padding:9px 14px;border-radius:9px;background:#20c8a6;color:#052329;font-weight:700}
 .trip-schedule-form{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:12px;background:#10343a;border:1px solid #2d666d;border-radius:10px;margin-top:10px}.trip-schedule-form label{display:grid;gap:5px}.trip-schedule-form input{color:#fff;background:#061f25;border:1px solid #35636a;border-radius:6px;padding:8px}.trip-schedule-form p{color:#ffa09d;width:100%}
 @media(max-width:760px){.trip-mini-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.trip-overview-modern,.trip-history-card{padding:14px}.trip-history-actions{width:100%}}
+
+/* V264: detalhes diários e diário de bordo por data */
+.tripcal-note-editor{display:grid;gap:10px;padding:14px;border:1px solid #2b5f69;border-radius:12px;background:#0b2b34}
+.tripcal-note-editor label{display:flex;align-items:center;gap:9px;font-weight:800;color:#76e7d2}
+.tripcal-note-editor textarea{width:100%;resize:vertical;min-height:115px;background:#061c24;color:#e6fbff;border:1px solid #38717b;border-radius:9px;padding:11px;font:inherit}
+.tripcal-note-editor>div{display:flex;gap:9px;flex-wrap:wrap}
+.tripcal-note-editor button{border:1px solid #2c8986;border-radius:8px;background:#133f47;color:#bdfcf0;padding:10px 12px}
+.tripcal-day .tripcal-note-indicator{color:#f8d99b;font-weight:700}
+.tripcal-catch-detail{display:grid;gap:7px;border:1px solid #295863;border-radius:10px;padding:11px;background:#0a2d37}
+.tripcal-catch-detail>div{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #204955;padding-top:6px}
