@@ -25,6 +25,7 @@ import { TripMiniDashboard, TripScheduleEditor } from "./TripMiniDashboard";
 import SetWeatherAnalysis from "./SetWeatherAnalysis";
 import BackupImporter from "./BackupImporter";
 import TripFullReport from "./TripFullReport";
+import FinishTripDialog from "./FinishTripDialog";
 import AnnualReport from "./AnnualReport";
 import { getTripYear } from "../lib/tripReports";
 import { downloadFishingSetsGpx } from "../lib/fishingSetGpx";
@@ -175,6 +176,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     [form, setForm] = useState<any>(null),
     [editing, setEditing] = useState<any>(null),
     [editingCatch, setEditingCatch] = useState<any>(null),
+    [finishTripTarget, setFinishTripTarget] = useState<any>(null),
     [captureSet, setCaptureSet] = useState<any>(null),
     [addingSetCatch, setAddingSetCatch] = useState(false),
     [showMobileCalc, setShowMobileCalc] = useState(false),
@@ -464,15 +466,6 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       setMsg("Falha de conexão. Tente novamente.");
     }
   }
-  async function finish(id: number) {
-    if (!confirm("Finalizar esta viagem agora?")) return;
-    await fetch("/api/manage", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "finish", id }),
-    });
-    load();
-  }
   async function del(id: number) {
     if (!confirm("Tem certeza? A viagem será arquivada com segurança.")) return;
     await fetch("/api/manage", {
@@ -749,7 +742,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
             )}
           </div>
           {current && (
-            <div className="tripactions">
+            <div className="tripactions tripactions-organized">
               <button
                 className="editbtn"
                 onClick={() => setEditing({ ...current, _type: "trip" })}
@@ -766,7 +759,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
               <button className="deletebtn" onClick={() => del(current.id)}>
                 <Trash2 /> Excluir viagem
               </button>
-              <button onClick={() => finish(current.id)}>
+              <button type="button" className="finish-trip-danger" onClick={() => setFinishTripTarget(current)}>
                 Finalizar viagem
               </button>
             </div>
@@ -1425,6 +1418,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
           </form>
         </div>
       )}
+      {finishTripTarget && <FinishTripDialog trip={finishTripTarget} onClose={() => setFinishTripTarget(null)} onFinished={load} />}
       {captureSet && (
         <div className="overlay" onMouseDown={() => { setCaptureSet(null); setEditingCatch(null); setAddingSetCatch(false); setShowMobileCalc(false); }}>
           <div className="modal form set-capture-select-modal capture-modal-expanded" onMouseDown={(e) => e.stopPropagation()}>

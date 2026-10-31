@@ -7280,3 +7280,16 @@ select option:checked {
 .tripcal-day .tripcal-note-indicator{color:#f8d99b;font-weight:700}
 .tripcal-catch-detail{display:grid;gap:7px;border:1px solid #295863;border-radius:10px;padding:11px;background:#0a2d37}
 .tripcal-catch-detail>div{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #204955;padding-top:6px}
+
+/* V265: ações organizadas e encerramento seguro da viagem */
+.ops:has(.tripactions-organized){padding-bottom:95px}
+.detail:has(.tripactions-organized){align-items:flex-start;flex-wrap:wrap;gap:20px}
+.tripactions-organized{display:grid!important;grid-template-columns:repeat(3,minmax(150px,1fr));align-items:stretch;gap:10px;min-width:0;flex:1 1 650px;max-width:770px;margin-left:auto;padding-bottom:8px}
+.tripactions-organized button{margin:0!important;width:100%;min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:normal;text-align:center}
+.tripactions-organized .finish-trip-danger{grid-column:span 2}
+.finish-trip-danger{border:1px solid #f66d77!important;background:#aa2635!important;color:#fff!important;border-radius:10px;padding:12px 17px;font-weight:800;cursor:pointer;box-shadow:0 5px 18px #7b18242c}
+.finish-trip-danger:hover{background:#c83544!important}.finish-trip-danger:disabled{opacity:.55;cursor:wait}
+.dashboard-finish-row{display:flex;gap:12px;align-items:center;justify-content:flex-end;margin:20px 0 24px;padding-right:165px}.dashboard-finish-row small{color:#a4c3c6}
+.finish-trip-overlay{z-index:7000}.finish-trip-dialog{max-width:580px!important;width:min(94vw,580px)!important;display:flex;flex-direction:column;gap:16px}.finish-trip-alert{display:flex;align-items:center;gap:8px;color:#ffacac;font-weight:900;letter-spacing:.06em;font-size:12px}.finish-trip-dialog p{line-height:1.6}.finish-trip-buttons{display:flex;gap:12px;flex-wrap:wrap}.finish-trip-buttons button{flex:1 1 180px;display:flex;align-items:center;justify-content:center;gap:8px}.finish-trip-error{color:#ffc6c6!important}
+@media(max-width:980px){.tripactions-organized{grid-template-columns:repeat(2,minmax(140px,1fr));max-width:none}.dashboard-finish-row{padding-right:0}}
+@media(max-width:560px){.tripactions-organized{grid-template-columns:1fr 1fr;gap:8px;flex-basis:100%}.tripactions-organized button{min-width:0!important;padding:9px 6px;font-size:12px}.dashboard-finish-row{justify-content:stretch;flex-direction:column;align-items:stretch}.finish-trip-dialog{padding:20px!important}}

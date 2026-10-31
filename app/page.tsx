@@ -54,6 +54,7 @@ const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"
 const TripCalendar = dynamic(() => import("../components/TripCalendar"), { ssr: false, loading: ModuleLoading });
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
 const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
+const FinishTripDialog = dynamic(() => import("../components/FinishTripDialog"), { ssr: false });
 const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
 const FishingIntelligence = dynamic(() => import("../components/FishingIntelligence"), { ssr: false, loading: ModuleLoading });
 const CreditsPage = dynamic(() => import("../components/CreditsPage"), { ssr: false, loading: ModuleLoading });
@@ -107,7 +108,8 @@ export default function Home() {
     [gpsPermissionMessage, setGpsPermissionMessage] = useState(""),
     [operationsIntent, setOperationsIntent] = useState<"boat" | "trip" | null>(null),
     [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false),
-    [hideDashboardValues, setHideDashboardValues] = useState(false);
+    [hideDashboardValues, setHideDashboardValues] = useState(false),
+    [dashboardFinishTrip, setDashboardFinishTrip] = useState<any>(null);
   const onboardingRedirected = useRef(false);
   const closeModalSafely = () => {
     if (busy) return;
@@ -795,6 +797,7 @@ export default function Home() {
                   </button>
                   <p>Usa o GPS do celular, abre Ventos e Mar e sincroniza a mesma posição com o mapa ambiental.</p>
                 </div>
+                {t?.status === "IN_PROGRESS" && <div className="dashboard-finish-row"><button type="button" className="finish-trip-danger" onClick={() => setDashboardFinishTrip(t)}>Finalizar viagem</button><small>Encerra a viagem somente depois de confirmar.</small></div>}
                 <OceanIntelligence />
                 <div className="lower single">
                   <article className="chartcard">
@@ -858,6 +861,7 @@ export default function Home() {
         )}
       </main>
       {view !== "AIS" && <FishAI />}
+      {dashboardFinishTrip && <FinishTripDialog trip={dashboardFinishTrip} onClose={() => setDashboardFinishTrip(null)} onFinished={() => { void load(); }} />}
       {modal && t && (
         <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModalSafely(); }}>
           <form className="modal form" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
