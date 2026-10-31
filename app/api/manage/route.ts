@@ -410,6 +410,19 @@ export async function PUT(r: Request) {
       ? Response.json(row)
       : Response.json({ error: "Espécie não encontrada." }, { status: 404 });
   }
+  if (b.type === "tripSchedule") {
+    const [trip] = await db.select().from(trips).where(and(eq(trips.id, id), eq(trips.ownerId, user.id))).limit(1);
+    if (!trip || trip.status !== "IN_PROGRESS") return Response.json({ error: "Apenas viagens em andamento podem ter datas ajustadas aqui." }, { status: 403 });
+    const departureDate = String(b.departureDate || "");
+    const expectedReturnDate = String(b.expectedReturnDate || "");
+    const start = new Date(departureDate).getTime();
+    const end = new Date(expectedReturnDate).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
+      return Response.json({ error: "O retorno previsto precisa ser posterior à saída." }, { status: 400 });
+    const [updated] = await db.update(trips).set({ departureDate, expectedReturnDate })
+      .where(and(eq(trips.id, id), eq(trips.ownerId, user.id))).returning();
+    return Response.json(updated);
+  }
   if (b.type === "tripDates") {
     const [trip] = await db.select().from(trips)
       .where(and(eq(trips.id, id), eq(trips.ownerId, user.id))).limit(1);

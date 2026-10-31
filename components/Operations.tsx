@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import CoordinateInput from "./CoordinateInput";
 import FinishedTripDashboard from "./FinishedTripDashboard";
+import { TripMiniDashboard, TripScheduleEditor } from "./TripMiniDashboard";
 import SetWeatherAnalysis from "./SetWeatherAnalysis";
 import BackupImporter from "./BackupImporter";
 import TripFullReport from "./TripFullReport";
@@ -629,7 +630,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     }
   };
   const selectedFinishedTrip = s.trips.find(
-    (x) => x.status === "FINISHED" && Number(x.id) === Number(selectedFinishedTripId),
+    (x) => Number(x.id) === Number(selectedFinishedTripId),
   );
   const downloadPdf = (trip: any, mode: "download" | "share" = "download", includeEnvironment = false) => {
     setPdfError("");
@@ -733,6 +734,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         )}
       </div>
       {msg && <div className="success">{msg}</div>}
+      {view === "Viagem atual" && current && <section className="trip-overview-modern"><div className="trip-overview-header"><div><small>PAINEL DA VIAGEM ATIVA</small><h3>{current.name} · {current.boatName}</h3></div><TripScheduleEditor key={current.id} trip={current} onSaved={load}/></div><TripMiniDashboard trip={current} sets={s.sets} catches={s.catches}  /></section>}
       {view === "Viagem atual" && (
         <div className="detail">
           <ShipWheel />
@@ -1129,65 +1131,11 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         />
       )}
       {view === "Histórico" && !selectedFinishedTrip && (
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Viagem</th>
-                <th>Embarcação</th>
-                <th>Meta</th>
-                <th>Captura</th>
-                <th>Resultado</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.trips.map((x) => (
-                <tr key={x.id}>
-                  <td>
-                    <b>{x.name}</b>
-                    <small>
-                      {new Date(x.departureDate).toLocaleDateString("pt-BR")}
-                    </small>
-                  </td>
-                  <td>{x.boatName}</td>
-                  <td>{f(x.targetKg)} kg</td>
-                  <td>{f(x.total)} kg</td>
-                  <td>{((x.total / x.targetKg) * 100).toFixed(1)}%</td>
-                  <td>
-                    <span className={`pill ${x.status}`}>
-                      {status[x.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="rowactions">
-                      <button
-                        className="editbtn"
-                        onClick={() => setEditing({ ...x, _type: "trip" })}
-                        title="Editar viagem"
-                      >
-                        <Pencil /> Editar
-                      </button>
-                      {x.status === "FINISHED" && (
-                        <button
-                          className="analyzebtn"
-                          onClick={() => setSelectedFinishedTripId(Number(x.id))}
-                          title="Abrir dashboard desta viagem"
-                        >
-                          <BarChart3 /> Analisar
-                        </button>
-                      )}
-                      <button className="editbtn" onClick={() => downloadPdf(x)} title="Baixar PDF da viagem"><FileDown /> PDF</button>
-                      <button className="editbtn" onClick={() => downloadPdf(x, "download", true)} title="Baixar PDF com dados ambientais das largadas"><Waves /> PDF + previsão</button>
-                      <button className="editbtn" onClick={() => downloadPdf(x, "share")}><Share2 /> WhatsApp</button>
-                      <button className="deletebtn" onClick={() => del(x.id)} title="Excluir viagem"><Trash2 /> Excluir</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="trip-history-cards">
+          {s.trips.slice().sort((a,b)=>Number(b.status==="IN_PROGRESS")-Number(a.status==="IN_PROGRESS") || new Date(b.departureDate).getTime()-new Date(a.departureDate).getTime()).map(x=><section className="trip-history-card" key={x.id}>
+            <div className="trip-history-head"><div><small>{x.status==="IN_PROGRESS"?"VIAGEM EM ANDAMENTO":"VIAGEM ARQUIVADA"}</small><h3>{x.name}</h3><p>{x.boatName} · {status[x.status]||x.status}</p></div><div className="trip-history-actions"><button className="editbtn" onClick={()=>setEditing({...x,_type:"trip"})}><Pencil/> Editar</button><button className="analyzebtn" onClick={()=>setSelectedFinishedTripId(Number(x.id))}><BarChart3/> Analisar</button><button className="editbtn" onClick={()=>downloadPdf(x)}><FileDown/> PDF</button><button className="editbtn" onClick={()=>downloadPdf(x,"share")}><Share2/> WhatsApp</button></div></div>
+            <TripMiniDashboard trip={x} sets={s.sets} catches={s.catches} onAnalyze={()=>setSelectedFinishedTripId(Number(x.id))}/>
+          </section>)}
         </div>
       )}
       {view === "Comparar viagens" && compareTripId && (() => {
