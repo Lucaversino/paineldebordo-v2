@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import {
   Anchor,
   CircleHelp,
+  CalendarDays,
   BarChart3,
   BrainCircuit,
   Fish,
@@ -50,6 +51,7 @@ const ModuleLoading = () => <section className="content"><div className="emptyda
 const HelpCenter = dynamic(() => import("../components/HelpCenter"), { ssr: false, loading: ModuleLoading });
 const Operations = dynamic(() => import("../components/Operations"), { ssr: false, loading: ModuleLoading });
 const OceanIntelligence = dynamic(() => import("../components/OceanIntelligence"), { ssr: false });
+const TripCalendar = dynamic(() => import("../components/TripCalendar"), { ssr: false, loading: ModuleLoading });
 const PositionForecast = dynamic(() => import("../components/PositionForecast"), { ssr: false, loading: ModuleLoading });
 const AISPage = dynamic(() => import("../components/AISPage"), { ssr: false, loading: ModuleLoading });
 const FishAI = dynamic(() => import("../components/FishAI"), { ssr: false });
@@ -475,8 +477,9 @@ export default function Home() {
   }, [billing, view]);
   const nav = [
       [Gauge, "Dashboard"],
-      [CircleHelp, "Ajuda"],
       [Wind, "Ventos e Mar"],
+      [CalendarDays, "Calendário"],
+      [CircleHelp, "Ajuda"],
       [Ship, "AIS"],
       [WalletCards, "Meus créditos"],
       ...(positionEnabled ? [[MapPinned, "Posição"]] as const : []),
@@ -819,6 +822,8 @@ export default function Home() {
           <HelpCenter onNavigate={(destination) => { setView(destination); setMenu(false); }} />
         ) : view === "Ventos e Mar" ? (
           <PositionForecast />
+        ) : view === "Calendário" ? (
+          <TripCalendar />
         ) : view === "AIS" ? (
           <AISPage
             defaultLat={Number(data.sets?.at(-1)?.endLatitude ?? data.sets?.at(-1)?.startLatitude ?? -27.15)}
