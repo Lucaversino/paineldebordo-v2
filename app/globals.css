@@ -7254,3 +7254,5 @@ select option:checked {
 @media(max-width:760px){.capture-inline-actions{flex-direction:column}.capture-inline-actions .editbtn,.capture-inline-actions .save{width:100%}}
 
 .timezero-export-card{margin:18px 0;padding:16px;border:1px solid #2a6970;border-radius:14px;background:#092a31;display:grid;gap:12px}.timezero-export-card h3{margin:0;color:#57ebcc}.timezero-export-card p,.timezero-export-card small{color:#b0c9cf}.timezero-export-fields{display:flex;flex-wrap:wrap;gap:12px}.timezero-export-fields label{display:grid;gap:6px;min-width:150px;flex:1}.timezero-export-fields select{min-height:42px;border-radius:8px;background:#082029;color:white;border:1px solid #36747d;padding:8px}.timezero-export-card button{max-width:100%}
+/* V261: resultado da previsão recebe foco sem ficar oculto sob o cabeçalho fixo */
+.position-forecast-page .position-current-head { scroll-margin-top: 92px; }

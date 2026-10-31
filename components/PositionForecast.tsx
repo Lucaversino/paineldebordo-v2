@@ -315,6 +315,7 @@ export default function PositionForecast() {
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
+      setFocusForecast((n) => n + 1);
       await rememberForecast(json, latitudeRaw, longitudeRaw);
       setNotice(successMessage);
     } catch (e) {
@@ -338,6 +339,7 @@ export default function PositionForecast() {
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "Falha na consulta.");
       setData(json);
+      setFocusForecast((n) => n + 1);
       await rememberForecast(json, latDigits, lonDigits);
       setNotice("Previsão carregada e adicionada ao histórico.");
     } catch (e) {
@@ -365,6 +367,7 @@ export default function PositionForecast() {
       const forecastJson = await forecastResponse.json().catch(() => ({}));
       if (!forecastResponse.ok) throw new Error(forecastJson.error || "Falha na consulta.");
       setData(forecastJson);
+      setFocusForecast((n) => n + 1);
       await rememberForecast(forecastJson, nextLat, nextLon);
       setNotice("Última largada carregada e adicionada ao histórico.");
     } catch (e) {
@@ -523,6 +526,15 @@ export default function PositionForecast() {
     }
   }
 
+  const [focusForecast, setFocusForecast] = useState(0);
+  useEffect(() => {
+    if (!focusForecast || !data) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector(".position-current-head")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusForecast, data]);
+
   const finalAnalysis = useMemo(() => data ? buildForecastFinalAnalysis(data) : null, [data]);
 
   return (
@@ -563,47 +575,8 @@ export default function PositionForecast() {
           <button type="button" className="position-pdf-big" onClick={exportPdf} disabled={!data || busy}><Download /><span><b>FAZER PDF</b><small>Cards grandes e fáceis de ler</small></span></button>
           <button type="button" className="position-share-big" onClick={shareWhatsApp} disabled={!data || busy || shareBusy}><Share2 /><span><b>{shareBusy ? "COMPARTILHANDO..." : "COMPARTILHAR PREVISÃO"}</b><small>Enviar PDF pelo celular ou WhatsApp</small></span></button>
         </div>
-        <div className="timezero-export-card">
-          <h3>Exportar previsão para TimeZero v4</h3>
-          <p>Arquivo GRIB1 com vento (10 m) e pressão em grade regional. Fonte: Open-Meteo. Posição usada: última previsão consultada, indicada acima.</p>
-          <div className="timezero-export-fields">
-            <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}><option value="30">30 milhas</option><option value="60">60 milhas</option><option value="100">100 milhas</option></select></label>
-            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option></select></label>
-          </div>
-          <button type="button" className="position-consult" onClick={exportTimeZero} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "GERANDO GRIB1..." : "BAIXAR PREVISÃO PARA TIMEZERO (.GRB)"}</button>
-          <small>No TimeZero: menu TIMEZERO → Open Weather File → selecione o arquivo baixado. Não é uma sincronização automática. Não contém ondas ou correntes.</small>
-          {tzError && <p className="position-error" role="alert">{tzError}</p>}
-        </div>
         {notice && <p className="position-notice">{notice}</p>}
         {error && <p className="position-error">{error}</p>}
-      </div>
-
-      <div className="forecast-library-grid">
-        <section className="forecast-library-panel saved-panel">
-          <div className="forecast-library-head">
-            <div><Folder /><span><small>PASTA</small><b>Previsões salvas</b><em>{saved.length} salva(s)</em></span></div>
-            {libraryBusy && <RefreshCw className="spin" />}
-          </div>
-          <div className="forecast-library-list">
-            {saved.map((item) => (
-              <LibraryItem key={`saved-${item.id}`} item={item} saved onOpen={() => openForecast(item)} onDelete={() => deleteLibraryItem("saved", item.id)} />
-            ))}
-            {!saved.length && <div className="forecast-library-empty"><Bookmark /><span>Salve pontos importantes e dê um nome, como “Castilho 35 m” ou “Ponto da corvina”.</span></div>}
-          </div>
-        </section>
-
-        <section className="forecast-library-panel history-panel">
-          <div className="forecast-library-head">
-            <div><History /><span><small>CONSULTAS</small><b>Histórico de previsões</b><em>{history.length} de 20</em></span></div>
-            <button className="forecast-clear-history" onClick={clearHistory} disabled={!history.length}><Trash2 /> Limpar histórico</button>
-          </div>
-          <div className="forecast-library-list">
-            {history.map((item) => (
-              <LibraryItem key={`history-${item.id}`} item={item} onOpen={() => openForecast(item)} onSave={() => startSave(item.payload, item.latitudeRaw || "", item.longitudeRaw || "")} onDelete={() => deleteLibraryItem("history", item.id)} />
-            ))}
-            {!history.length && <div className="forecast-library-empty"><History /><span>Suas próximas consultas aparecerão aqui automaticamente.</span></div>}
-          </div>
-        </section>
       </div>
 
       {!data ? (
@@ -787,6 +760,47 @@ export default function PositionForecast() {
           </div>
         </>
       )}
+
+      <div className="timezero-export-card">
+          <h3>Exportar previsão para TimeZero v4</h3>
+          <p>Arquivo GRIB1 com vento (10 m) e pressão em grade regional. Fonte: Open-Meteo. Posição usada: última previsão consultada, indicada acima.</p>
+          <div className="timezero-export-fields">
+            <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}><option value="30">30 milhas</option><option value="60">60 milhas</option><option value="100">100 milhas</option></select></label>
+            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option></select></label>
+          </div>
+          <button type="button" className="position-consult" onClick={exportTimeZero} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "GERANDO GRIB1..." : "BAIXAR PREVISÃO PARA TIMEZERO (.GRB)"}</button>
+          <small>No TimeZero: menu TIMEZERO → Open Weather File → selecione o arquivo baixado. Não é uma sincronização automática. Não contém ondas ou correntes.</small>
+          {tzError && <p className="position-error" role="alert">{tzError}</p>}
+        </div>
+
+      <div className="forecast-library-grid">
+        <section className="forecast-library-panel saved-panel">
+          <div className="forecast-library-head">
+            <div><Folder /><span><small>PASTA</small><b>Previsões salvas</b><em>{saved.length} salva(s)</em></span></div>
+            {libraryBusy && <RefreshCw className="spin" />}
+          </div>
+          <div className="forecast-library-list">
+            {saved.map((item) => (
+              <LibraryItem key={`saved-${item.id}`} item={item} saved onOpen={() => openForecast(item)} onDelete={() => deleteLibraryItem("saved", item.id)} />
+            ))}
+            {!saved.length && <div className="forecast-library-empty"><Bookmark /><span>Salve pontos importantes e dê um nome, como “Castilho 35 m” ou “Ponto da corvina”.</span></div>}
+          </div>
+        </section>
+
+        <section className="forecast-library-panel history-panel">
+          <div className="forecast-library-head">
+            <div><History /><span><small>CONSULTAS</small><b>Histórico de previsões</b><em>{history.length} de 20</em></span></div>
+            <button className="forecast-clear-history" onClick={clearHistory} disabled={!history.length}><Trash2 /> Limpar histórico</button>
+          </div>
+          <div className="forecast-library-list">
+            {history.map((item) => (
+              <LibraryItem key={`history-${item.id}`} item={item} onOpen={() => openForecast(item)} onSave={() => startSave(item.payload, item.latitudeRaw || "", item.longitudeRaw || "")} onDelete={() => deleteLibraryItem("history", item.id)} />
+            ))}
+            {!history.length && <div className="forecast-library-empty"><History /><span>Suas próximas consultas aparecerão aqui automaticamente.</span></div>}
+          </div>
+        </section>
+      </div>
+
 
       {saveDialog && (
         <div className="forecast-save-overlay" role="dialog" aria-modal="true">
