@@ -14,6 +14,7 @@ import {
   Moon,
   Pencil,
   List,
+  Flag,
   Plus,
   Radio,
   RefreshCw,
@@ -780,6 +781,11 @@ export default function Home() {
                       <List /> Lista de Largadas
                     </button>
                   </div>
+                  {t?.status === "IN_PROGRESS" && (
+                    <button type="button" className="finish-trip-danger dashboard-finish-inline" onClick={() => setDashboardFinishTrip(t)}>
+                      <Flag size={18} aria-hidden="true" /> Finalizar viagem
+                    </button>
+                  )}
                   <div className="category-actions">
                     <button type="button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("mixture"); }}><Fish /> Mistura de peixe</button>
                     <button type="button" className="discard-button" disabled={!data.sets.length} onClick={() => { setSaveError(""); setModal("discard"); }}><X /> Descarte</button>
@@ -797,7 +803,6 @@ export default function Home() {
                   </button>
                   <p>Usa o GPS do celular, abre Ventos e Mar e sincroniza a mesma posição com o mapa ambiental.</p>
                 </div>
-                {t?.status === "IN_PROGRESS" && <div className="dashboard-finish-row"><button type="button" className="finish-trip-danger" onClick={() => setDashboardFinishTrip(t)}>Finalizar viagem</button><small>Encerra a viagem somente depois de confirmar.</small></div>}
                 <OceanIntelligence />
                 <div className="lower single">
                   <article className="chartcard">
