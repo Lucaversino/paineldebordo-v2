@@ -110,6 +110,10 @@ export default function Home() {
     [operationsIntent, setOperationsIntent] = useState<"boat" | "trip" | null>(null),
     [onboardingCompleteMessage, setOnboardingCompleteMessage] = useState(false),
     [hideDashboardValues, setHideDashboardValues] = useState(false),
+    [editingTarget, setEditingTarget] = useState(false),
+    [targetInput, setTargetInput] = useState(""),
+    [targetSaving, setTargetSaving] = useState(false),
+    [targetError, setTargetError] = useState(""),
     [dashboardFinishTrip, setDashboardFinishTrip] = useState<any>(null);
   const onboardingRedirected = useRef(false);
   const closeModalSafely = () => {
@@ -137,6 +141,44 @@ export default function Home() {
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [modal, busy]);
+  const saveQuickTarget = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const tripId = Number(data.trip?.id);
+    const cleaned = targetInput.trim().replace(/\s/g, "");
+    const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : /^\d{1,3}(\.\d{3})+$/.test(cleaned) ? cleaned.replace(/\./g, "") : cleaned;
+    const targetKg = Number(normalized);
+    if (!tripId || !cleaned || !Number.isFinite(targetKg) || targetKg <= 0 || targetKg > 1000000000) {
+      setTargetError("Informe uma meta válida em quilos, maior que zero.");
+      return;
+    }
+    if (!navigator.onLine) {
+      setTargetError("Conecte-se à internet para atualizar a meta da viagem com segurança.");
+      return;
+    }
+    setTargetSaving(true);
+    setTargetError("");
+    try {
+      const response = await fetch("/api/manage", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "quickTripTarget", id: tripId, targetKg }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Não foi possível atualizar a meta.");
+      setData((current: any) => {
+        if (Number(current.trip?.id) !== Number(result.id)) return current;
+        const updatedDashboard = { ...current, trip: { ...current.trip, targetKg: result.targetKg } };
+        cacheOfflineDashboard(updatedDashboard);
+        return updatedDashboard;
+      });
+      setEditingTarget(false);
+      await load();
+    } catch (error) {
+      setTargetError(error instanceof Error ? error.message : "Erro ao salvar meta.");
+    } finally {
+      setTargetSaving(false);
+    }
+  };
   const primeOfflineManage = async () => {
     if (!navigator.onLine) return;
     try {
@@ -697,6 +739,11 @@ export default function Home() {
                       <div>
                         <small>META TOTAL</small>
                         <b>{hideDashboardValues ? "••••" : `${fmt(t.targetKg)} kg`}</b>
+                        <button type="button" className="quick-target-edit" onClick={() => {
+                          setTargetInput(String(t.targetKg));
+                          setTargetError("");
+                          setEditingTarget(true);
+                        }} aria-label="Editar meta da viagem em andamento" title="Editar meta da viagem"><Pencil size={13} /> EDITAR META</button>
                       </div>
                     </div>
                     <div className="progress">
@@ -868,6 +915,18 @@ export default function Home() {
       </main>
       {view !== "AIS" && <FishAI />}
       {dashboardFinishTrip && <FinishTripDialog trip={dashboardFinishTrip} onClose={() => setDashboardFinishTrip(null)} onFinished={() => { void load(); }} />}
+      {editingTarget && data.trip && (
+        <div className="quick-target-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget && !targetSaving) setEditingTarget(false); }}>
+          <form className="quick-target-dialog" onSubmit={saveQuickTarget} role="dialog" aria-modal="true" aria-labelledby="quick-target-title">
+            <div className="quick-target-heading"><div><small>VIAGEM EM ANDAMENTO</small><h2 id="quick-target-title">Editar meta da viagem</h2></div><button type="button" onClick={() => setEditingTarget(false)} disabled={targetSaving} aria-label="Fechar edição de meta"><X size={19}/></button></div>
+            <p>{data.trip.name} · Nova meta sincronizada com a viagem, Dashboard e relatórios.</p>
+            <label htmlFor="quick-target-value">Nova meta em quilos (kg)</label>
+            <input id="quick-target-value" type="text" inputMode="decimal" autoFocus value={targetInput} onChange={(e) => setTargetInput(e.target.value)} placeholder="Ex.: 50000" required />
+            {targetError && <div className="quick-target-error" role="alert">{targetError}</div>}
+            <div className="quick-target-actions"><button type="button" onClick={() => setEditingTarget(false)} disabled={targetSaving}>CANCELAR</button><button type="submit" disabled={targetSaving}>{targetSaving ? "SALVANDO..." : "SALVAR META"}</button></div>
+          </form>
+        </div>
+      )}
       {modal && t && (
         <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModalSafely(); }}>
           <form className="modal form" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>

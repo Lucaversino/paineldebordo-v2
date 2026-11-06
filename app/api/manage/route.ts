@@ -410,6 +410,16 @@ export async function PUT(r: Request) {
       ? Response.json(row)
       : Response.json({ error: "Espécie não encontrada." }, { status: 404 });
   }
+  if (b.type === "quickTripTarget") {
+    const targetKg = Number(b.targetKg);
+    if (typeof b.targetKg !== "number" || !Number.isFinite(targetKg) || targetKg <= 0 || targetKg > 1000000000)
+      return Response.json({ error: "Informe uma meta válida em kg, maior que zero." }, { status: 400 });
+    const [updated] = await db.update(trips)
+      .set({ targetKg, updatedBy: user.id, updatedAt: new Date().toISOString() })
+      .where(and(eq(trips.id, id), eq(trips.ownerId, user.id), eq(trips.status, "IN_PROGRESS"), sql`${trips.deletedAt} is null`))
+      .returning({ id: trips.id, targetKg: trips.targetKg });
+    return updated ? Response.json(updated) : Response.json({ error: "Viagem em andamento não encontrada." }, { status: 404 });
+  }
   if (b.type === "tripSchedule") {
     const [trip] = await db.select().from(trips).where(and(eq(trips.id, id), eq(trips.ownerId, user.id))).limit(1);
     if (!trip || trip.status !== "IN_PROGRESS") return Response.json({ error: "Apenas viagens em andamento podem ter datas ajustadas aqui." }, { status: 403 });

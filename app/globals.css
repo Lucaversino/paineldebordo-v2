@@ -7347,3 +7347,24 @@ select option:checked {
   .modal-form-title-row h2 { font-size: clamp(19px, 5vw, 24px); line-height: 1.2; }
   .modal-title-close { min-height: 44px; padding-inline: 12px; }
 }
+
+/* V271: edição rápida da meta da viagem, desktop e mobile */
+.quick-target-edit{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;margin-top:5px;padding:5px 9px;border:1px solid #2f8e80;border-radius:7px;background:#103b39;color:#74f2d0;font-size:10px;font-weight:850;white-space:nowrap;cursor:pointer}
+.quick-target-edit:hover{background:#165249;border-color:#38d9b0}
+.quick-target-edit svg{width:13px;height:13px}
+.quick-target-overlay{position:fixed;inset:0;z-index:2200;display:grid;place-items:center;background:#00151cce;backdrop-filter:blur(5px);padding:16px}
+.quick-target-dialog{width:min(450px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;background:#09252c;border:1px solid #2b8076;border-radius:16px;padding:22px;box-shadow:0 25px 90px #000b;color:#e9fffb}
+.quick-target-heading{display:flex;align-items:start;justify-content:space-between;gap:12px}
+.quick-target-heading small{color:#40ddb5;font-size:10px;font-weight:900;letter-spacing:.12em}
+.quick-target-heading h2{font-size:22px;margin:6px 0 0}
+.quick-target-heading button{width:36px;height:36px;flex:none;background:#123b41;border:1px solid #396c70;border-radius:9px;color:#e7ffff;display:grid;place-items:center;cursor:pointer}
+.quick-target-dialog p{margin:12px 0 20px;color:#9bc3c3;font-size:12px;line-height:1.5}
+.quick-target-dialog label{display:block;margin-bottom:7px;font-size:12px;font-weight:850}
+.quick-target-dialog input{display:block;width:100%;min-height:50px;padding:10px 13px;background:#041a20;border:1px solid #36766f;border-radius:10px;color:white;font-size:18px;font-weight:800;outline:none}
+.quick-target-dialog input:focus{border-color:#3be6b4;box-shadow:0 0 0 3px #3be6b426}
+.quick-target-error{margin-top:10px;padding:10px;background:#422025;border:1px solid #b44d56;border-radius:8px;color:#ffd6d6;font-size:12px}
+.quick-target-actions{display:grid;grid-template-columns:1fr 1.3fr;gap:9px;margin-top:20px}
+.quick-target-actions button{min-height:46px;border-radius:9px;font-weight:900;cursor:pointer;border:1px solid #315d60;background:#15363a;color:#e5ffff}
+.quick-target-actions button[type=submit]{background:#24cfa4;border-color:#24cfa4;color:#032b29}
+.quick-target-actions button:disabled{opacity:.55;cursor:wait}
+@media(max-width:760px){.quick-target-edit{min-height:38px;font-size:11px;margin-top:8px}.quick-target-dialog{padding:18px}.quick-target-heading h2{font-size:19px}}
