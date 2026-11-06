@@ -7300,3 +7300,46 @@ select option:checked {
 .dashboard-action-tools .dashboard-finish-inline svg{width:18px;height:18px;flex:none}
 @media(max-width:1100px){.dashboard-action-tools:has(.dashboard-finish-inline){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.dashboard-action-tools .dashboard-finish-inline{grid-column:1/-1;grid-row:2;justify-self:center;min-width:min(100%,270px)}}
 @media(max-width:700px){.dashboard-action-tools:has(.dashboard-finish-inline){grid-template-columns:1fr;gap:10px}.dashboard-action-tools .dashboard-finish-inline{grid-column:1;grid-row:2;width:100%;justify-self:stretch}.dashboard-action-tools .category-actions{grid-row:3}}
+
+/* V269 - fechamento sempre visível nos formulários mobile (inclusive Nova Largada).
+   O botão fica fora da área rolável, sem interferir nos dados do formulário. */
+.modal-mobile-close { display: none; }
+@media (max-width: 760px) {
+  .overlay:has(> .modal-mobile-close) {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .overlay > .modal-mobile-close {
+    position: fixed;
+    z-index: 100;
+    top: calc(env(safe-area-inset-top, 0px) + 20px);
+    right: calc(env(safe-area-inset-right, 0px) + 24px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 44px;
+    min-width: 100px;
+    padding: 0 12px;
+    border: 1px solid #36bda7;
+    border-radius: 12px;
+    background: #0b3438;
+    color: #f2fffb;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    box-shadow: 0 5px 18px #001318bb;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .overlay > .modal-mobile-close:disabled { opacity: .5; cursor: not-allowed; }
+  .overlay .modal.form > .modalx { display: none; }
+  .overlay .modal.form {
+    max-height: calc(100dvh - 24px);
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    padding-top: 72px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  }
+}

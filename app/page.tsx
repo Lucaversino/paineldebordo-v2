@@ -869,8 +869,11 @@ export default function Home() {
       {dashboardFinishTrip && <FinishTripDialog trip={dashboardFinishTrip} onClose={() => setDashboardFinishTrip(null)} onFinished={() => { void load(); }} />}
       {modal && t && (
         <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModalSafely(); }}>
+          <button type="button" className="modal-mobile-close" onClick={closeModalSafely} disabled={busy} aria-label="Fechar formulário">
+            <X size={20} aria-hidden="true" /> <span>FECHAR</span>
+          </button>
           <form className="modal form" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
-            <button type="button" className="modalx" onClick={closeModalSafely}>
+            <button type="button" className="modalx" onClick={closeModalSafely} disabled={busy} aria-label="Fechar formulário">
               <X />
             </button>
             <small>{t.name}</small>
