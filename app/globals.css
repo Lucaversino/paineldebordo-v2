@@ -7349,7 +7349,8 @@ select option:checked {
 }
 
 /* V271: edição rápida da meta da viagem, desktop e mobile */
-.quick-target-edit{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;margin-top:5px;padding:5px 9px;border:1px solid #2f8e80;border-radius:7px;background:#103b39;color:#74f2d0;font-size:10px;font-weight:850;white-space:nowrap;cursor:pointer}
+.quick-target-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:5px}
+.quick-target-edit{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;margin-top:0;padding:5px 9px;border:1px solid #2f8e80;border-radius:7px;background:#103b39;color:#74f2d0;font-size:10px;font-weight:850;white-space:nowrap;cursor:pointer}
 .quick-target-edit:hover{background:#165249;border-color:#38d9b0}
 .quick-target-edit svg{width:13px;height:13px}
 .quick-target-overlay{position:fixed;inset:0;z-index:2200;display:grid;place-items:center;background:#00151cce;backdrop-filter:blur(5px);padding:16px}
@@ -7367,4 +7368,4 @@ select option:checked {
 .quick-target-actions button{min-height:46px;border-radius:9px;font-weight:900;cursor:pointer;border:1px solid #315d60;background:#15363a;color:#e5ffff}
 .quick-target-actions button[type=submit]{background:#24cfa4;border-color:#24cfa4;color:#032b29}
 .quick-target-actions button:disabled{opacity:.55;cursor:wait}
-@media(max-width:760px){.quick-target-edit{min-height:38px;font-size:11px;margin-top:8px}.quick-target-dialog{padding:18px}.quick-target-heading h2{font-size:19px}}
+@media(max-width:760px){.quick-target-row{gap:8px}.quick-target-edit{min-height:38px;font-size:11px;margin-top:0}.quick-target-dialog{padding:18px}.quick-target-heading h2{font-size:19px}}

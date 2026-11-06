@@ -738,12 +738,14 @@ export default function Home() {
                       </div>
                       <div>
                         <small>META TOTAL</small>
-                        <b>{hideDashboardValues ? "••••" : `${fmt(t.targetKg)} kg`}</b>
-                        <button type="button" className="quick-target-edit" onClick={() => {
-                          setTargetInput(String(t.targetKg));
-                          setTargetError("");
-                          setEditingTarget(true);
-                        }} aria-label="Editar meta da viagem em andamento" title="Editar meta da viagem"><Pencil size={13} /> EDITAR META</button>
+                        <div className="quick-target-row">
+                          <b>{hideDashboardValues ? "••••" : `${fmt(t.targetKg)} kg`}</b>
+                          <button type="button" className="quick-target-edit" onClick={() => {
+                            setTargetInput(String(t.targetKg));
+                            setTargetError("");
+                            setEditingTarget(true);
+                          }} aria-label="Editar meta da viagem em andamento" title="Editar meta da viagem"><Pencil size={13} /> EDITAR META</button>
+                        </div>
                       </div>
                     </div>
                     <div className="progress">
