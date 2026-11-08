@@ -306,6 +306,17 @@ export async function POST(req: Request) {
       if (!resolved.id) return Response.json({ error: resolved.error }, { status: 409 });
       preparedExtras.push({ type: extra.type, speciesId: resolved.id, weight: extra.weight, condition: extra.condition });
     }
+    const existingSets = await db.select({ id: fishingSets.id, startedAt: fishingSets.startedAt,
+      startLatitude: fishingSets.startLatitude, startLongitude: fishingSets.startLongitude,
+      endLatitude: fishingSets.endLatitude, endLongitude: fishingSets.endLongitude })
+      .from(fishingSets).where(eq(fishingSets.tripId, body.tripId));
+    const samePositions = (row: typeof existingSets[number]) =>
+      Math.abs(Number(row.startLatitude) - startLatitude) < 0.000001 &&
+      Math.abs(Number(row.startLongitude) - startLongitude) < 0.000001 &&
+      Math.abs(Number(row.endLatitude) - endLatitude) < 0.000001 &&
+      Math.abs(Number(row.endLongitude) - endLongitude) < 0.000001;
+    if (existingSets.some((row) => String(row.startedAt).slice(0, 10) === String(startedAt).slice(0, 10) && samePositions(row)))
+      return Response.json({ error: "Já existe uma largada nesta data com as mesmas posições Sul e Norte. Confira o registro anterior antes de salvar." }, { status: 409 });
     const [{ next }] = await db
       .select({
         next: sql<number>`coalesce(max(${fishingSets.setNumber}),0)+1`,

@@ -397,6 +397,37 @@ export async function PUT(r: Request) {
   await claimLegacyData(db, user.id);
   if (!id)
     return Response.json({ error: "Registro inválido." }, { status: 400 });
+  if (b.type === "setNumber" || b.type === "renumberTripSets") {
+    const tripId = Number(b.tripId);
+    if (!Number.isSafeInteger(tripId) || tripId <= 0)
+      return Response.json({ error: "Viagem inválida." }, { status: 400 });
+    const [ownedTrip] = await db.select({ id: trips.id }).from(trips)
+      .where(and(eq(trips.id, tripId), eq(trips.ownerId, user.id))).limit(1);
+    if (!ownedTrip) return Response.json({ error: "Viagem não encontrada." }, { status: 404 });
+    const rows = await db.select({ id: fishingSets.id, setNumber: fishingSets.setNumber, startedAt: fishingSets.startedAt })
+      .from(fishingSets).where(eq(fishingSets.tripId, tripId));
+    if (b.type === "setNumber") {
+      const newNumber = Number(b.setNumber);
+      if (!Number.isSafeInteger(newNumber) || newNumber < 1 || newNumber > 99999)
+        return Response.json({ error: "Informe um número inteiro positivo até 99999." }, { status: 400 });
+      if (!rows.some((row) => row.id === id)) return Response.json({ error: "Largada não pertence à viagem." }, { status: 404 });
+      if (rows.some((row) => row.id !== id && row.setNumber === newNumber))
+        return Response.json({ error: `A largada #${newNumber} já existe nesta viagem. Use Organizar numeração para corrigir toda a sequência.` }, { status: 409 });
+      const [updated] = await db.update(fishingSets).set({ setNumber: newNumber }).where(eq(fishingSets.id, id)).returning();
+      return Response.json(updated);
+    }
+    // Duas etapas na mesma transação evitam colisão no índice único (tripId,setNumber).
+    const sorted = [...rows].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime() || a.id - b.id);
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < sorted.length; i++) {
+        await tx.update(fishingSets).set({ setNumber: -(i + 1) }).where(eq(fishingSets.id, sorted[i].id));
+      }
+      for (let i = 0; i < sorted.length; i++) {
+        await tx.update(fishingSets).set({ setNumber: i + 1 }).where(eq(fishingSets.id, sorted[i].id));
+      }
+    });
+    return Response.json({ ok: true, updated: sorted.length });
+  }
   if (b.type === "species") {
     const name = String(b.name || "").trim();
     if (!name)
@@ -563,6 +594,26 @@ export async function PUT(r: Request) {
       { error: "O recolhimento não pode ser anterior à largada." },
       { status: 400 },
     );
+  const [originalSet] = await db.select().from(fishingSets).where(eq(fishingSets.id, id)).limit(1);
+  const newStartLat = coordinate(b.startLatitude, true);
+  const newStartLon = coordinate(b.startLongitude, false);
+  const newEndLat = coordinate(b.endLatitude, true);
+  const newEndLon = coordinate(b.endLongitude, false);
+  const changedPositionOrDay = String(originalSet?.startedAt).slice(0, 10) !== String(b.startedAt).slice(0, 10) ||
+    ["startLatitude", "startLongitude", "endLatitude", "endLongitude"].some((key, index) =>
+      Math.abs(Number(originalSet?.[key as keyof typeof originalSet]) - Number([newStartLat,newStartLon,newEndLat,newEndLon][index])) > 0.000001);
+  if (changedPositionOrDay && [newStartLat,newStartLon,newEndLat,newEndLon].every((x) => x != null)) {
+    const siblings = await db.select({ id: fishingSets.id, startedAt: fishingSets.startedAt,
+      startLatitude: fishingSets.startLatitude, startLongitude: fishingSets.startLongitude,
+      endLatitude: fishingSets.endLatitude, endLongitude: fishingSets.endLongitude })
+      .from(fishingSets).where(eq(fishingSets.tripId, originalSet!.tripId));
+    if (siblings.some((row) => row.id !== id && String(row.startedAt).slice(0,10) === String(b.startedAt).slice(0,10) &&
+      Math.abs(Number(row.startLatitude) - Number(newStartLat)) < 0.000001 &&
+      Math.abs(Number(row.startLongitude) - Number(newStartLon)) < 0.000001 &&
+      Math.abs(Number(row.endLatitude) - Number(newEndLat)) < 0.000001 &&
+      Math.abs(Number(row.endLongitude) - Number(newEndLon)) < 0.000001))
+      return Response.json({ error: "Já existe outra largada com a mesma data e as mesmas posições nesta viagem." }, { status: 409 });
+  }
   const [row] = await db
     .update(fishingSets)
     .set({

@@ -356,6 +356,25 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     setCaptureSet(null);
     setEditingCatch(catchRecord);
   }
+  async function updateSetNumbers(tripId: number, setId?: number, currentNumber?: number) {
+    const renumber = setId == null;
+    let setNumber = currentNumber;
+    if (renumber) {
+      if (!confirm("Organizar a numeração desta viagem pela data e hora das largadas, de 1 até a última? As capturas e posições serão preservadas.")) return;
+    } else {
+      const entered = prompt("Novo número desta largada (não pode repetir outro número da mesma viagem):", String(currentNumber ?? ""));
+      if (entered === null) return;
+      if (!/^[1-9]\d{0,4}$/.test(entered.trim())) { setMsg("Informe um número inteiro entre 1 e 99999."); return; }
+      setNumber = Number(entered);
+    }
+    try {
+      const response = await fetch("/api/manage", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: renumber ? "renumberTripSets" : "setNumber", id: setId ?? tripId, tripId, setNumber }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(result.error || "Não foi possível atualizar a numeração.");
+      setMsg(renumber ? "Numeração corrigida e sincronizada com o sistema. Gere novamente o PDF." : "Número da largada salvo no sistema. Gere novamente o PDF.");
+      load();
+    } catch (error) { setMsg(error instanceof Error ? error.message : "Falha ao sincronizar a numeração."); }
+  }
   async function saveSet(e: any) {
     e.preventDefault();
     setMsg("");
@@ -779,6 +798,17 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
 
           {setTrips.map((trip) => {
             const tripSets = s.sets.filter((set) => Number(set.tripId) === Number(trip.id));
+            const duplicateIds = new Set<number>();
+            const seen = new Map<string, number>();
+            for (const item of tripSets) {
+              // Data isolada não é duplicidade: uma embarcação pode largar várias redes no mesmo dia.
+              const coords = [item.startLatitude, item.startLongitude, item.endLatitude, item.endLongitude];
+              if (coords.some((value) => value == null)) continue;
+              const key = `${new Date(item.startedAt).toLocaleDateString("en-CA")}|${coords.map((v) => Number(v).toFixed(5)).join("|")}`;
+              const existing = seen.get(key);
+              if (existing !== undefined) { duplicateIds.add(existing); duplicateIds.add(Number(item.id)); }
+              else seen.set(key, Number(item.id));
+            }
             const isOpen = openSetTripIds.includes(Number(trip.id));
             const isCurrent = trip.status === "IN_PROGRESS";
             const firstSet = tripSets.length
@@ -815,8 +845,16 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                   <span className="set-trip-folder-chevron">{isOpen ? <ChevronDown /> : <ChevronRight />}</span>
                 </button>
 
+                {!isCurrent && <div className="finished-set-actions">
+                  <button type="button" className="editbtn" onClick={() => downloadPdf(trip)}><FileDown size={15} /> Baixar PDF atualizado</button>
+                  <button type="button" className="editbtn" onClick={() => downloadPdf(trip, "share")}><Share2 size={15} /> Compartilhar WhatsApp</button>
+                </div>}
                 {isOpen && (
                   <div className="set-trip-folder-body">
+                    <div className="finished-set-actions">
+                      <button type="button" className="editbtn" onClick={() => updateSetNumbers(Number(trip.id))}>Organizar numeração 1, 2, 3...</button>
+                    </div>
+                    {duplicateIds.size > 0 && <p className="set-duplicate-warning" role="status">Atenção: {duplicateIds.size} largadas com a mesma data e as mesmas duas posições. Confira horários e capturas antes de corrigir ou excluir. Nenhuma captura será apagada automaticamente.</p>}
                     {tripSets.length > 0 && (
                       <div className="set-trip-gpx-toolbar">
                         <span>Exportar as redes desta viagem como rotas e marcas para o TimeZero</span>
@@ -844,7 +882,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                           <tbody>
                             {tripSets.map((x) => (
                               <tr key={x.id}>
-                                <td><b>#{String(x.setNumber).padStart(2, "0")}</b></td>
+                                <td><b>#{String(x.setNumber).padStart(2, "0")}</b>{duplicateIds.has(Number(x.id)) && <small className="set-duplicate-label">Possível duplicidade</small>}<button type="button" className="set-number-edit" onClick={() => updateSetNumbers(Number(trip.id), Number(x.id), Number(x.setNumber))}><Pencil size={12} /> Editar nº</button></td>
                                 <td>{new Date(x.startedAt).toLocaleDateString("pt-BR")}</td>
                                 <td>{new Date(x.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
                                 <td>{x.finishedAt ? <>{new Date(x.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}{new Date(x.finishedAt).toLocaleDateString("pt-BR") !== new Date(x.startedAt).toLocaleDateString("pt-BR") && <small style={{ display: "block" }}>Dia {new Date(x.finishedAt).toLocaleDateString("pt-BR")}</small>}</> : "—"}</td>
