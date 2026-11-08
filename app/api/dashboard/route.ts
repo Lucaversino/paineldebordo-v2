@@ -197,12 +197,16 @@ export async function POST(req: Request) {
   const db = getDb();
   await claimLegacyData(db, user.id);
   const [ownedTrip] = await db
-    .select({ id: trips.id })
+    .select({ id: trips.id, status: trips.status })
     .from(trips)
     .where(and(eq(trips.id, Number(body.tripId)), eq(trips.ownerId, user.id)))
     .limit(1);
   if (!ownedTrip)
     return Response.json({ error: "Viagem não encontrada para este usuário." }, { status: 404 });
+  if (body.action === "capture" || body.action === "categorizedCatch") {
+    if (!["IN_PROGRESS", "FINISHED"].includes(ownedTrip.status))
+      return Response.json({ error: "Capturas só podem ser adicionadas a viagens em andamento ou finalizadas." }, { status: 403 });
+  }
   if (body.action === "capture") {
     if (
       !body.tripId ||
@@ -218,7 +222,7 @@ export async function POST(req: Request) {
         },
         { status: 400 },
       );
-    const [ownedSet] = await db.select({ id: fishingSets.id }).from(fishingSets)
+    const [ownedSet] = await db.select({ id: fishingSets.id, startedAt: fishingSets.startedAt, finishedAt: fishingSets.finishedAt }).from(fishingSets)
       .where(and(eq(fishingSets.id, body.fishingSetId), eq(fishingSets.tripId, body.tripId))).limit(1);
     const [ownedSpecies] = await db.select({ id: species.id }).from(species)
       .where(and(eq(species.id, body.speciesId), eq(species.ownerId, user.id))).limit(1);
@@ -232,7 +236,7 @@ export async function POST(req: Request) {
         speciesId: body.speciesId,
         catchType: "PRIMARY",
         weightKg: Number(body.weightKg),
-        caughtAt: new Date().toISOString(),
+        caughtAt: ownedTrip.status === "FINISHED" ? (ownedSet.finishedAt || ownedSet.startedAt) : new Date().toISOString(),
         notes: body.notes,
         createdBy: user.id,
       })
@@ -244,7 +248,7 @@ export async function POST(req: Request) {
     const weightKg = Number(body.weightKg);
     if (!["MIXTURE", "DISCARD"].includes(catchType) || !body.fishingSetId || weightKg <= 0)
       return Response.json({ error: "Informe a largada, a espécie e um peso maior que zero." }, { status: 400 });
-    const [ownedSet] = await db.select({ id: fishingSets.id }).from(fishingSets)
+    const [ownedSet] = await db.select({ id: fishingSets.id, startedAt: fishingSets.startedAt, finishedAt: fishingSets.finishedAt }).from(fishingSets)
       .where(and(eq(fishingSets.id, body.fishingSetId), eq(fishingSets.tripId, body.tripId))).limit(1);
     if (!ownedSet) return Response.json({ error: "Largada não encontrada nesta viagem." }, { status: 404 });
     const resolved = await resolveCategorySpecies(db, user.id, body.categorySpeciesId, body.speciesName);
@@ -252,7 +256,7 @@ export async function POST(req: Request) {
     const condition = catchType === "DISCARD" ? discardCondition(body.discardCondition) : null;
     if (catchType === "DISCARD" && !condition)
       return Response.json({ error: "Marque se o descarte estava vivo ou morto." }, { status: 400 });
-    const [row] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: body.fishingSetId, speciesId: resolved.id, catchType, weightKg, caughtAt: new Date().toISOString(), notes: discardConditionNote(condition), createdBy: user.id }).returning();
+    const [row] = await db.insert(catches).values({ tripId: body.tripId, fishingSetId: body.fishingSetId, speciesId: resolved.id, catchType, weightKg, caughtAt: ownedTrip.status === "FINISHED" ? (ownedSet.finishedAt || ownedSet.startedAt) : new Date().toISOString(), notes: discardConditionNote(condition), createdBy: user.id }).returning();
     return Response.json(row, { status: 201 });
   }
   if (body.action === "set") {

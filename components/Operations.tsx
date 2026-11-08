@@ -402,7 +402,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     const catchType = String(data.get("catchType") || "PRIMARY");
     if (!speciesId || !Number.isFinite(weightKg) || weightKg <= 0) { setMsg("Escolha a espécie e informe um peso maior que zero."); return; }
     const trip = s.trips.find((t) => Number(t.id) === Number(captureSet.tripId));
-    if (!trip || trip.status !== "IN_PROGRESS") { setMsg("Só é possível adicionar captura a uma viagem em andamento."); return; }
+    if (!trip || !["IN_PROGRESS", "FINISHED"].includes(trip.status)) { setMsg("Só é possível adicionar captura a uma viagem em andamento ou finalizada."); return; }
     setSaving(true); setMsg("");
     try {
       const payload = catchType === "PRIMARY"
@@ -412,7 +412,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       const result = await res.json().catch(() => ({}));
       if (!res.ok) { setMsg(result.error || "Erro ao adicionar captura."); return; }
       setAddingSetCatch(false);
-      setMsg("Captura adicionada e sincronizada.");
+      setMsg(trip.status === "FINISHED" ? "Captura adicionada à viagem finalizada. Totais atualizados; gere novamente o PDF da pasta." : "Captura adicionada e sincronizada.");
       load();
     } catch { setMsg("Falha de conexão ao salvar captura."); }
     finally { setSaving(false); }
@@ -1501,6 +1501,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
                   <label>Categoria<select name="catchType" defaultValue="PRIMARY" onChange={(e) => { const form = e.currentTarget.form; const select = form?.querySelector<HTMLSelectElement>('[name="discardCondition"]'); if (select) select.required = e.currentTarget.value === "DISCARD"; }}><option value="PRIMARY">Captura principal</option><option value="MIXTURE">Mistura</option><option value="DISCARD">Descarte</option></select></label>
                   <label>Peso (kg)<input name="weightKg" type="number" step="0.01" min="0.01" required placeholder="Ex.: 400" /></label>
                   <label>Condição (somente descarte)<select name="discardCondition" defaultValue=""><option value="">Selecione se for descarte</option><option value="VIVO">Vivo</option><option value="MORTO">Morto</option></select></label>
+                  {s.trips.find((t) => Number(t.id) === Number(captureSet.tripId))?.status === "FINISHED" && <p role="note">Esta captura será registrada na data da largada, mesmo com a viagem finalizada. Depois, gere novamente o PDF da pasta.</p>}
                   <button type="submit" className="save" disabled={saving}>{saving ? "Salvando..." : "Salvar nova captura"}</button>
                 </form>}
                 {msg && <p role="status">{msg}</p>}
