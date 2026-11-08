@@ -7377,3 +7377,7 @@ select option:checked {
 .set-duplicate-warning{margin:8px;padding:10px 12px;border:1px solid #bd8651;border-radius:8px;background:#3c2b20;color:#ffd4a7;font-size:12px}
 .set-duplicate-label{display:block;margin-top:5px;color:#ffc177;font-size:10px;font-weight:700}
 @media(max-width:760px){.finished-set-actions{justify-content:flex-start}.finished-set-actions button{font-size:10px}}
+
+/* V275: separação dos totais por categoria no resumo de cada viagem */
+.trip-mini-stats .trip-mini-discard{border-color:#94535a;background:#35252c}
+.trip-mini-stats .trip-mini-discard b{color:#ff929b}

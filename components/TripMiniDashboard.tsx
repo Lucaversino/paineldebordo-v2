@@ -12,7 +12,11 @@ const dateKey = (value: string) => {
 export function TripMiniDashboard({trip, sets, catches, onAnalyze}: {trip:any;sets:any[];catches:any[];onAnalyze?:()=>void}) {
   const tripSets = sets.filter(s=>Number(s.tripId)===Number(trip.id));
   const tripCatches = catches.filter(c=>Number(c.tripId)===Number(trip.id));
-  const total = tripCatches.filter(c=>c.catchType!=="DISCARD").reduce((a,c)=>a+Number(c.weightKg||0),0);
+  const categoryTotal = (type: string) => tripCatches.filter(c => (c.catchType || "PRIMARY") === type).reduce((sum,c) => sum + Number(c.weightKg || 0),0);
+  const corvinaTotal = categoryTotal("PRIMARY");
+  const misturaTotal = categoryTotal("MIXTURE");
+  const descarteTotal = categoryTotal("DISCARD");
+  const total = corvinaTotal + misturaTotal;
   const target = Number(trip.targetKg||0);
   const dataByDay = new Map<string,number>();
   tripCatches.filter(c=>c.catchType!=="DISCARD").forEach(c=>{const key=dateKey(c.caughtAt);if(key)dataByDay.set(key,(dataByDay.get(key)||0)+Number(c.weightKg||0));});
@@ -26,7 +30,10 @@ export function TripMiniDashboard({trip, sets, catches, onAnalyze}: {trip:any;se
   const pct=target>0?total/target*100:0;
   return <div className="trip-mini-dashboard">
     <div className="trip-mini-stats">
-      <div><small>Capturado</small><b>{fmt(total)} kg</b></div>
+      <div><small>Total capturado (sem descarte)</small><b>{fmt(total)} kg</b></div>
+      <div><small>Total corvina</small><b>{fmt(corvinaTotal)} kg</b></div>
+      <div><small>Total mistura</small><b>{fmt(misturaTotal)} kg</b></div>
+      <div className="trip-mini-discard"><small>Total descarte</small><b>{fmt(descarteTotal)} kg</b></div>
       <div><small>Meta atingida</small><b>{fmt(pct)}%</b></div>
       <div><small>Largadas</small><b>{tripSets.length}</b></div>
       <div><small>{trip.status==="IN_PROGRESS"?"Dias restantes":"Duração prevista"}</small><b>{trip.status==="IN_PROGRESS"?remaining:days??"—"}</b></div>
