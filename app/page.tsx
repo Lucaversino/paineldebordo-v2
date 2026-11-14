@@ -932,14 +932,24 @@ export default function Home() {
       {modal && t && (
         <div className="overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModalSafely(); }}>
           <form className="modal form" onMouseDown={(e) => e.stopPropagation()} onSubmit={modal === "editSet" ? saveEditedSet : save}>
-            <div className="modal-form-heading">
+            <div className={`modal-form-heading${modal === "set" ? " new-set-heading" : ""}`}>
               <small>{t.name}</small>
               <div className="modal-form-title-row">
                 <h2>{modal === "capture" ? "Registrar corvina" : modal === "mixture" ? "Mistura de peixe" : modal === "discard" ? "Descarte" : modal === "editSet" ? "Editar largada" : "Nova largada"}</h2>
-                <button type="button" className="modal-title-close" onClick={closeModalSafely} disabled={busy} aria-label="Fechar formulário e voltar ao Dashboard">
-                  <X size={18} aria-hidden="true" /> <span>FECHAR</span>
-                </button>
+                {modal !== "set" && (
+                  <button type="button" className="modal-title-close" onClick={closeModalSafely} disabled={busy} aria-label="Fechar formulário e voltar ao Dashboard">
+                    <X size={18} aria-hidden="true" /> <span>FECHAR</span>
+                  </button>
+                )}
               </div>
+              {modal === "set" && (
+                <div className="new-set-close-area">
+                  <button type="button" className="new-set-close-button" onClick={closeModalSafely} disabled={busy} aria-label="Fechar Nova Largada e voltar ao Dashboard">
+                    <X size={22} strokeWidth={3} aria-hidden="true" />
+                    <span>FECHAR FORMULÁRIO</span>
+                  </button>
+                </div>
+              )}
             </div>
             {modal === "capture" ? (
               <>
