@@ -349,3 +349,17 @@ export const paymentOrders = pgTable("payment_orders", {
   uniqueIndex("idx_payment_payment_id").on(t.paymentId),
   index("idx_payment_orders_user_time").on(t.userId, t.id),
 ]);
+
+// V277: diário do calendário associado à conta autenticada e à viagem.
+export const tripCalendarDays = pgTable("trip_calendar_days", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  tripId: integer("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  day: text("day").notNull(),
+  note: text("note").notNull().default(""),
+  lostReason: text("lost_reason").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(nowText),
+}, (t) => [
+  uniqueIndex("idx_trip_calendar_owner_trip_day").on(t.ownerId, t.tripId, t.day),
+  index("idx_trip_calendar_trip").on(t.tripId),
+]);

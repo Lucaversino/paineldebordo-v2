@@ -654,8 +654,9 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
   const sharePdf = async () => {
     if (!pdfFile || sharing) return;
     setPdfError("");
-    if (!navigator.canShare?.({ files: [pdfFile] })) {
-      setPdfError("Este navegador não permite compartilhar arquivos. Baixe o PDF e anexe como documento no WhatsApp.");
+    if (!navigator.share || !navigator.canShare?.({ files: [pdfFile] })) {
+      savePreparedPdf();
+      setPdfError("Este navegador não aceita envio direto de PDF. Arquivo baixado: abra WhatsApp Web e anexe o PDF como DOCUMENTO. O envio não é automático.");
       return;
     }
     setSharing(true);
@@ -701,8 +702,11 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         if (!environmentalResponse.ok) throw Error(environmental.error || "Não foi possível carregar os dados ambientais.");
         environmentalSnapshots = Array.isArray(environmental.snapshots) ? environmental.snapshots : [];
       }
+      const calendarResponse = await fetch(`/api/trip-calendar?tripId=${freshTrip.id}`, { cache: "no-store" });
+      const calendarData = await calendarResponse.json().catch(() => ({}));
+      if (!calendarResponse.ok) throw Error(calendarData.error || "Não foi possível carregar o calendário salvo. PDF não gerado para evitar omissões.");
       const { generateTripPdf } = await import("../lib/tripPdf");
-      const file = generateTripPdf(freshTrip, fresh.sets, fresh.catches, pdfMode === "download", environmentalSnapshots);
+      const file = generateTripPdf(freshTrip, fresh.sets, fresh.catches, pdfMode === "download", environmentalSnapshots, calendarData.records || []);
       if (pdfMode === "share") {
         setPdfFile(file);
         setMsg("");
@@ -1317,10 +1321,11 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
             <button type="button" className="modalx" disabled={sharing} onClick={() => { setPdfTrip(null); setPdfFile(null); }} aria-label="Fechar">×</button>
             <h2 id="share-pdf-title">PDF pronto para compartilhar</h2>
             <p>{pdfTrip.name}</p>
-            <p>Toque abaixo e escolha o WhatsApp na lista de aplicativos para enviar o arquivo.</p>
+            <p>No Android/iPhone, toque em compartilhar e selecione WhatsApp na lista. A confirmação do envio é feita no próprio WhatsApp. No computador, baixe o PDF e anexe como documento no WhatsApp Web.</p>
             {pdfError && <p role="alert">{pdfError}</p>}
             <button type="button" disabled={sharing} onClick={sharePdf}><Share2 /> {sharing ? "Compartilhando..." : "Compartilhar PDF no WhatsApp"}</button>
             <button type="button" onClick={savePreparedPdf}><FileDown /> Baixar PDF</button>
+            <a href="https://web.whatsapp.com/" target="_blank" rel="noopener noreferrer">Abrir WhatsApp Web (anexar PDF baixado)</a>
             <button type="button" disabled={sharing} onClick={() => { setPdfFile(null); setPdfError(""); }}>Alterar datas</button>
           </div>
         </div>

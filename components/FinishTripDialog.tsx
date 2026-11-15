@@ -27,8 +27,11 @@ export default function FinishTripDialog({ trip, onClose, onFinished }: Props) {
     const data = await r.json();
     const latestTrip = data.trips?.find((t: any) => Number(t.id) === Number(trip.id));
     if (!latestTrip || latestTrip.status !== "FINISHED") throw new Error("A viagem ainda não está finalizada no servidor.");
+    const calendarResponse = await fetch(`/api/trip-calendar?tripId=${latestTrip.id}`, { cache: "no-store" });
+    const calendarData = await calendarResponse.json().catch(() => ({}));
+    if (!calendarResponse.ok) throw new Error(calendarData.error || "Falha ao carregar o diário da viagem.");
     const { generateTripPdf } = await import("../lib/tripPdf");
-    const result = generateTripPdf(latestTrip, data.sets || [], data.catches || [], false);
+    const result = generateTripPdf(latestTrip, data.sets || [], data.catches || [], false, [], calendarData.records || []);
     setFile(result);
     return result;
   }
@@ -52,8 +55,7 @@ export default function FinishTripDialog({ trip, onClose, onFinished }: Props) {
         const url = URL.createObjectURL(pdf);
         const a = document.createElement("a"); a.href = url; a.download = pdf.name; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
-        window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
-        setError("PDF baixado. Anexe manualmente o arquivo na conversa do WhatsApp Web.");
+        setError("PDF baixado. Abra o WhatsApp Web e anexe manualmente o PDF como documento. O navegador não permite anexar automaticamente.");
       }
     } catch (e) { if (!(e instanceof Error && e.name === "AbortError")) setError(e instanceof Error ? e.message : "Falha no compartilhamento."); }
     finally { setBusy(false); }
@@ -67,6 +69,7 @@ export default function FinishTripDialog({ trip, onClose, onFinished }: Props) {
         <div className="finish-trip-buttons"><button type="button" className="editbtn" onClick={onClose} disabled={busy}>Cancelar</button><button type="button" className="finish-trip-danger" onClick={finish} disabled={busy}>{busy ? "Finalizando..." : "Sim, finalizar viagem"}</button></div>
       </> : <><p>Finalização confirmada no servidor. Agora você pode exportar o relatório final em PDF ou compartilhar pelo WhatsApp.</p>
         <div className="finish-trip-buttons"><button type="button" className="editbtn" onClick={download} disabled={busy}><FileDown size={17}/> Baixar PDF</button><button type="button" className="editbtn" onClick={share} disabled={busy}><Share2 size={17}/> WhatsApp</button></div>
+        <a href="https://web.whatsapp.com/" target="_blank" rel="noopener noreferrer">Abrir WhatsApp Web (anexar documento)</a>
         <button type="button" className="editbtn" onClick={onClose}>Fechar</button>
       </>}
       {error && <p role="status" className="finish-trip-error">{error}</p>}

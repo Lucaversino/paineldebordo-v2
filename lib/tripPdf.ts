@@ -20,7 +20,7 @@ const coord = (value: number | null, latitude: boolean) => {
   return `${String(degrees).padStart(2, "0")}°${minutes} ${direction}`;
 };
 
-export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true, environmentalSnapshots: any[] = []) {
+export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true, environmentalSnapshots: any[] = [], calendarRecords: { date:string;note:string;lostReason:string }[] = []) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const tripSets = sets.filter((item) => Number(item.tripId) === Number(trip.id)).sort((a, b) => a.setNumber - b.setNumber);
   const tripCatches = catches.filter((item) => Number(item.tripId) === Number(trip.id));
@@ -341,6 +341,39 @@ ${num(Number(env.lunarIllumination) * 100, 0)}%`}`,
     }
     drawFooter();
   }
+
+  // V277: diário cronológico da viagem, no final de TODOS os PDFs.
+  doc.addPage();
+  doc.setFillColor(4,32,39);doc.rect(0,0,297,32,"F");
+  doc.setFillColor(31,207,160);doc.rect(0,0,7,32,"F");
+  doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");doc.setFontSize(17);
+  doc.text("CALENDÁRIO E DIÁRIO DA VIAGEM",16,15);
+  doc.setTextColor(153,201,207);doc.setFontSize(8);
+  doc.text("Registros operacionais, capturas, anotações e dias perdidos",16,23);
+  const dateKey=(v:any)=>String(v||"").slice(0,10);
+  const byDay=new Map<string,{sets:any[];catches:any[];notes:string[];lost:string[]}>();
+  const ensure=(d:string)=>{if(!byDay.has(d))byDay.set(d,{sets:[],catches:[],notes:[],lost:[]});return byDay.get(d)!;};
+  for(const set of tripSets){const day=dateKey(set.startedAt);if(day)ensure(day).sets.push(set);}
+  const indexedSets=new Map(tripSets.map((s:any)=>[Number(s.id),s]));
+  for(const c of tripCatches){const set=indexedSets.get(Number(c.fishingSetId));const day=dateKey(set?.startedAt||c.caughtAt);if(day)ensure(day).catches.push(c);}
+  for(const entry of calendarRecords){if(!/^\d{4}-\d{2}-\d{2}$/.test(entry.date))continue;const row=ensure(entry.date);if(entry.note)row.notes.push(entry.note);if(entry.lostReason)row.lost.push(entry.lostReason);}
+  const startDay=dateKey(trip.departureDate);
+  const finishDay=dateKey(trip.returnDate || (trip.status === "FINISHED" ? trip.expectedReturnDate : new Date().toISOString()));
+  if(startDay&&finishDay&&startDay<=finishDay){const cursor=new Date(startDay+"T12:00:00Z");const limit=new Date(finishDay+"T12:00:00Z");let n=0;while(cursor<=limit&&n++<366){ensure(cursor.toISOString().slice(0,10));cursor.setUTCDate(cursor.getUTCDate()+1);}}
+  const rows=[...byDay.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([day,v])=>{
+    const types=(t:string)=>v.catches.filter(c=>(c.catchType||"PRIMARY")===t).reduce((sum,c)=>sum+Number(c.weightKg||0),0);
+    const details=[...v.sets.map(s=>`Largada #${s.setNumber}: ${time(s.startedAt)} ate ${endTimeWithDay(s.startedAt,s.finishedAt)}`),...v.lost.map(x=>`DIA PERDIDO: ${x}`),...v.notes.map(x=>`ANOTACAO: ${x}`)];
+    return [day.split("-").reverse().join("/"),String(v.sets.length),kg(types("PRIMARY")),kg(types("MIXTURE")),kg(types("DISCARD")),details.join("\n")||"Sem ocorrências registradas"];
+  });
+  autoTable(doc,{
+    startY:40,margin:{left:13,right:13,bottom:19},head:[["DATA","LARGADAS","CORVINA","MISTURA","DESCARTE","OCORRÊNCIAS E ANOTAÇÕES"]],
+    body:rows.length?rows:[["-","0","0 kg","0 kg","0 kg","Nenhum registro encontrado"]],
+    styles:{font:"helvetica",fontSize:8,cellPadding:3,overflow:"linebreak",textColor:[28,53,59]},
+    headStyles:{fillColor:[5,54,62],textColor:[255,255,255]},alternateRowStyles:{fillColor:[244,249,249]},
+    columnStyles:{0:{cellWidth:25},1:{cellWidth:20},2:{cellWidth:27},3:{cellWidth:27},4:{cellWidth:27,textColor:[180,45,52]},5:{cellWidth:145}},
+    didDrawPage:()=>drawFooter()
+  });
+  drawFooter();
 
   const safeName = `${trip.boatName}-${trip.name}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
   const filename = `Relatorio-${safeName || "Viagem"}.pdf`;
