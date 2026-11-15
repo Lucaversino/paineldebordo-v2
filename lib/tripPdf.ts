@@ -342,14 +342,7 @@ ${num(Number(env.lunarIllumination) * 100, 0)}%`}`,
     drawFooter();
   }
 
-  // V277: diário cronológico da viagem, no final de TODOS os PDFs.
-  doc.addPage();
-  doc.setFillColor(4,32,39);doc.rect(0,0,297,32,"F");
-  doc.setFillColor(31,207,160);doc.rect(0,0,7,32,"F");
-  doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");doc.setFontSize(17);
-  doc.text("CALENDÁRIO E DIÁRIO DA VIAGEM",16,15);
-  doc.setTextColor(153,201,207);doc.setFontSize(8);
-  doc.text("Registros operacionais, capturas, anotações e dias perdidos",16,23);
+  // V278: o relatório termina com páginas de calendário mensal e diário detalhado.
   const dateKey=(v:any)=>String(v||"").slice(0,10);
   const byDay=new Map<string,{sets:any[];catches:any[];notes:string[];lost:string[]}>();
   const ensure=(d:string)=>{if(!byDay.has(d))byDay.set(d,{sets:[],catches:[],notes:[],lost:[]});return byDay.get(d)!;};
@@ -360,13 +353,70 @@ ${num(Number(env.lunarIllumination) * 100, 0)}%`}`,
   const startDay=dateKey(trip.departureDate);
   const finishDay=dateKey(trip.returnDate || (trip.status === "FINISHED" ? trip.expectedReturnDate : new Date().toISOString()));
   if(startDay&&finishDay&&startDay<=finishDay){const cursor=new Date(startDay+"T12:00:00Z");const limit=new Date(finishDay+"T12:00:00Z");let n=0;while(cursor<=limit&&n++<366){ensure(cursor.toISOString().slice(0,10));cursor.setUTCDate(cursor.getUTCDate()+1);}}
+  // V278: calendário MENSAL visual. Não basta listar registros em uma tabela:
+  // o PDF precisa mostrar os dias do mês e sinalizar os acontecimentos da viagem.
+  // Considera datas operacionais reais e também períodos sem largadas.
+  const allDays = [...byDay.keys()].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const monthKeys = [...new Set(allDays.map(d => d.slice(0, 7)))];
+  const monthNames = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+  const weekdays = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+  const drawCalendarHeader = () => {
+    doc.setFillColor(4, 32, 39); doc.rect(0, 0, 297, 32, "F");
+    doc.setFillColor(31, 207, 160); doc.rect(0, 0, 7, 32, "F");
+    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(16);
+    doc.text("CALENDÁRIO DA VIAGEM", 16, 15);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    doc.setTextColor(153, 201, 207);
+    doc.text(`${trip.boatName || "Embarcação"}  |  ${trip.name || "Viagem"}  |  Registros salvos na conta`, 16, 23);
+  };
+  // Um mês por página evita que as anotações e as legendas fiquem ilegíveis no celular.
+  for (const monthKey of monthKeys) {
+    const [yr, mon] = monthKey.split("-").map(Number);
+    if (!yr || mon < 1 || mon > 12) continue;
+    doc.addPage(); drawCalendarHeader();
+    doc.setTextColor(5, 54, 62); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+    doc.text(`${monthNames[mon - 1]} / ${yr}`, 16, 42);
+    const x0 = 16, y0 = 53, w = 37.8, h = 18.6;
+    weekdays.forEach((wd, i) => {
+      doc.setFillColor(5, 54, 62); doc.rect(x0 + i * w, y0, w - 0.7, 8, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(255, 255, 255);
+      doc.text(wd, x0 + i * w + 3, y0 + 5.5);
+    });
+    const firstWeekday = (new Date(Date.UTC(yr, mon - 1, 1)).getUTCDay() + 6) % 7;
+    const daysInMonth = new Date(Date.UTC(yr, mon, 0)).getUTCDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayKey = `${monthKey}-${String(day).padStart(2, "0")}`;
+      const slot = firstWeekday + day - 1;
+      const col = slot % 7, week = Math.floor(slot / 7);
+      const x = x0 + col * w, y = y0 + 9 + week * h;
+      const entry = byDay.get(dayKey);
+      const active = Boolean(entry);
+      const lost = Boolean(entry?.lost.length), noted = Boolean(entry?.notes.length), fished = Boolean(entry?.sets.length);
+      doc.setFillColor(lost ? 255 : active ? 235 : 248, lost ? 237 : active ? 249 : 251, lost ? 237 : active ? 246 : 251);
+      doc.roundedRect(x, y, w - 0.7, h - 0.8, 1.2, 1.2, "F");
+      doc.setTextColor(13, 50, 59); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+      doc.text(String(day), x + 2.8, y + 5.2);
+      if (lost) { doc.setTextColor(173, 37, 47); doc.setFontSize(6.5); doc.text("DIA PERDIDO", x + 12, y + 4.7); }
+      if (fished) { doc.setTextColor(5, 115, 91); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.text(`${entry!.sets.length} largada(s)`, x + 2.8, y + 10); }
+      const production = (entry?.catches || []).filter(c => (c.catchType || "PRIMARY") !== "DISCARD").reduce((sum, c) => sum + Number(c.weightKg || 0), 0);
+      if (production) { doc.setTextColor(5, 94, 81); doc.setFontSize(7); doc.text(kg(production), x + 2.8, y + (fished ? 14.4 : 10)); }
+      if (noted) { doc.setTextColor(58, 73, 118); doc.setFontSize(6.4); doc.text("ANOTAÇÃO", x + 21, y + 14.4); }
+    }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(62, 94, 100);
+    doc.text("Verde: atividade / produção    Vermelho: dia perdido    Anotação: texto completo no diário a seguir", 16, 183);
+    drawFooter();
+  }
+  // O detalhamento de cada data deve vir DEPOIS das páginas mensais.
+  doc.addPage(); drawCalendarHeader();
+  doc.setTextColor(5, 54, 62); doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+  doc.text("DIÁRIO CRONOLÓGICO: OCORRÊNCIAS E ANOTAÇÕES", 16, 42);
   const rows=[...byDay.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([day,v])=>{
     const types=(t:string)=>v.catches.filter(c=>(c.catchType||"PRIMARY")===t).reduce((sum,c)=>sum+Number(c.weightKg||0),0);
     const details=[...v.sets.map(s=>`Largada #${s.setNumber}: ${time(s.startedAt)} ate ${endTimeWithDay(s.startedAt,s.finishedAt)}`),...v.lost.map(x=>`DIA PERDIDO: ${x}`),...v.notes.map(x=>`ANOTACAO: ${x}`)];
     return [day.split("-").reverse().join("/"),String(v.sets.length),kg(types("PRIMARY")),kg(types("MIXTURE")),kg(types("DISCARD")),details.join("\n")||"Sem ocorrências registradas"];
   });
   autoTable(doc,{
-    startY:40,margin:{left:13,right:13,bottom:19},head:[["DATA","LARGADAS","CORVINA","MISTURA","DESCARTE","OCORRÊNCIAS E ANOTAÇÕES"]],
+    startY:49,margin:{left:13,right:13,bottom:19},head:[["DATA","LARGADAS","CORVINA","MISTURA","DESCARTE","OCORRÊNCIAS E ANOTAÇÕES"]],
     body:rows.length?rows:[["-","0","0 kg","0 kg","0 kg","Nenhum registro encontrado"]],
     styles:{font:"helvetica",fontSize:8,cellPadding:3,overflow:"linebreak",textColor:[28,53,59]},
     headStyles:{fillColor:[5,54,62],textColor:[255,255,255]},alternateRowStyles:{fillColor:[244,249,249]},
