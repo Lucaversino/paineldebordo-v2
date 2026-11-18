@@ -21,6 +21,7 @@ import {
   Wind,
   X,
 } from "lucide-react";
+import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
 import EnvironmentalOverlayMap from "./EnvironmentalOverlayMap";
@@ -388,8 +389,24 @@ export default function PositionForecast() {
     setTzBusy(true); setTzError(""); setTzStage("Consultando previsão e validando dados no servidor...");
     try {
       const qs = new URLSearchParams({ lat:String(selectedLat), lon:String(selectedLon), radius:tzRadius, hours:tzHours, format });
-      const response = await fetch(`/api/timezero-export?${qs}`, { cache:"no-store" });
-      if (!response.ok) { const json = await response.json().catch(() => ({})); throw new Error(json.error || "Falha na geração do arquivo GRIB1."); }
+      // A autenticação do painel também funciona quando a sessão está no storage
+      // do browser (PWA e sessões com cookies ainda não sincronizados).
+      const supabase = createSupabaseBrowserClient();
+      const makeExportRequest = async (accessToken?: string | null) => fetch(`/api/timezero-export?${qs}`, {
+        cache: "no-store", credentials: "include",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        signal: AbortSignal.timeout(60000),
+      });
+      const { data: sessionData } = await supabase.auth.getSession();
+      let response = await makeExportRequest(sessionData.session?.access_token);
+      if (response.status === 401) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed.session?.access_token) response = await makeExportRequest(refreshed.session.access_token);
+      }
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json.error || (response.status === 401 ? "Sua sessão expirou. Entre novamente no painel." : `Falha na geração GRIB1 (HTTP ${response.status}).`));
+      }
       const file = await response.blob();
       setTzStage("Validando estrutura e preparando arquivo...");
       const magic = new Uint8Array(await file.slice(0,8).arrayBuffer());

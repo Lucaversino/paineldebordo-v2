@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { getPanelUser } from "../../../lib/panelAuth";
+import { getPanelUserFromRequest } from "../../../lib/panelAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ async function storage(path: string, config: ReturnType<typeof settings>, method
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getPanelUser();
+  const user = await getPanelUserFromRequest(req);
   if (!user) return NextResponse.json({ error: "Acesse sua conta para gerar previsão." }, { status: 401 });
   const query = req.nextUrl.searchParams;
   const lat = Number(query.get("lat")); const lon = Number(query.get("lon"));
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const cfg = settings();
     const rounded = [lat.toFixed(4), lon.toFixed(4), radius, hours].join(":");
     const key = createHash("sha256").update(rounded + ":" + new Date().toISOString().slice(0, 10)).digest("hex").slice(0, 30);
-    const owner = encodeURIComponent(user.id);
+    const owner = user.id;
     const path = `${owner}/${key}.${format}`;
     const cached = await storage(path, cfg);
     let bytes: Uint8Array;
@@ -66,14 +66,17 @@ export async function GET(req: NextRequest) {
         lastRequest.set(owner, now);
         const task = (async () => {
           const workerParams = new URLSearchParams({ lat: String(lat), lon: String(lon), radius: String(radius), hours: String(hours), format });
-          const base = process.env.TIMEZERO_WORKER_URL || `${req.nextUrl.origin}/api/timezero-grib`;
+          const base = process.env.TIMEZERO_WORKER_URL;
+          if (!base) throw new Error("Configure TIMEZERO_WORKER_URL na Vercel com a URL do Render.");
           const resp = await fetch(`${base}?${workerParams}`, {
             headers: { "X-Worker-Secret": cfg.secret },
             signal: AbortSignal.timeout(50000), cache: "no-store",
           });
           if (!resp.ok) {
             const error = await resp.json().catch(() => ({}));
-            throw new Error(error.error || `O gerador retornou HTTP ${resp.status}.`);
+            const message = typeof error.error === "string" ? error.error : `O gerador retornou HTTP ${resp.status}.`;
+            console.error("[timezero-export] worker", { status: resp.status, message });
+            throw new Error(message);
           }
           const output = new Uint8Array(await resp.arrayBuffer());
           if (!output.length || (format === "grb" && (String.fromCharCode(...output.slice(0, 4)) !== "GRIB" || output[7] !== 1))) {
@@ -98,6 +101,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    console.error("[timezero-export] falha", { message: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao gerar GRIB." }, { status: 502 });
   }
 }
