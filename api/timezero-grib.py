@@ -185,6 +185,16 @@ class handler(BaseHTTPRequestHandler):
             if hours not in (24, 48, 72, 168):
                 raise ValueError('Previsão deve ser 24, 48, 72 ou 168 horas.')
 
+            # Limit forecast length by radius to stay within Open-Meteo free tier.
+            # Large areas + long forecasts exceed the burst limit even with small grids.
+            max_hours_by_radius = {30: 168, 60: 72, 100: 48}
+            max_allowed = max_hours_by_radius.get(radius, 48)
+            if hours > max_allowed:
+                raise ValueError(
+                    f'Para {radius} milhas, o máximo é {max_allowed} horas na versão gratuita. '
+                    f'Reduza a previsão ou o raio para evitar o limite da API.'
+                )
+
             # Grid setup matching TimeZero-compatible structure
             lat_span = radius / 60.0
             lon_span = min(5.0, radius / (60.0 * max(0.25, math.cos(math.radians(lat)))))
