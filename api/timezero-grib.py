@@ -14,7 +14,31 @@ Requires ecCodes wheels. No synthetic fallback is permitted.
 """
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime, timezone
-import json, math, struct, urllib.request, urllib.parse, io
+import json, math, struct, time, urllib.request, urllib.parse, urllib.error, io
+
+
+def _fetch_open_meteo(url: str, max_retries: int = 3) -> list:
+    """Fetch Open-Meteo with automatic retry on 429 Too Many Requests."""
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            request = urllib.request.Request(url, headers={'User-Agent': 'PainelDeBordo-TimeZero/2.1'})
+            with urllib.request.urlopen(request, timeout=30) as res:
+                return json.load(res)
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            if exc.code == 429 and attempt < max_retries - 1:
+                wait = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                time.sleep(wait)
+                continue
+            raise
+        except Exception as exc:
+            last_err = exc
+            if attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+            raise
+    raise last_err  # type: ignore[misc]
 
 
 def encode_grib1_message(
@@ -165,14 +189,14 @@ class handler(BaseHTTPRequestHandler):
             lat_span = radius / 60.0
             lon_span = min(5.0, radius / (60.0 * max(0.25, math.cos(math.radians(lat)))))
 
-            # Use grid sizes that produce reasonable coverage
-            # For 60nm radius: ~11x7 grid at 0.5° spacing covers well
+            # Grid sizes kept small to stay within Open-Meteo free-tier limits.
+            # The example file that works in TimeZero uses 6x4 and 11x7 grids.
             if radius <= 30:
-                ni, nj = 6, 4
+                ni, nj = 5, 4      # 20 points
             elif radius <= 60:
-                ni, nj = 11, 7
+                ni, nj = 7, 5      # 35 points
             else:
-                ni, nj = 17, 11
+                ni, nj = 9, 6      # 54 points (well under free-tier burst limit)
 
             dlat = 2.0 * lat_span / max(1, nj - 1)
             dlon = 2.0 * lon_span / max(1, ni - 1)
@@ -204,10 +228,7 @@ class handler(BaseHTTPRequestHandler):
                 'forecast_days': str(min(10, math.ceil(hours / 24) + 1)),
             }
             url = 'https://api.open-meteo.com/v1/forecast?' + urllib.parse.urlencode(params)
-            request = urllib.request.Request(url, headers={'User-Agent': 'PainelDeBordo-TimeZero/2.0'})
-
-            with urllib.request.urlopen(request, timeout=30) as res:
-                raw = json.load(res)
+            raw = _fetch_open_meteo(url)
 
             if not isinstance(raw, list) or len(raw) != len(coords):
                 raise ValueError('API meteorológica não retornou grade completa.')
