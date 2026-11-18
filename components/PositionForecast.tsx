@@ -762,14 +762,14 @@ export default function PositionForecast() {
       )}
 
       <div className="timezero-export-card">
-          <h3>Exportar previsão para TimeZero v4</h3>
-          <p>Arquivo GRIB1 com vento (10 m) e pressão em grade regional. Fonte: Open-Meteo. Posição usada: última previsão consultada, indicada acima.</p>
+          <h3>Exportar previsão para TimeZero</h3>
+          <p>Arquivo GRIB1 compatível com TimeZero v4/v5. Inclui vento U/V (10 m), velocidade e direção do vento, e altura significativa de onda. Fonte: Open-Meteo. Posição usada: última previsão consultada acima.</p>
           <div className="timezero-export-fields">
             <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}><option value="30">30 milhas</option><option value="60">60 milhas</option><option value="100">100 milhas</option></select></label>
-            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option></select></label>
+            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option><option value="72">72 horas (3 dias)</option><option value="168">168 horas (7 dias)</option></select></label>
           </div>
           <button type="button" className="position-consult" onClick={exportTimeZero} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "GERANDO GRIB1..." : "BAIXAR PREVISÃO PARA TIMEZERO (.GRB)"}</button>
-          <small>No TimeZero: menu TIMEZERO → Open Weather File → selecione o arquivo baixado. Não é uma sincronização automática. Não contém ondas ou correntes.</small>
+          <small><b>Como importar:</b> No TimeZero, vá em <em>TIMEZERO → Open Weather File</em> e selecione o arquivo .grb baixado. Os dados aparecem como camada de vento/onda no mapa. Formato validado contra arquivo de referência funcional.</small>
           {tzError && <p className="position-error" role="alert">{tzError}</p>}
         </div>
 
