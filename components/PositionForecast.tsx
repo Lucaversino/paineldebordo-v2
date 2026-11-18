@@ -386,26 +386,52 @@ export default function PositionForecast() {
     const selectedLon = Number(data?.position?.lon);
     if (!data || !Number.isFinite(selectedLat) || !Number.isFinite(selectedLon)) { setTzError("Consulte uma posição antes de exportar."); return; }
     if (tzBusy) return;
-    setTzBusy(true); setTzError(""); setTzStage("Consultando previsão e validando dados no servidor...");
+    setTzBusy(true); setTzError(""); setTzStage("Solicitando previsão oficial NOAA GFS...");
     try {
       const qs = new URLSearchParams({ lat:String(selectedLat), lon:String(selectedLon), radius:tzRadius, hours:tzHours, format });
       // A autenticação do painel também funciona quando a sessão está no storage
       // do browser (PWA e sessões com cookies ainda não sincronizados).
       const supabase = createSupabaseBrowserClient();
-      const makeExportRequest = async (accessToken?: string | null) => fetch(`/api/timezero-export?${qs}`, {
-        cache: "no-store", credentials: "include",
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        signal: AbortSignal.timeout(60000),
-      });
       const { data: sessionData } = await supabase.auth.getSession();
-      let response = await makeExportRequest(sessionData.session?.access_token);
-      if (response.status === 401) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        if (refreshed.session?.access_token) response = await makeExportRequest(refreshed.session.access_token);
-      }
-      if (!response.ok) {
-        const json = await response.json().catch(() => ({}));
-        throw new Error(json.error || (response.status === 401 ? "Sua sessão expirou. Entre novamente no painel." : `Falha na geração GRIB1 (HTTP ${response.status}).`));
+      let token = sessionData.session?.access_token;
+      const request = async (action = "start", job?: string) => {
+        const query = new URLSearchParams(qs);
+        if (action !== "start") query.set("action", action);
+        if (job) query.set("job", job);
+        const call = (bearer?: string | null) => fetch(`/api/timezero-export?${query}`, {
+          cache:"no-store", credentials:"include",
+          headers: bearer ? {Authorization:`Bearer ${bearer}`} : {},
+          signal:AbortSignal.timeout(60000),
+        });
+        let res = await call(token);
+        if (res.status === 401) {
+          const {data:refreshed} = await supabase.auth.refreshSession();
+          token = refreshed.session?.access_token;
+          if (token) res = await call(token);
+        }
+        if (!res.ok) {
+          const detail = await res.json().catch(()=>({}));
+          throw new Error(detail.error || `Erro NOAA (HTTP ${res.status})`);
+        }
+        return res;
+      };
+      let response = await request();
+      if (response.status === 202) {
+        let info = await response.json();
+        const id = String(info.id || "");
+        if (!/^[a-f0-9]{36}$/.test(id)) throw new Error("O servidor NOAA não retornou um trabalho válido.");
+        const end = Date.now() + 14*60*1000;
+        while (Date.now() < end) {
+          if (info.status === "failed") throw new Error(info.error || "Falha NOAA");
+          if (info.status === "complete") break;
+          setTzStage(`${info.stage || "Baixando modelo NOAA"} · ${info.progress || 0}/${info.total || "?"} etapas. Esta consulta pode demorar alguns minutos.`);
+          await new Promise((resolve) => setTimeout(resolve, 7000));
+          const poll = await request("status",id);
+          info = await poll.json();
+        }
+        if (info.status !== "complete") throw new Error("O trabalho NOAA ainda não terminou. Tente novamente para consultar a fila.");
+        setTzStage("GRIB1 validado no Render; armazenando e preparando download...");
+        response = await request("download",id);
       }
       const file = await response.blob();
       setTzStage("Validando estrutura e preparando arquivo...");
@@ -786,7 +812,7 @@ export default function PositionForecast() {
 
       <div className="timezero-export-card">
         <h3>Exportar previsão para TimeZero</h3>
-        <p>Dados meteorológicos reais da Open-Meteo Forecast e Marine. Vento U/V a 10 metros e altura significativa de ondas quando disponível. Geração binária GRIB1 com ecCodes, validada no servidor.</p>
+        <p>Fonte oficial NOAA GFS 0,25°: componentes U/V do vento a 10 metros. Ondas NOAA WaveWatch III são opcionais e só serão incluídas se o administrador habilitar e validar a cobertura. Conversão GRIB2 → GRIB1 via ecCodes.</p>
         <p><b>Posição utilizada:</b> {data?.position ? nauticalPosition(Number(data.position.lat), Number(data.position.lon)) : "Consulte a última posição válida da embarcação ou informe coordenadas acima."}</p>
         <div className="timezero-export-fields">
           <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}>{[30, 60, 100, 150, 200].map((r) => <option key={r} value={String(r)}>{r} milhas náuticas</option>)}</select></label>
@@ -799,7 +825,7 @@ export default function PositionForecast() {
         </div>
         {tzStage && <p role="status">{tzStage}</p>}
         {tzFileInfo && <small>{tzFileInfo}</small>}
-        <small>Dados operacionais devem ser conferidos no TimeZero. A aceitação do arquivo GRIBZIP não foi comprovada no programa. A resolução da grade é de 5 × 5 pontos e não substitui boletins oficiais de segurança marítima.</small>
+        <small>Dados operacionais devem ser conferidos no TimeZero. A aceitação do arquivo GRIBZIP não foi comprovada no programa. A grade preserva a resolução espacial original do modelo NOAA (0,25°), que pode ser grosseira para uma área de 30 milhas. A previsão não substitui boletins oficiais de segurança marítima.</small>
         {tzError && <p className="position-error" role="alert">{tzError}</p>}
       </div>
 

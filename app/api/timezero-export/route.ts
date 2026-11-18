@@ -6,102 +6,95 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const pending = new Map<string, Promise<Uint8Array>>();
-const lastRequest = new Map<string, number>();
 const bucket = "timezero-forecasts";
+const paths = [30,60,100,150,200];
+const periods = [24,48,72,96,120,168];
 
-function settings() {
-  const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+type Config = { supabase: string; key: string; secret: string; worker: string };
+function config(): Config {
+  const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   const secret = process.env.TIMEZERO_WORKER_SECRET;
-  if (!supabase || !key || !secret) throw new Error("Configure SUPABASE_SERVICE_ROLE_KEY e TIMEZERO_WORKER_SECRET no servidor.");
-  return { supabase: supabase.replace(/\/$/, ""), key, secret };
+  const worker = process.env.TIMEZERO_WORKER_URL?.replace(/\/$/, "").replace(/\/api\/timezero-grib$/, "/api/timezero-jobs");
+  if (!supabase || !key || !secret || !worker) throw new Error("Configure Supabase e as variáveis TIMEZERO_WORKER_URL/SECRET na Vercel.");
+  return { supabase, key, secret, worker };
 }
 
-async function storage(path: string, config: ReturnType<typeof settings>, method = "GET", body?: Uint8Array) {
-  return fetch(`${config.supabase}/storage/v1/object/${bucket}/${path}`, {
+async function storage(path: string, cfg: Config, method = "GET", body?: Uint8Array) {
+  return fetch(`${cfg.supabase}/storage/v1/object/${bucket}/${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${config.key}`,
-      apikey: config.key,
+      Authorization: `Bearer ${cfg.key}`,
+      apikey: cfg.key,
       ...(body ? { "Content-Type": "application/octet-stream", "x-upsert": "true" } : {}),
     },
     body: body ? Buffer.from(body) : undefined,
     cache: "no-store",
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(18000),
   });
 }
-
+function fileResult(bytes: Uint8Array, format: string, hours: number, fromCache: boolean) {
+  return new NextResponse(Buffer.from(bytes), {
+    headers: {
+      "Content-Type": format === "grbzip" ? "application/zip" : "application/octet-stream",
+      "Content-Disposition": `attachment; filename="noaa-gfs-timezero-${hours}h.${format}"`,
+      "Content-Length": String(bytes.length),
+      "Cache-Control": "private, no-store",
+      "X-Cache": fromCache ? "HIT" : "MISS",
+    },
+  });
+}
+async function workerCall(cfg: Config, params: URLSearchParams) {
+  const r = await fetch(`${cfg.worker}?${params}`, { headers: { "X-Worker-Secret": cfg.secret }, cache:"no-store",signal:AbortSignal.timeout(45000) });
+  if (!r.ok && r.status !== 202) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(typeof detail.error === "string" ? detail.error : `NOAA Worker HTTP ${r.status}`);
+  }
+  return r;
+}
 export async function GET(req: NextRequest) {
   const user = await getPanelUserFromRequest(req);
-  if (!user) return NextResponse.json({ error: "Acesse sua conta para gerar previsão." }, { status: 401 });
-  const query = req.nextUrl.searchParams;
-  const lat = Number(query.get("lat")); const lon = Number(query.get("lon"));
-  const radius = Number(query.get("radius")); const hours = Number(query.get("hours"));
-  const format = query.get("format") === "grbzip" ? "grbzip" : "grb";
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -65 || lat > 15 || lon < -85 || lon > -25 ||
-      ![30, 60, 100, 150, 200].includes(radius) || ![24, 48, 72, 96, 120, 168].includes(hours)) {
-    return NextResponse.json({ error: "Coordenada, área ou período inválidos." }, { status: 422 });
+  if (!user) return NextResponse.json({error:"Entre na sua conta para baixar a previsão NOAA."},{status:401});
+  const q = req.nextUrl.searchParams;
+  const lat = Number(q.get("lat")), lon = Number(q.get("lon"));
+  const radius = Number(q.get("radius")), hours = Number(q.get("hours"));
+  const format = q.get("format") === "grbzip" ? "grbzip" : "grb";
+  const action = q.get("action") || "start";
+  if (!Number.isFinite(lat)||!Number.isFinite(lon)||lat < -65||lat>15||lon < -85||lon>-25||!paths.includes(radius)||!periods.includes(hours)) {
+    return NextResponse.json({error:"Coordenadas, área ou período inválidos."},{status:422});
   }
   try {
-    const cfg = settings();
-    const rounded = [lat.toFixed(4), lon.toFixed(4), radius, hours].join(":");
-    const key = createHash("sha256").update(rounded + ":" + new Date().toISOString().slice(0, 10)).digest("hex").slice(0, 30);
-    const owner = user.id;
-    const path = `${owner}/${key}.${format}`;
-    const cached = await storage(path, cfg);
-    let bytes: Uint8Array;
-    let cacheHit = false;
-    if (cached.ok) {
-      bytes = new Uint8Array(await cached.arrayBuffer());
-      cacheHit = true;
-    } else {
-      if (cached.status !== 404 && cached.status !== 400) throw new Error("Falha ao consultar armazenamento persistente.");
-      const unique = `${owner}/${key}.${format}`;
-      if (!pending.has(unique)) {
-        const now = Date.now();
-        if (now - (lastRequest.get(owner) || 0) < 15000) {
-          return NextResponse.json({ error: "Aguarde 15 segundos antes de uma nova geração." }, { status: 429 });
-        }
-        lastRequest.set(owner, now);
-        const task = (async () => {
-          const workerParams = new URLSearchParams({ lat: String(lat), lon: String(lon), radius: String(radius), hours: String(hours), format });
-          const base = process.env.TIMEZERO_WORKER_URL;
-          if (!base) throw new Error("Configure TIMEZERO_WORKER_URL na Vercel com a URL do Render.");
-          const resp = await fetch(`${base}?${workerParams}`, {
-            headers: { "X-Worker-Secret": cfg.secret },
-            signal: AbortSignal.timeout(50000), cache: "no-store",
-          });
-          if (!resp.ok) {
-            const error = await resp.json().catch(() => ({}));
-            const message = typeof error.error === "string" ? error.error : `O gerador retornou HTTP ${resp.status}.`;
-            console.error("[timezero-export] worker", { status: resp.status, message });
-            throw new Error(message);
-          }
-          const output = new Uint8Array(await resp.arrayBuffer());
-          if (!output.length || (format === "grb" && (String.fromCharCode(...output.slice(0, 4)) !== "GRIB" || output[7] !== 1))) {
-            throw new Error("Arquivo GRIB1 inválido, download bloqueado.");
-          }
-          const saved = await storage(path, cfg, "POST", output);
-          if (!saved.ok) throw new Error("Arquivo criado, mas não foi possível salvá-lo no armazenamento privado.");
-          return output;
-        })();
-        pending.set(unique, task);
-        void task.finally(() => pending.delete(unique)).catch(() => {});
-      }
-      bytes = await pending.get(unique)!;
+    const cfg = config();
+    // Daily cache key, private to authenticated owner. NOAA model cycle is returned in job status.
+    const key = createHash("sha256").update(`${lat.toFixed(4)}:${lon.toFixed(4)}:${radius}:${hours}:${new Date().toISOString().slice(0,10)}`).digest("hex").slice(0,30);
+    const path = `${user.id}/${key}.${format}`;
+    const saved = await storage(path,cfg);
+    if (saved.ok) return fileResult(new Uint8Array(await saved.arrayBuffer()),format,hours,true);
+    if (saved.status !== 400 && saved.status !== 404) throw new Error(`Erro ao consultar Supabase Storage (HTTP ${saved.status})`);
+    const wp = new URLSearchParams({ owner:user.id });
+    if (action === "start") {
+      wp.set("lat", String(lat));wp.set("lon",String(lon));wp.set("radius",String(radius));wp.set("hours",String(hours));
+    } else if (action === "status" || action === "download") {
+      const id = q.get("job");
+      if (!id || !/^[a-f0-9]{36}$/.test(id))return NextResponse.json({error:"Identificador de trabalho inválido"},{status:422});
+      wp.set("id",id);
+      if (action === "download") {wp.set("download","1");wp.set("format",format);}
+    } else return NextResponse.json({error:"Ação não permitida"},{status:422});
+    const response = await workerCall(cfg,wp);
+    if (action !== "download") {
+      const info = await response.json();
+      return NextResponse.json({source:"NOAA GFS 0.25",...info},{status:info.status === "failed" ? 502 : 202});
     }
-    return new NextResponse(Buffer.from(bytes), {
-      headers: {
-        "Content-Type": format === "grbzip" ? "application/zip" : "application/octet-stream",
-        "Content-Disposition": `attachment; filename="previsao-timezero-${hours}h.${format}"`,
-        "Content-Length": String(bytes.length),
-        "X-Cache": cacheHit ? "HIT" : "MISS",
-        "Cache-Control": "private, no-store",
-      },
-    });
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.length || (format==="grb" && (bytes.length < 100 || String.fromCharCode(...bytes.slice(0,4))!=="GRIB" || bytes[7]!==1)) || (format==="grbzip" && String.fromCharCode(...bytes.slice(0,2))!=="PK")) {
+      throw new Error("Arquivo NOAA GRIB1 inválido; download bloqueado.");
+    }
+    const stored = await storage(path,cfg,"POST",bytes);
+    if (!stored.ok) throw new Error(`O GRIB1 foi gerado, mas o armazenamento privado falhou (HTTP ${stored.status}).`);
+    return fileResult(bytes,format,hours,false);
   } catch (error) {
-    console.error("[timezero-export] falha", { message: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao gerar GRIB." }, { status: 502 });
+    const message = error instanceof Error ? error.message : "Falha desconhecida";
+    console.error("[timezero-noaa]",{action,message});
+    return NextResponse.json({error:message},{status:502});
   }
 }
