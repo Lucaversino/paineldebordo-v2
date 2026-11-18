@@ -25,6 +25,7 @@ import { createSupabaseBrowserClient } from "../lib/supabase/client";
 import { createPositionForecastPdf, downloadPositionForecastPdf } from "../lib/positionForecastPdf";
 import { buildForecastFinalAnalysis } from "../lib/forecastFinalAnalysis";
 import EnvironmentalOverlayMap from "./EnvironmentalOverlayMap";
+import { Button as StatefulButton } from "@/components/ui/stateful-button";
 import { coordinateDigits, decimalToCoordinateInput, formatCoordinateInput } from "../lib/marineCoordinate";
 
 const LAST_FORECAST_KEY = "painel-last-position-forecast-v68";
@@ -444,7 +445,7 @@ export default function PositionForecast() {
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
       setTzFileInfo(`${(file.size / 1024).toFixed(1)} KB · ${format.toUpperCase()} · ${response.headers.get("X-Cache") === "HIT" ? "previsão salva" : "nova previsão"}`);
       setTzStage("Arquivo validado e disponível.");
-    } catch (err) { setTzError(err instanceof Error ? err.message : "Não foi possível gerar o GRIB."); }
+    } catch (err) { setTzError(err instanceof Error ? err.message : "Não foi possível gerar o GRIB."); throw err; }
     finally { setTzBusy(false); }
   }
 
@@ -820,8 +821,8 @@ export default function PositionForecast() {
         </div>
         <p>Intervalos de 3 horas em UTC. Horizonte efetivo limitado à disponibilidade da fonte.</p>
         <div className="timezero-export-fields">
-          <button type="button" className="position-consult" onClick={() => void exportTimeZero("grb")} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "PROCESSANDO..." : "BAIXAR GRIB1 (.GRB)"}</button>
-          <button type="button" className="position-consult" onClick={() => void exportTimeZero("grbzip")} disabled={!data || busy || tzBusy}><Download />BAIXAR GRIBZIP</button>
+          <StatefulButton className="position-consult timezero-stateful" onClick={() => exportTimeZero("grb")} disabled={!data || busy || tzBusy} successLabel="GRIB1 BAIXADO"><Download aria-hidden="true" /> BAIXAR GRIB1 (.GRB)</StatefulButton>
+          <StatefulButton className="position-consult timezero-stateful" onClick={() => exportTimeZero("grbzip")} disabled={!data || busy || tzBusy} successLabel="GRIBZIP BAIXADO"><Download aria-hidden="true" /> BAIXAR GRIBZIP</StatefulButton>
         </div>
         {tzStage && <p role="status">{tzStage}</p>}
         {tzFileInfo && <small>{tzFileInfo}</small>}
