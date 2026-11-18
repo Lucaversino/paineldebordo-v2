@@ -175,6 +175,8 @@ export default function PositionForecast() {
   const [gpsStatus, setGpsStatus] = useState("");
   const [tzRadius, setTzRadius] = useState("60");
   const [tzHours, setTzHours] = useState("48");
+  const [tzStage, setTzStage] = useState("");
+  const [tzFileInfo, setTzFileInfo] = useState("");
   const [tzBusy, setTzBusy] = useState(false);
   const [tzError, setTzError] = useState("");
 
@@ -378,23 +380,27 @@ export default function PositionForecast() {
     }
   }
 
-  async function exportTimeZero() {
+  async function exportTimeZero(format: "grb" | "grbzip" = "grb") {
     const selectedLat = Number(data?.position?.lat);
     const selectedLon = Number(data?.position?.lon);
     if (!data || !Number.isFinite(selectedLat) || !Number.isFinite(selectedLon)) { setTzError("Consulte uma posição antes de exportar."); return; }
-    setTzBusy(true); setTzError("");
+    if (tzBusy) return;
+    setTzBusy(true); setTzError(""); setTzStage("Consultando previsão e validando dados no servidor...");
     try {
-      const qs = new URLSearchParams({ lat:String(selectedLat), lon:String(selectedLon), radius:tzRadius, hours:tzHours });
-      const response = await fetch(`/api/timezero-grib?${qs}`, { cache:"no-store" });
+      const qs = new URLSearchParams({ lat:String(selectedLat), lon:String(selectedLon), radius:tzRadius, hours:tzHours, format });
+      const response = await fetch(`/api/timezero-export?${qs}`, { cache:"no-store" });
       if (!response.ok) { const json = await response.json().catch(() => ({})); throw new Error(json.error || "Falha na geração do arquivo GRIB1."); }
       const file = await response.blob();
+      setTzStage("Validando estrutura e preparando arquivo...");
       const magic = new Uint8Array(await file.slice(0,8).arrayBuffer());
-      if (file.size < 100 || String.fromCharCode(...magic.slice(0,4)) !== "GRIB" || magic[7] !== 1) throw new Error("Arquivo não reconhecido como GRIB1; download interrompido.");
+      if (file.size < 100 || (format === "grb" && (String.fromCharCode(...magic.slice(0,4)) !== "GRIB" || magic[7] !== 1)) || (format === "grbzip" && String.fromCharCode(...magic.slice(0,2)) !== "PK")) throw new Error("Arquivo inválido; download interrompido.");
       const blobUrl = URL.createObjectURL(file);
       const a = document.createElement("a"); a.href = blobUrl;
-      a.download = `painel-timezero-${tzHours}h-${new Date().toISOString().slice(0,10)}.grb`;
+      a.download = `painel-timezero-${tzHours}h-${new Date().toISOString().slice(0,10)}.${format}`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      setTzFileInfo(`${(file.size / 1024).toFixed(1)} KB · ${format.toUpperCase()} · ${response.headers.get("X-Cache") === "HIT" ? "previsão salva" : "nova previsão"}`);
+      setTzStage("Arquivo validado e disponível.");
     } catch (err) { setTzError(err instanceof Error ? err.message : "Não foi possível gerar o GRIB."); }
     finally { setTzBusy(false); }
   }
@@ -762,16 +768,23 @@ export default function PositionForecast() {
       )}
 
       <div className="timezero-export-card">
-          <h3>Exportar previsão para TimeZero</h3>
-          <p>Arquivo GRIB1 compatível com TimeZero v4/v5. Inclui vento U/V (10 m), velocidade e direção do vento, e altura significativa de onda. Fonte: Open-Meteo. Posição usada: última previsão consultada acima.</p>
-          <div className="timezero-export-fields">
-            <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}><option value="30">30 milhas</option><option value="60">60 milhas</option><option value="100">100 milhas</option></select></label>
-            <label>Previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}><option value="24">24 horas</option><option value="48">48 horas</option><option value="72" disabled={tzRadius === '100'}>72 horas (3 dias){tzRadius === '100' ? ' — máx. 48h p/ 100mi' : ''}</option><option value="168" disabled={tzRadius !== '30'}>168 horas (7 dias){tzRadius !== '30' ? ' — apenas 30mi' : ''}</option></select></label>
-          </div>
-          <button type="button" className="position-consult" onClick={exportTimeZero} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "GERANDO GRIB1..." : "BAIXAR PREVISÃO PARA TIMEZERO (.GRB)"}</button>
-          <small><b>Como importar:</b> No TimeZero, vá em <em>TIMEZERO → Open Weather File</em> e selecione o arquivo .grb baixado. Os dados aparecem como camada de vento/onda no mapa. Formato validado contra arquivo de referência funcional.</small>
-          {tzError && <p className="position-error" role="alert">{tzError}</p>}
+        <h3>Exportar previsão para TimeZero</h3>
+        <p>Dados meteorológicos reais da Open-Meteo Forecast e Marine. Vento U/V a 10 metros e altura significativa de ondas quando disponível. Geração binária GRIB1 com ecCodes, validada no servidor.</p>
+        <p><b>Posição utilizada:</b> {data?.position ? nauticalPosition(Number(data.position.lat), Number(data.position.lon)) : "Consulte a última posição válida da embarcação ou informe coordenadas acima."}</p>
+        <div className="timezero-export-fields">
+          <label>Área ao redor da posição<select value={tzRadius} onChange={(e) => setTzRadius(e.target.value)}>{[30, 60, 100, 150, 200].map((r) => <option key={r} value={String(r)}>{r} milhas náuticas</option>)}</select></label>
+          <label>Período de previsão<select value={tzHours} onChange={(e) => setTzHours(e.target.value)}>{[24, 48, 72, 96, 120, 168].map((h) => <option key={h} value={String(h)}>{h} horas</option>)}</select></label>
         </div>
+        <p>Intervalos de 3 horas em UTC. Horizonte efetivo limitado à disponibilidade da fonte.</p>
+        <div className="timezero-export-fields">
+          <button type="button" className="position-consult" onClick={() => void exportTimeZero("grb")} disabled={!data || busy || tzBusy}><Download />{tzBusy ? "PROCESSANDO..." : "BAIXAR GRIB1 (.GRB)"}</button>
+          <button type="button" className="position-consult" onClick={() => void exportTimeZero("grbzip")} disabled={!data || busy || tzBusy}><Download />BAIXAR GRIBZIP</button>
+        </div>
+        {tzStage && <p role="status">{tzStage}</p>}
+        {tzFileInfo && <small>{tzFileInfo}</small>}
+        <small>Dados operacionais devem ser conferidos no TimeZero. A aceitação do arquivo GRIBZIP não foi comprovada no programa. A resolução da grade é de 5 × 5 pontos e não substitui boletins oficiais de segurança marítima.</small>
+        {tzError && <p className="position-error" role="alert">{tzError}</p>}
+      </div>
 
       <div className="forecast-library-grid">
         <section className="forecast-library-panel saved-panel">
