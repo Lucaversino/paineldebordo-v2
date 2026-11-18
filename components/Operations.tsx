@@ -183,6 +183,8 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     [editingSpecies, setEditingSpecies] = useState<any>(null),
     [reportTripId, setReportTripId] = useState(""),
     [pdfTrip, setPdfTrip] = useState<any>(null),
+    [pdfCustom, setPdfCustom] = useState(false),
+    [pdfSelectedSetIds, setPdfSelectedSetIds] = useState<number[]>([]),
     [pdfMode, setPdfMode] = useState<"download" | "share">("download"),
     [pdfIncludeEnvironment, setPdfIncludeEnvironment] = useState(false),
     [pdfFile, setPdfFile] = useState<File | null>(null),
@@ -644,7 +646,9 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
   const selectedFinishedTrip = s.trips.find(
     (x) => Number(x.id) === Number(selectedFinishedTripId),
   );
-  const downloadPdf = (trip: any, mode: "download" | "share" = "download", includeEnvironment = false) => {
+  const downloadPdf = (trip: any, mode: "download" | "share" = "download", includeEnvironment = false, custom = false) => {
+    setPdfCustom(custom);
+    setPdfSelectedSetIds(s.sets.filter((item) => Number(item.tripId) === Number(trip.id)).map((item) => Number(item.id)));
     setPdfError("");
     setPdfFile(null);
     setPdfMode(mode);
@@ -680,19 +684,47 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
     setSaving(true);
     setPdfError("");
     const trip = pdfTrip;
+    const selectedIds = new Set(pdfSelectedSetIds);
+    if (pdfCustom && selectedIds.size === 0) {
+      setPdfError("Selecione pelo menos uma largada para exportar.");
+      setSaving(false);
+      return;
+    }
+    const departureDate = String(dates.departureDate || "");
+    const returnDate = String(dates.returnDate || "");
+    if (pdfCustom && (!departureDate || (returnDate && new Date(returnDate).getTime() < new Date(departureDate).getTime()))) {
+      setPdfError("Informe a saída e uma chegada posterior à saída, quando preenchida.");
+      setSaving(false);
+      return;
+    }
     setMsg("Preparando PDF com os dados mais recentes...");
     try {
-      const saved = await fetch("/api/manage", {
-        method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "tripDates", id: trip.id, ...dates }),
-      });
-      const result = await saved.json();
-      if (!saved.ok) throw Error(result.error || "Não foi possível salvar as datas.");
+      if (!pdfCustom) {
+        const saved = await fetch("/api/manage", {
+          method: "PUT", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "tripDates", id: trip.id, ...dates }),
+        });
+        const result = await saved.json();
+        if (!saved.ok) throw Error(result.error || "Não foi possível salvar as datas.");
+      }
       const response = await fetch("/api/manage", { cache: "no-store" });
       const fresh = await response.json();
       if (!response.ok) throw Error(fresh.error || "Não foi possível carregar os dados do relatório.");
       const freshTrip = fresh.trips.find((item: any) => Number(item.id) === Number(trip.id));
       if (!freshTrip) throw Error("Viagem não encontrada.");
+      const tripSets = fresh.sets.filter((item: any) => Number(item.tripId) === Number(trip.id));
+      const includedSets = pdfCustom ? tripSets.filter((item: any) => selectedIds.has(Number(item.id))) : tripSets;
+      if (pdfCustom && includedSets.length !== selectedIds.size) throw Error("A lista de largadas mudou. Feche e reabra o PDF personalizado para revisar sua seleção.");
+      const includedIds = new Set(includedSets.map((item: any) => Number(item.id)));
+      const reportSets = pdfCustom ? includedSets : fresh.sets;
+      const reportCatches = pdfCustom ? fresh.catches.filter((item: any) =>
+        Number(item.tripId) === Number(trip.id) && item.fishingSetId != null && includedIds.has(Number(item.fishingSetId))) : fresh.catches;
+      // As datas informadas no relatório parcial são apenas metadados do PDF.
+      // Nunca são gravadas na viagem original.
+      const reportTrip = pdfCustom ? {
+        ...freshTrip, departureDate, returnDate: returnDate || null,
+        expectedReturnDate: null,
+      } : freshTrip;
       setS(fresh);
       setPdfTrip(freshTrip);
       let environmentalSnapshots: any[] = [];
@@ -706,7 +738,11 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       const calendarData = await calendarResponse.json().catch(() => ({}));
       if (!calendarResponse.ok) throw Error(calendarData.error || "Não foi possível carregar o calendário salvo. PDF não gerado para evitar omissões.");
       const { generateTripPdf } = await import("../lib/tripPdf");
-      const file = generateTripPdf(freshTrip, fresh.sets, fresh.catches, pdfMode === "download", environmentalSnapshots, calendarData.records || []);
+      const records = Array.isArray(calendarData.records) ? calendarData.records : [];
+      const selectedCalendar = pdfCustom ? records.filter((record: any) =>
+        record.date >= departureDate.slice(0, 10) && (!returnDate || record.date <= returnDate.slice(0, 10))) : records;
+      const selectedSnapshots = pdfCustom ? environmentalSnapshots.filter((item: any) => includedIds.has(Number(item.fishingSetId))) : environmentalSnapshots;
+      const file = generateTripPdf(reportTrip, reportSets, reportCatches, pdfMode === "download", selectedSnapshots, selectedCalendar, { partial: pdfCustom });
       if (pdfMode === "share") {
         setPdfFile(file);
         setMsg("");
@@ -714,7 +750,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
         setPdfTrip(null);
         setMsg(pdfIncludeEnvironment
           ? "PDF com dados ambientais gerado. O PDF normal continua sem previsão."
-          : "PDF gerado com os totais de Corvina, Mistura e Descarte.");
+          : pdfCustom ? "PDF personalizado gerado somente com as largadas selecionadas." : "PDF gerado com os totais de Corvina, Mistura e Descarte.");
       }
     } catch (error) {
       setPdfError(error instanceof Error ? error.message : "Não foi possível gerar o PDF.");
@@ -775,6 +811,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
               <button className="editbtn" onClick={() => downloadPdf(current)}>
                 <FileDown /> PDF da viagem
               </button>
+              <button className="editbtn" onClick={() => downloadPdf(current, "download", false, true)}><FileDown /> PDF personalizado</button>
               <button className="editbtn" onClick={() => downloadPdf(current, "download", true)} title="PDF opcional com vento, ondas, maré, temperatura, clorofila e lua por largada">
                 <Waves /> PDF + previsão
               </button>
@@ -851,6 +888,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
 
                 {!isCurrent && <div className="finished-set-actions">
                   <button type="button" className="editbtn" onClick={() => downloadPdf(trip)}><FileDown size={15} /> Baixar PDF atualizado</button>
+                  <button type="button" className="editbtn" onClick={() => downloadPdf(trip, "download", false, true)}><FileDown size={15} /> PDF personalizado</button>
                   <button type="button" className="editbtn" onClick={() => downloadPdf(trip, "share")}><Share2 size={15} /> Compartilhar WhatsApp</button>
                 </div>}
                 {isOpen && (
@@ -1168,7 +1206,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
       {view === "Histórico" && !selectedFinishedTrip && (
         <div className="trip-history-cards">
           {s.trips.slice().sort((a,b)=>Number(b.status==="IN_PROGRESS")-Number(a.status==="IN_PROGRESS") || new Date(b.departureDate).getTime()-new Date(a.departureDate).getTime()).map(x=><section className="trip-history-card" key={x.id}>
-            <div className="trip-history-head"><div><small>{x.status==="IN_PROGRESS"?"VIAGEM EM ANDAMENTO":"VIAGEM ARQUIVADA"}</small><h3>{x.name}</h3><p>{x.boatName} · {status[x.status]||x.status}</p></div><div className="trip-history-actions"><button className="editbtn" onClick={()=>setEditing({...x,_type:"trip"})}><Pencil/> Editar</button><button className="analyzebtn" onClick={()=>setSelectedFinishedTripId(Number(x.id))}><BarChart3/> Analisar</button><button className="editbtn" onClick={()=>downloadPdf(x)}><FileDown/> PDF</button><button className="editbtn" onClick={()=>downloadPdf(x,"share")}><Share2/> WhatsApp</button></div></div>
+            <div className="trip-history-head"><div><small>{x.status==="IN_PROGRESS"?"VIAGEM EM ANDAMENTO":"VIAGEM ARQUIVADA"}</small><h3>{x.name}</h3><p>{x.boatName} · {status[x.status]||x.status}</p></div><div className="trip-history-actions"><button className="editbtn" onClick={()=>setEditing({...x,_type:"trip"})}><Pencil/> Editar</button><button className="analyzebtn" onClick={()=>setSelectedFinishedTripId(Number(x.id))}><BarChart3/> Analisar</button><button className="editbtn" onClick={()=>downloadPdf(x)}><FileDown/> PDF</button><button className="editbtn" onClick={()=>downloadPdf(x,"download",false,true)}><FileDown/> PDF personalizado</button><button className="editbtn" onClick={()=>downloadPdf(x,"share")}><Share2/> WhatsApp</button></div></div>
             <TripMiniDashboard trip={x} sets={s.sets} catches={s.catches} onAnalyze={()=>setSelectedFinishedTripId(Number(x.id))}/>
           </section>)}
         </div>
@@ -1247,6 +1285,7 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
               {s.trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.name} - {trip.boatName} ({status[trip.status]})</option>)}
             </select>
             <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip); }}><FileDown /> Gerar PDF</button>
+            <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip, "download", false, true); }}><FileDown /> PDF personalizado</button>
             <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip, "download", true); }}><Waves /> PDF + previsão</button>
             <button disabled={!reportTripId} onClick={() => { const trip = s.trips.find((item) => String(item.id) === reportTripId); if (trip) downloadPdf(trip, "share"); }}><Share2 /> WhatsApp</button>
           </div>
@@ -1300,18 +1339,39 @@ export default function Operations({ view, onDashboard, initialForm = null, onIn
           <form className="modal form" onSubmit={exportPdf} role="dialog" aria-modal="true" aria-labelledby="pdf-dates-title">
             <button type="button" className="modalx" disabled={saving} onClick={() => setPdfTrip(null)} aria-label="Fechar">×</button>
             <small>{pdfMode === "share" ? "COMPARTILHAR NO WHATSAPP" : pdfIncludeEnvironment ? "EXPORTAR PDF + PREVISÃO" : "EXPORTAR PDF"}</small>
-            <h2 id="pdf-dates-title">Datas da viagem</h2>
+            <h2 id="pdf-dates-title">{pdfCustom ? "PDF personalizado por largadas" : "Datas da viagem"}</h2>
             <p>{pdfTrip.name}</p>
             <label>Data e horário de saída
               <TripDateInput key={`pdf-out-${pdfTrip.id}`} name="departureDate" label="saída" required value={pdfTrip.departureDate} />
             </label>
             <label>Data e horário de chegada ao porto
-              <TripDateInput key={`pdf-in-${pdfTrip.id}`} name="returnDate" label="chegada" required={pdfTrip.status === "FINISHED"} value={pdfTrip.returnDate} />
+              <TripDateInput key={`pdf-in-${pdfTrip.id}`} name="returnDate" label="chegada" required={!pdfCustom && pdfTrip.status === "FINISHED"} value={pdfTrip.returnDate} />
             </label>
-            <small>As datas serão salvas na viagem e usadas no PDF. Em viagens em andamento, deixe a chegada em branco se ainda não retornou.</small>
+            {pdfCustom ? <>
+              <small>As datas acima aparecem somente neste PDF. A viagem original e seus registros não serão modificados. Se ainda estiver no mar, deixe a chegada em branco.</small>
+              <div className="custom-pdf-sets">
+                <div className="custom-pdf-sets-header">
+                  <strong>Largadas para incluir ({pdfSelectedSetIds.length} selecionadas)</strong>
+                  <div>
+                    <button type="button" onClick={() => setPdfSelectedSetIds(s.sets.filter((item) => Number(item.tripId) === Number(pdfTrip.id)).map((item) => Number(item.id)))}>Todas</button>
+                    <button type="button" onClick={() => setPdfSelectedSetIds([])}>Limpar</button>
+                  </div>
+                </div>
+                <div className="custom-pdf-sets-list">
+                  {s.sets.filter((item) => Number(item.tripId) === Number(pdfTrip.id))
+                    .sort((a, b) => Number(a.setNumber || 0) - Number(b.setNumber || 0))
+                    .map((item) => <label key={item.id} className="custom-pdf-set-choice">
+                      <input type="checkbox" checked={pdfSelectedSetIds.includes(Number(item.id))} onChange={(e) => setPdfSelectedSetIds((previous) => e.target.checked ? [...previous, Number(item.id)] : previous.filter((id) => id !== Number(item.id)))} />
+                      <span><b>Largada #{item.setNumber}</b><small>{item.startedAt ? new Date(item.startedAt).toLocaleString("pt-BR") : "Data não informada"}</small></span>
+                    </label>)}
+                  {!s.sets.some((item) => Number(item.tripId) === Number(pdfTrip.id)) && <small>Esta viagem não possui largadas registradas.</small>}
+                </div>
+              </div>
+              <small>Os totais de captura, as espécies, o descarte e a região serão calculados apenas pelas largadas marcadas. Capturas sem largada vinculada não entram no PDF parcial. O calendário utiliza o período informado e identifica somente as largadas selecionadas.</small>
+            </> : <small>As datas serão salvas na viagem e usadas no PDF. Em viagens em andamento, deixe a chegada em branco se ainda não retornou.</small>}
             {pdfIncludeEnvironment && <small>Este PDF incluirá um anexo ambiental por largada. O PDF normal continua sem vento, onda, maré, temperatura, clorofila ou lua.</small>}
             {pdfError && <p role="alert">{pdfError}</p>}
-            <button type="submit" disabled={saving}><FileDown /> {saving ? "Salvando e gerando..." : pdfMode === "share" ? "Salvar datas e preparar PDF" : "Salvar datas e gerar PDF"}</button>
+            <button type="submit" disabled={saving || (pdfCustom && !pdfSelectedSetIds.length)}><FileDown /> {saving ? "Gerando PDF..." : pdfCustom ? "Exportar PDF selecionado" : pdfMode === "share" ? "Salvar datas e preparar PDF" : "Salvar datas e gerar PDF"}</button>
           </form>
         </div>
       )}

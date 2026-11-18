@@ -7438,3 +7438,16 @@ select option:checked {
   .modal.form .new-set-close-area { margin-top: 12px; padding: 9px; }
   .modal.form .new-set-close-button { min-height: 58px; font-size: 14px; }
 }
+
+/* V284 - seleção de largadas no PDF personalizado */
+.custom-pdf-sets{border:1px solid #28656b;border-radius:12px;padding:12px;background:#082d33;display:grid;gap:10px}
+.custom-pdf-sets-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.custom-pdf-sets-header strong{font-size:13px;color:#e2fffa}
+.custom-pdf-sets-header>div{display:flex;gap:8px}
+.custom-pdf-sets-header button{padding:7px 12px;border:1px solid #276e70;background:#0c4246;color:#d0fff4;border-radius:8px;cursor:pointer}
+.custom-pdf-sets-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;max-height:245px;overflow-y:auto}
+.custom-pdf-set-choice{display:flex!important;flex-direction:row!important;align-items:center;gap:10px;padding:9px 10px;border:1px solid #28565c;border-radius:9px;background:#0b3940;cursor:pointer;min-width:0}
+.custom-pdf-set-choice input{width:18px;height:18px;accent-color:#20c9a4;flex-shrink:0}
+.custom-pdf-set-choice span{display:grid;gap:3px;min-width:0}.custom-pdf-set-choice b{font-size:13px}.custom-pdf-set-choice small{font-size:11px}
+.modal.form .custom-pdf-set-choice input[type="checkbox"]{width:18px;height:18px;min-height:18px;min-width:18px;margin:0;padding:0;flex:0 0 18px}
+@media(max-width:600px){.custom-pdf-sets-list{grid-template-columns:1fr}.custom-pdf-sets{padding:10px}.custom-pdf-sets-header{align-items:flex-start}}

@@ -20,7 +20,7 @@ const coord = (value: number | null, latitude: boolean) => {
   return `${String(degrees).padStart(2, "0")}°${minutes} ${direction}`;
 };
 
-export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true, environmentalSnapshots: any[] = [], calendarRecords: { date:string;note:string;lostReason:string }[] = []) {
+export function generateTripPdf(trip: any, sets: any[], catches: any[], download = true, environmentalSnapshots: any[] = [], calendarRecords: { date:string;note:string;lostReason:string }[] = [], options: { partial?: boolean } = {}) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const tripSets = sets.filter((item) => Number(item.tripId) === Number(trip.id)).sort((a, b) => a.setNumber - b.setNumber);
   const tripCatches = catches.filter((item) => Number(item.tripId) === Number(trip.id));
@@ -50,13 +50,13 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(19);
-  doc.text("RELATÓRIO DE VIAGEM", 16, 17);
+  doc.text(options.partial ? "RELATÓRIO PARCIAL DE VIAGEM" : "RELATÓRIO DE VIAGEM", 16, 17);
   doc.setFontSize(12);
   doc.text(trip.name, 16, 27);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(153, 201, 207);
   doc.setFontSize(9);
-  doc.text("PAINEL DE BORDO - PESCA INDUSTRIAL", 16, 35);
+  doc.text(options.partial ? "PAINEL DE BORDO - LARGADAS SELECIONADAS" : "PAINEL DE BORDO - PESCA INDUSTRIAL", 16, 35);
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
@@ -233,7 +233,7 @@ export function generateTripPdf(trip: any, sets: any[], catches: any[], download
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.2);
   doc.setTextColor(70, 96, 102);
-  doc.text("Extremos encontrados analisando todas as posições iniciais e finais de todas as largadas.", 16, 65);
+  doc.text(options.partial ? "Extremos calculados somente pelas largadas selecionadas neste relatório." : "Extremos encontrados analisando todas as posições iniciais e finais de todas as largadas.", 16, 65);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(18, 41, 47);
@@ -426,7 +426,7 @@ ${num(Number(env.lunarIllumination) * 100, 0)}%`}`,
   drawFooter();
 
   const safeName = `${trip.boatName}-${trip.name}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const filename = `Relatorio-${safeName || "Viagem"}.pdf`;
+  const filename = `${options.partial ? "Relatorio-Parcial" : "Relatorio"}-${safeName || "Viagem"}.pdf`;
   if (download) doc.save(filename);
   return new File([doc.output("blob")], filename, { type: "application/pdf" });
 }
